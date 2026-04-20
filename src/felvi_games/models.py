@@ -159,3 +159,54 @@ class GameState:
 
     def reset(self) -> None:
         self.__init__()  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# Felvételi kategóriák nevezéktana
+# ---------------------------------------------------------------------------
+
+class KategoriaKulcs(Enum):
+    """A három felvételi típus belső azonosítója (= mappa neve)."""
+    OSZTALY_6 = "6_osztaly"
+    OSZTALY_8 = "8_osztaly"
+    EVFOLYAM_9 = "9_evfolyam"
+
+
+@dataclass(frozen=True)
+class KategoriaNevezektan:
+    iskola_tipusa: str  # pl. "6 osztályos gimnázium"
+    cel_evfolyam: str   # ahova a tanuló belép, pl. "7. osztály"
+    rovid: str          # rövid megnevezés a UI-hoz
+    teljes: str         # teljes hivatalos megnevezés
+    # A mappa neve mindig a kulcs enum .value-ja – nem duplikáljuk.
+
+
+KATEGORIA_INFO: dict[KategoriaKulcs, KategoriaNevezektan] = {
+    KategoriaKulcs.OSZTALY_6: KategoriaNevezektan(
+        iskola_tipusa="6 osztályos gimnázium",
+        cel_evfolyam="7. osztály",
+        rovid="6 osztályos gimnázium (7. osztályba lépőknek)",
+        teljes=(
+            "Felvételi feladatsorok 6 osztályos gimnáziumba – "
+            "a 7. osztályba lépő tanulóknak"
+        ),
+    ),
+    KategoriaKulcs.OSZTALY_8: KategoriaNevezektan(
+        iskola_tipusa="8 osztályos gimnázium",
+        cel_evfolyam="5. osztály",
+        rovid="8 osztályos gimnázium (5. osztályba lépőknek)",
+        teljes=(
+            "Felvételi feladatsorok 8 osztályos gimnáziumba – "
+            "az 5. osztályba lépő tanulóknak"
+        ),
+    ),
+    KategoriaKulcs.EVFOLYAM_9: KategoriaNevezektan(
+        iskola_tipusa="4 osztályos gimnázium",
+        cel_evfolyam="9. évfolyam",
+        rovid="4 osztályos gimnázium (9. évfolyamra lépőknek)",
+        teljes=(
+            "Felvételi feladatsorok a 9. évfolyamra – "
+            "4 osztályos gimnáziumba felvételizőknek"
+        ),
+    ),
+}
