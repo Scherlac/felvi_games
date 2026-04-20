@@ -53,6 +53,9 @@ _TARGY_MAP: dict[str, str] = {"A": "magyar", "M": "matek"}
 # A4_ / M4_ → 4. osztályos tanuló → 8 osztályos gimnázium felvételi
 _SZINT_MAP: dict[int, str] = {8: "4 osztályos", 6: "6 osztályos", 4: "8 osztályos"}
 
+# CLI --szint érték (gimnázium osztályszám) → szint label
+_CLI_SZINT_MAP: dict[str, str] = {"4": "4 osztályos", "6": "6 osztályos", "8": "8 osztályos"}
+
 # Difficulty descriptions passed to GPT
 _NEH_SCALE = (
     "1 = könnyű (alapszintű számolás / szóértés, egyértelmű válasz), "
@@ -387,7 +390,7 @@ def run(
     if targy:
         pairs = [(fl, ut, t) for fl, ut, t in pairs if t == targy]
     if szint:
-        szint_filter = _SZINT_MAP[int(szint)]
+        szint_filter = _CLI_SZINT_MAP[szint]
         pairs = [(fl, ut, t) for fl, ut, t in pairs
                  if parse_filename_meta(fl.name).get("szint") == szint_filter]
 
