@@ -218,6 +218,15 @@ def _dict_to_feladat(d: dict) -> Feladat:
         raise ValueError(f"neh must be 1-3, got {neh!r}")
     ev_raw = d.get("ev")
     val_raw = d.get("valtozat")
+    # Derive feladat_sorszam from the id if GPT didn't return it explicitly
+    # id format: {prefix}_{year}_{variant}_{num}_{letter}  e.g. mat_2025_1_3_b → "3b"
+    raw_sorszam = d.get("feladat_sorszam")
+    if not raw_sorszam:
+        id_parts = str(d["id"]).split("_")
+        if len(id_parts) >= 5:
+            raw_sorszam = "".join(id_parts[-2:])   # e.g. "3" + "b" → "3b"
+        elif len(id_parts) == 4:
+            raw_sorszam = id_parts[-1]              # just the number
     return Feladat(
         id=str(d["id"]),
         neh=neh,
@@ -231,7 +240,7 @@ def _dict_to_feladat(d: dict) -> Feladat:
         ut_source=str(d.get("ut_source", "")) or None,
         ev=int(ev_raw) if ev_raw is not None else None,
         valtozat=int(val_raw) if val_raw is not None else None,
-        feladat_sorszam=str(d["feladat_sorszam"]) if d.get("feladat_sorszam") else None,
+        feladat_sorszam=str(raw_sorszam) if raw_sorszam else None,
     )
 
 

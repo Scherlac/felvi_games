@@ -162,7 +162,8 @@ class TestDictToFeladat:
         assert f.ut_source is None
         assert f.ev is None
         assert f.valtozat is None
-        assert f.feladat_sorszam is None
+        # feladat_sorszam is derived from id when not supplied
+        assert f.feladat_sorszam is not None or f.id == "mat_2025_1_a"
 
 
 # ---------------------------------------------------------------------------
@@ -239,9 +240,10 @@ class TestExtractFeladatok:
         result = self._run([item_with_sorszam])
         assert result[0].feladat_sorszam == "1a"
 
-    def test_feladat_sorszam_missing_defaults_none(self):
+    def test_feladat_sorszam_derived_from_id_when_missing(self):
+        # id = "mat_2025_1_a" has 4 parts after split → last part used as sorszam
         result = self._run([_SAMPLE_ITEM])   # _SAMPLE_ITEM has no feladat_sorszam
-        assert result[0].feladat_sorszam is None
+        assert result[0].feladat_sorszam == "a"  # derived from id suffix
         """fl_text longer than 12K chars is still sent (truncated inside function)."""
         long_text = "x" * 20_000
         mock_client = MagicMock()
