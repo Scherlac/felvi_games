@@ -19,9 +19,15 @@ MODEL = os.getenv("LLM_MODEL", "gpt-4o")
 # Feladatbank betöltése
 # ---------------------------------------------------------------------------
 
+def _data_dir() -> "Path":
+    from pathlib import Path
+    # src/felvi_games/app.py → ../../.. → project root → data/
+    return Path(__file__).parent.parent.parent / "data"
+
+
 @st.cache_data
 def load_feladatok():
-    path = os.path.join(os.path.dirname(__file__), "feladatok.json")
+    path = _data_dir() / "feladatok.json"
     with open(path, encoding="utf-8") as f:
         return json.load(f)
 
