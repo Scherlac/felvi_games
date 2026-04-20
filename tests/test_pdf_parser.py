@@ -100,10 +100,13 @@ class TestPdfToText:
 
 class TestIdPrefix:
     def test_matek_prefix(self):
-        assert _id_prefix_from_source("M8_2025_1_fl.pdf", "matek") == "mat_2025_1"
+        assert _id_prefix_from_source("M8_2025_1_fl.pdf", "matek") == "mat8_2025_1"
 
     def test_magyar_prefix(self):
-        assert _id_prefix_from_source("A8_2024_2_fl.pdf", "magyar") == "mag_2024_2"
+        assert _id_prefix_from_source("A8_2024_2_fl.pdf", "magyar") == "mag8_2024_2"
+
+    def test_4osztaly_prefix(self):
+        assert _id_prefix_from_source("M4_2025_1_fl.pdf", "matek") == "mat4_2025_1"
 
     def test_handles_missing_parts_gracefully(self):
         prefix = _id_prefix_from_source("unknown.pdf", "matek")
@@ -113,15 +116,19 @@ class TestIdPrefix:
 class TestParseFilenameMeta:
     def test_matek_feladatlap(self):
         m = parse_filename_meta("M8_2025_1_fl.pdf")
-        assert m == {"ev": 2025, "valtozat": 1, "kind": "fl", "targy": "matek"}
+        assert m == {"ev": 2025, "valtozat": 1, "kind": "fl", "targy": "matek", "szint": "8 osztályos"}
 
     def test_magyar_utmutato(self):
         m = parse_filename_meta("A8_2024_2_ut.pdf")
-        assert m == {"ev": 2024, "valtozat": 2, "kind": "ut", "targy": "magyar"}
+        assert m == {"ev": 2024, "valtozat": 2, "kind": "ut", "targy": "magyar", "szint": "8 osztályos"}
+
+    def test_4osztaly_feladatlap(self):
+        m = parse_filename_meta("M4_2025_1_fl.pdf")
+        assert m == {"ev": 2025, "valtozat": 1, "kind": "fl", "targy": "matek", "szint": "4 osztályos"}
 
     def test_unknown_filename_returns_nones(self):
         m = parse_filename_meta("random.pdf")
-        assert m == {"ev": None, "valtozat": None, "kind": None, "targy": None}
+        assert m == {"ev": None, "valtozat": None, "kind": None, "targy": None, "szint": None}
 
     def test_lowercase_prefix_accepted(self):
         m = parse_filename_meta("m8_2026_1_fl.pdf")

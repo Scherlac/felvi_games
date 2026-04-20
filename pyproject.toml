@@ -15,6 +15,7 @@ dependencies = [
     "beautifulsoup4>=4.12.0",
     "pdftotext>=2.2.0",  # conda-forge: conda install -c conda-forge pdftotext
     "sqlalchemy>=2.0.0",
+    "typer>=0.12.0",
 ]
 
 [project.optional-dependencies]
@@ -32,8 +33,7 @@ source = ["src/felvi_games"]
 omit = ["*/app.py"]  # Streamlit UI – skip in unit tests
 
 [project.scripts]
-felvi-scraper = "felvi_games.scraper:main"
-felvi-parse   = "felvi_games.pdf_parser:main"
+felvi = "felvi_games.cli:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]

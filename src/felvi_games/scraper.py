@@ -34,7 +34,6 @@ Közvetlen futtatás (fejlesztéshez):
   python -m felvi_games.scraper
 """
 
-import argparse
 import re
 import time
 import zipfile
@@ -45,6 +44,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from felvi_games.models import KATEGORIA_INFO, KategoriaKulcs, KategoriaNevezektan  # noqa: F401
+from felvi_games.config import get_exams_dir
 
 # ---------------------------------------------------------------------------
 # Konstansok
@@ -67,7 +67,7 @@ HEADERS = {
 
 # Project root = src/felvi_games/../../.. → three levels up from this file
 _PROJECT_ROOT = Path(__file__).parent.parent.parent
-OUTPUT_DIR = _PROJECT_ROOT / "exams"
+OUTPUT_DIR = get_exams_dir()
 
 # Delay letöltések között (másodperc) – udvariasság a szervernek
 REQUEST_DELAY = 0.8
@@ -315,60 +315,30 @@ def download_file(url: str, dest: Path) -> bool:
 # Főprogram
 # ---------------------------------------------------------------------------
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="oktatas.hu felvételi feladatsor letöltő"
-    )
-    parser.add_argument(
-        "--zip",
-        action="store_true",
-        help=(
-            "Bulk ZIP letöltés (gyors, minden évet egyszerre). "
-            "Kombináld --only-val a kategória szűréséhez."
-        ),
-    )
-    parser.add_argument(
-        "--years",
-        type=int,
-        default=0,
-        help="Csak az utolsó N évet töltse le (0 = mind, csak PDF módban)",
-    )
-    parser.add_argument(
-        "--only",
-        choices=_CLI_KULCSOK,
-        default=None,
-        help="Csak egy kategória: 4 (4 oszt.), 6 (6 oszt.) vagy 8 (8 oszt.)",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Csak listázza a találtakat, nem tölt le semmit",
-    )
-    parser.add_argument(
-        "--output",
-        default=str(_PROJECT_ROOT / "exams"),
-        help="Kimeneti mappa (alap: <project_root>/exams)",
-    )
-    args = parser.parse_args()
-
+def run(
+    zip_mode: bool = False,
+    years: int = 0,
+    only: str | None = None,
+    dry_run: bool = False,
+    output: Path | None = None,
+) -> None:
+    """Letölti a feladatsorokat. Hívható kódból vagy a CLI-ből."""
     global OUTPUT_DIR
-    OUTPUT_DIR = Path(args.output)
+    OUTPUT_DIR = output or get_exams_dir()
 
     # -----------------------------------------------------------------------
     # ZIP mód: bulk letöltés és kicsomagolás
     # -----------------------------------------------------------------------
-    if args.zip:
+    if zip_mode:
         targets = (
-            {args.only: BULK_ZIPS[args.only]}
-            if args.only
+            {only: BULK_ZIPS[only]}
+            if only
             else BULK_ZIPS
         )
         for evfolyam, (url, subdir) in targets.items():
             print(f"\n[{evfolyam}. évfolyam] {url}")
-            download_and_extract_zip(
-                url, OUTPUT_DIR / subdir, dry_run=args.dry_run
-            )
-        if not args.dry_run:
+            download_and_extract_zip(url, OUTPUT_DIR / subdir, dry_run=dry_run)
+        if not dry_run:
             print(f"\n✓ Kész! Fájlok helye: {OUTPUT_DIR.resolve()}")
         return
 
@@ -376,22 +346,21 @@ def main():
     year_links = scrape_year_links()
 
     # Szűrés kategóriára
-    if args.only:
-        kat_filter = _CLI_TO_MAPPA[args.only]
+    if only:
+        kat_filter = _CLI_TO_MAPPA[only]
         year_links = [l for l in year_links if l["kategoria"] == kat_filter]
 
     # Szűrés évre
-    if args.years > 0:
+    if years > 0:
         all_years = sorted(
             {l["year"] for l in year_links}, reverse=True
-        )[: args.years]
+        )[:years]
         year_links = [l for l in year_links if l["year"] in all_years]
 
     year_links.sort(key=lambda x: (x["year"], x["kategoria"]), reverse=True)
 
     total_downloaded = 0
     total_skipped = 0
-    total_errors = 0
 
     for entry in year_links:
         year = entry["year"]
@@ -410,7 +379,7 @@ def main():
             dest_dir = OUTPUT_DIR / kat / year
             dest = dest_dir / item["filename"]
 
-            if args.dry_run:
+            if dry_run:
                 print(f"  [DRY] {dest} ← {item['url']}")
                 continue
 
@@ -420,14 +389,14 @@ def main():
             else:
                 total_skipped += 1
 
-    if not args.dry_run:
+    if not dry_run:
         print(
             f"\n✓ Kész! Letöltve: {total_downloaded}, "
-            f"Kihagyva (már megvolt): {total_skipped}, "
-            f"Hiba: {total_errors}"
+            f"Kihagyva (már megvolt): {total_skipped}"
         )
         print(f"Fájlok helye: {OUTPUT_DIR.resolve()}")
 
 
 if __name__ == "__main__":
-    main()
+    from felvi_games.cli import app
+    app(["scrape"], standalone_mode=True)

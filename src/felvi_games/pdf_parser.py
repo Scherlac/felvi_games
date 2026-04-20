@@ -30,7 +30,7 @@ import pdftotext
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from felvi_games.config import get_exams_dir, relative_text_path, text_cache_path
+from felvi_games.config import get_db_path, get_exams_dir, relative_text_path, text_cache_path
 from felvi_games.db import FeladatRepository
 from felvi_games.models import Feladat
 from felvi_games.review import print_feladat, review_feladatok
@@ -43,11 +43,15 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-_EXAMS_DIR = Path(__file__).parent.parent.parent / "exams"
-_DB_PATH = Path(__file__).parent.parent.parent / "data" / "felvi.db"
-
 # Filename prefix → subject name
 _TARGY_MAP: dict[str, str] = {"A": "magyar", "M": "matek"}
+
+# Filename gym-type number → szint_ertek (matches models.KATEGORIA_INFO)
+# A fájlnévben lévő szám a TANULÓ jelenlegi évfolyamát jelöli:
+# A8_ / M8_ → 8. osztályos tanuló → 4 osztályos gimnázium felvételi
+# A6_ / M6_ → 6. osztályos tanuló → 6 osztályos gimnázium felvételi
+# A4_ / M4_ → 4. osztályos tanuló → 8 osztályos gimnázium felvételi
+_SZINT_MAP: dict[int, str] = {8: "4 osztályos", 6: "6 osztályos", 4: "8 osztályos"}
 
 # Difficulty descriptions passed to GPT
 _NEH_SCALE = (
@@ -84,7 +88,7 @@ _USER_TEMPLATE = """\
 ## Sorozat adatok
 - Tantárgy: {targy}
 - Forrás PDF: {pdf_source}
-- Évfolyam: 9 osztályos
+- Szint: {szint}
 
 ## Feladatlap szövege
 {fl_text}
@@ -103,7 +107,7 @@ Az érték egy lista; minden elem tartalmazza:
 - "hint": string – egy segítő tipp a megoldáshoz (max 1 mondat)
 - "magyarazat": string – rövid magyarázat miért helyes (max 2 mondat)
 - "neh": int – nehézség 1–3 ({neh_scale})
-- "szint": "9 osztályos"
+- "szint": "{szint}"
 - "kontextus": string | null – ha a feladat egy közös bevezető szövegre, ábrára vagy
   táblázatra hivatkozik, ide másold be a teljes közös szöveget; egyébként null
 - "abra_van": bool – true ha a feladat szövege ábrára, grafikonra vagy rajzra hivatkozik
@@ -142,6 +146,7 @@ def extract_feladatok(
     meta = parse_filename_meta(pdf_source)
     id_prefix = _id_prefix_from_source(pdf_source, targy)
 
+    szint = meta.get("szint") or "(ismeretlen szint)"
     prompt = _USER_TEMPLATE.format(
         targy=targy,
         pdf_source=pdf_source,
@@ -152,6 +157,7 @@ def extract_feladatok(
         ut_text=ut_text[:6_000],
         id_prefix=id_prefix,
         neh_scale=_NEH_SCALE,
+        szint=szint,
     )
 
     logger.info("Calling GPT for %s …", pdf_source)
@@ -183,34 +189,37 @@ def extract_feladatok(
 
 
 def _id_prefix_from_source(pdf_source: str, targy: str) -> str:
-    """'M8_2025_1_fl.pdf' → 'mat_2025_1'."""
+    """'M8_2025_1_fl.pdf' → 'mat4_2025_1' / 'mat8_2025_1'."""
     meta = parse_filename_meta(pdf_source)
     year = str(meta["ev"]) if meta["ev"] else "xx"
     seq = str(meta["valtozat"]) if meta["valtozat"] else "1"
+    szint = meta.get("szint") or ""
+    gym_num = szint.split()[0] if szint else ""   # "4", "6", "8" or ""
     short = "mat" if targy == "matek" else "mag"
-    return f"{short}_{year}_{seq}"
+    return f"{short}{gym_num}_{year}_{seq}"
 
 
 def parse_filename_meta(filename: str) -> dict:
     """Extract structured metadata from a felvételi PDF filename.
 
-    'M8_2025_1_fl.pdf' → {'ev': 2025, 'valtozat': 1, 'kind': 'fl', 'targy': 'matek'}
-    'A8_2024_2_ut.pdf' → {'ev': 2024, 'valtozat': 2, 'kind': 'ut', 'targy': 'magyar'}
+    'M8_2025_1_fl.pdf' → {'ev': 2025, 'valtozat': 1, 'kind': 'fl', 'targy': 'matek', 'szint': '8 osztályos'}
+    'A4_2025_2_ut.pdf' → {'ev': 2025, 'valtozat': 2, 'kind': 'ut', 'targy': 'magyar', 'szint': '4 osztályos'}
     Returns None values for any field that cannot be parsed.
     """
     m = re.match(
-        r"^([AM])8_(\d{4})_(\d+)_(fl|ut)\.pdf$",
+        r"^([AM])(\d+)_(\d{4})_(\d+)_(fl|ut)\.pdf$",
         Path(filename).name,
         re.IGNORECASE,
     )
     if not m:
-        return {"ev": None, "valtozat": None, "kind": None, "targy": None}
-    prefix, year, seq, kind = m.groups()
+        return {"ev": None, "valtozat": None, "kind": None, "targy": None, "szint": None}
+    prefix, gym_num, year, seq, kind = m.groups()
     return {
         "ev": int(year),
         "valtozat": int(seq),
         "kind": kind.lower(),
         "targy": _TARGY_MAP.get(prefix.upper()),
+        "szint": _SZINT_MAP.get(int(gym_num)),
     }
 
 
@@ -257,17 +266,23 @@ def _dict_to_feladat(d: dict) -> Feladat:
 # ---------------------------------------------------------------------------
 
 
-def find_exam_pairs(exams_dir: Path = _EXAMS_DIR) -> Iterator[tuple[Path, Path, str]]:
+def find_exam_pairs(exams_dir: Path | None = None) -> Iterator[tuple[Path, Path, str]]:
     """Yield (fl_path, ut_path, targy) for every matched feladatlap+útmutató pair."""
-    pattern = re.compile(r"^([AM])8_\d{4}_\d+_fl\.pdf$", re.IGNORECASE)
+    if exams_dir is None:
+        exams_dir = get_exams_dir()
+    pattern = re.compile(r"^([AM])(\d+)_\d{4}_\d+_fl\.pdf$", re.IGNORECASE)
 
     for fl_path in sorted(exams_dir.rglob("*_fl.pdf")):
         m = pattern.match(fl_path.name)
         if not m:
             continue
         prefix_letter = m.group(1).upper()
+        gym_num = int(m.group(2))
         targy = _TARGY_MAP.get(prefix_letter)
         if targy is None:
+            continue
+        if gym_num not in _SZINT_MAP:
+            logger.warning("Ismeretlen évfolyamszám (%s) – kihagyva: %s", gym_num, fl_path.name)
             continue
 
         ut_name = fl_path.name.replace("_fl.pdf", "_ut.pdf")
@@ -341,35 +356,20 @@ def _save_text_cache(text: str, pdf_stem: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def main(argv: list[str] | None = None) -> None:  # noqa: C901
-    """CLI entry point: felvi-parse
-
-    Usage:
-      felvi-parse                        # process all unprocessed pairs (no review)
-      felvi-parse --review               # run interactive CLI review after extraction
-      felvi-parse --year 2025            # only exams from 2025
-      felvi-parse --targy matek          # only one subject
-      felvi-parse --dry-run              # extract but do NOT save to DB
-      felvi-parse --model gpt-4o-mini    # override LLM model
-    """
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        prog="felvi-parse",
-        description="Extract felvételi feladatok from PDF pairs into the DB.",
-    )
-    parser.add_argument("--year", type=int, help="Only process exams from this year")
-    parser.add_argument("--targy", choices=["matek", "magyar"], help="Subject filter")
-    parser.add_argument("--dry-run", action="store_true", help="Do not save to DB")
-    parser.add_argument("--review", action="store_true", help="Run interactive CLI review after extraction")
-    parser.add_argument("--model", default=None, help="Override LLM model name")
-    parser.add_argument("--exams-dir", default=str(_EXAMS_DIR), help="Path to exams folder")
-    parser.add_argument("--limit", type=int, default=0, help="Max exam pairs to process")
-    args = parser.parse_args(argv)
-
+def run(
+    year: int | None = None,
+    targy: str | None = None,
+    szint: str | None = None,
+    dry_run: bool = False,
+    review: bool = False,
+    model: str | None = None,
+    exams_dir: Path | None = None,
+    limit: int = 0,
+) -> None:
+    """Feldolgozza a PDF párokat és elmenti a feladatokat a DB-be."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
-    repo = FeladatRepository(db_path=_DB_PATH) if not args.dry_run else None
+    repo = FeladatRepository(db_path=get_db_path()) if not dry_run else None
 
     # Build set of already-processed pdf_sources to skip
     already_done: set[str] = set()
@@ -378,20 +378,24 @@ def main(argv: list[str] | None = None) -> None:  # noqa: C901
             if f.pdf_source:
                 already_done.add(f.pdf_source)
 
-    exams_dir = Path(args.exams_dir)
-    pairs = list(find_exam_pairs(exams_dir))
+    ed = exams_dir or get_exams_dir()
+    pairs = list(find_exam_pairs(ed))
 
     # Apply filters
-    if args.year:
-        pairs = [(fl, ut, t) for fl, ut, t in pairs if str(args.year) in fl.parts]
-    if args.targy:
-        pairs = [(fl, ut, t) for fl, ut, t in pairs if t == args.targy]
+    if year:
+        pairs = [(fl, ut, t) for fl, ut, t in pairs if str(year) in fl.name]
+    if targy:
+        pairs = [(fl, ut, t) for fl, ut, t in pairs if t == targy]
+    if szint:
+        szint_filter = _SZINT_MAP[int(szint)]
+        pairs = [(fl, ut, t) for fl, ut, t in pairs
+                 if parse_filename_meta(fl.name).get("szint") == szint_filter]
 
     # Skip already processed
     pairs = [(fl, ut, t) for fl, ut, t in pairs if fl.name not in already_done]
 
-    if args.limit:
-        pairs = pairs[: args.limit]
+    if limit:
+        pairs = pairs[:limit]
 
     if not pairs:
         print("Nincs feldolgozandó PDF pár.")
@@ -400,15 +404,15 @@ def main(argv: list[str] | None = None) -> None:  # noqa: C901
     print(f"Feldolgozandó PDF párok: {len(pairs)}")
     total_saved = 0
 
-    for fl_path, ut_path, targy in pairs:
+    for fl_path, ut_path, targy_val in pairs:
         print(f"\n{'─'*60}")
         print(f"  Feladatlap : {fl_path}")
         print(f"  Útmutató   : {ut_path}")
-        print(f"  Tantárgy   : {targy}")
+        print(f"  Tantárgy   : {targy_val}")
         print(f"{'─'*60}")
 
         try:
-            feladatok = parse_exam(fl_path, ut_path, targy, model=args.model)
+            feladatok = parse_exam(fl_path, ut_path, targy_val, model=model)
         except Exception as exc:
             logger.error("Extraction failed for %s: %s", fl_path.name, exc)
             continue
@@ -419,7 +423,7 @@ def main(argv: list[str] | None = None) -> None:  # noqa: C901
 
         print(f"  Extrahált feladatok: {len(feladatok)}")
 
-        if args.review:
+        if review:
             feladatok = review_feladatok(feladatok)
 
         if not feladatok:
@@ -439,4 +443,5 @@ def main(argv: list[str] | None = None) -> None:  # noqa: C901
 
 
 if __name__ == "__main__":
-    main()
+    from felvi_games.cli import app
+    app(["parse"], standalone_mode=True)
