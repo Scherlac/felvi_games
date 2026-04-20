@@ -30,7 +30,7 @@ import pdftotext
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from felvi_games.config import relative_text_path, text_cache_path
+from felvi_games.config import get_exams_dir, relative_text_path, text_cache_path
 from felvi_games.db import FeladatRepository
 from felvi_games.models import Feladat
 
@@ -61,10 +61,11 @@ _NEH_SCALE = (
 
 
 def pdf_to_text(path: Path) -> str:
-    """Extract all pages from *path* and return them joined as one string."""
+    """Extract all pages from *path* and return them joined as one string.
+    Each page is prefixed with [Oldal N] so GPT can identify page numbers."""
     with open(path, "rb") as fh:
         pages = list(pdftotext.PDF(fh))
-    return "\n\n".join(pages)
+    return "\n\n".join(f"[Oldal {i + 1}]\n{page}" for i, page in enumerate(pages))
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +105,9 @@ Az érték egy lista; minden elem tartalmazza:
 - "szint": "9 osztályos"
 - "kontextus": string | null – ha a feladat egy közös bevezető szövegre, ábrára vagy
   táblázatra hivatkozik, ide másold be a teljes közös szöveget; egyébként null
+- "abra_van": bool – true ha a feladat szövege ábrára, grafikonra vagy rajzra hivatkozik
+- "feladat_oldal": int | null – a PDF [Oldal N] jelölő alapján az az oldalszám, ahol
+  a feladat (vagy az ábra) megjelenik; ha nem azonosítható egytelműen, null
 
 A szöveg magyar; hagyj minden szaktermint, nevet, számot magyarul.
 Ne generálj feladatot, ha a szövegből nem olvasható ki egyértelműen a helyes válasz.
@@ -167,8 +171,6 @@ def extract_feladatok(
     for item in items:
         try:
             item["targy"] = targy
-            item["pdf_source"] = pdf_source
-            item["ut_source"] = ut_source
             item.setdefault("ev", meta["ev"])
             item.setdefault("valtozat", meta["valtozat"])
             feladatok.append(_dict_to_feladat(item))
@@ -240,12 +242,12 @@ def _dict_to_feladat(d: dict) -> Feladat:
         hint=str(d["hint"]),
         magyarazat=str(d["magyarazat"]),
         targy=str(d.get("targy", "")),
-        pdf_source=str(d.get("pdf_source", "")) or None,
-        ut_source=str(d.get("ut_source", "")) or None,
         ev=int(ev_raw) if ev_raw is not None else None,
         valtozat=int(val_raw) if val_raw is not None else None,
         feladat_sorszam=str(raw_sorszam) if raw_sorszam else None,
         kontextus=str(d["kontextus"]) if d.get("kontextus") else None,
+        abra_van=bool(d.get("abra_van", False)),
+        feladat_oldal=int(d["feladat_oldal"]) if d.get("feladat_oldal") else None,
     )
 
 
@@ -306,6 +308,8 @@ def _print_feladat(f: Feladat) -> None:
         ("ev / valtozat", f"{f.ev or '-'} / {f.valtozat or '-'}"),
         ("pdf_source", f.pdf_source or "-"),
         ("ut_source", f.ut_source or "-"),
+        ("abra_van", str(f.abra_van)),
+        ("feladat_oldal", str(f.feladat_oldal) if f.feladat_oldal else "-"),
         ("kontextus", (f.kontextus[:120] + "…") if f.kontextus and len(f.kontextus) > 120 else (f.kontextus or "-")),
         ("kerdes", f.kerdes),
         ("helyes_valasz", f.helyes_valasz),
@@ -342,8 +346,7 @@ def _edit_feladat(f: Feladat) -> Feladat:
         "helyes_valasz": updates.get("helyes_valasz", f.helyes_valasz),
         "hint": updates.get("hint", f.hint),
         "magyarazat": updates.get("magyarazat", f.magyarazat),
-        "targy": f.targy, "pdf_source": f.pdf_source,
-        "ut_source": f.ut_source,
+        "targy": f.targy,
         "ev": f.ev, "valtozat": f.valtozat,
         "feladat_sorszam": f.feladat_sorszam,
     }
@@ -407,9 +410,25 @@ def parse_exam(
         ut_source=ut_path.name,
         model=model,
     )
-    # Attach text-cache paths to every extracted feladat
+    # Attach text-cache paths and PDF paths to every extracted feladat
+    try:
+        fl_pdf_rel = str(fl_path.relative_to(get_exams_dir()))
+    except ValueError:
+        fl_pdf_rel = None
+
+    try:
+        ut_pdf_rel = str(ut_path.relative_to(get_exams_dir()))
+    except ValueError:
+        ut_pdf_rel = None
+
     return [
-        dataclasses.replace(f, fl_szoveg_path=fl_rel, ut_szoveg_path=ut_rel)
+        dataclasses.replace(
+            f,
+            fl_szoveg_path=fl_rel,
+            ut_szoveg_path=ut_rel,
+            fl_pdf_path=fl_pdf_rel,
+            ut_pdf_path=ut_pdf_rel,
+        )
         for f in feladatok
     ]
 

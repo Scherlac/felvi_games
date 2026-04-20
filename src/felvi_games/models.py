@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -28,8 +29,6 @@ class Feladat:
     magyarazat: str
     # --- exam provenance ---
     targy: str = ""
-    pdf_source: str | None = None        # feladatlap PDF filename (e.g. M8_2025_1_fl.pdf)
-    ut_source: str | None = None         # útmutató PDF filename  (e.g. M8_2025_1_ut.pdf)
     ev: int | None = None                # exam year (e.g. 2025)
     valtozat: int | None = None          # variant within year (1 or 2)
     feladat_sorszam: str | None = None   # position in exam (e.g. "1a", "2b", "3")
@@ -38,8 +37,22 @@ class Feladat:
     tts_magyarazat_path: str | None = None  # relative path to TTS MP3 for the explanation
     # --- extraction context ---
     kontextus: str | None = None            # shared preamble/table/figure text (GPT-extracted)
+    abra_van: bool = False                  # True if task references a figure/graph
+    feladat_oldal: int | None = None        # PDF page number where the task appears
     fl_szoveg_path: str | None = None       # relative path to cached feladatlap plain text
     ut_szoveg_path: str | None = None       # relative path to cached útmutató plain text
+    fl_pdf_path: str | None = None          # relative path to feladatlap PDF (under exams dir)
+    ut_pdf_path: str | None = None          # relative path to útmutató PDF (under exams dir)
+
+    @property
+    def pdf_source(self) -> str | None:
+        """Feladatlap PDF filename, derived from fl_pdf_path."""
+        return Path(self.fl_pdf_path).name if self.fl_pdf_path else None
+
+    @property
+    def ut_source(self) -> str | None:
+        """Útmutató PDF filename, derived from ut_pdf_path."""
+        return Path(self.ut_pdf_path).name if self.ut_pdf_path else None
 
     @classmethod
     def from_dict(cls, d: dict, targy: str = "") -> "Feladat":
@@ -54,12 +67,12 @@ class Feladat:
             hint=d["hint"],
             magyarazat=d["magyarazat"],
             targy=targy or d.get("targy", ""),
-            pdf_source=d.get("pdf_source"),
-            ut_source=d.get("ut_source"),
             ev=int(ev_raw) if ev_raw is not None else None,
             valtozat=int(val_raw) if val_raw is not None else None,
             feladat_sorszam=d.get("feladat_sorszam"),
             kontextus=d.get("kontextus"),
+            abra_van=bool(d.get("abra_van", False)),
+            feladat_oldal=int(d["feladat_oldal"]) if d.get("feladat_oldal") else None,
         )
     @classmethod
     def from_record(cls, r: "FeladatRecord") -> "Feladat":
@@ -72,16 +85,18 @@ class Feladat:
             hint=r.hint,
             magyarazat=r.magyarazat,
             targy=r.targy,
-            pdf_source=r.pdf_source,
-            ut_source=r.ut_source,
             ev=r.ev,
             valtozat=r.valtozat,
             feladat_sorszam=r.feladat_sorszam,
             tts_kerdes_path=r.tts_kerdes_path,
             tts_magyarazat_path=r.tts_magyarazat_path,
             kontextus=r.kontextus,
+            abra_van=r.abra_van,
+            feladat_oldal=r.feladat_oldal,
             fl_szoveg_path=r.fl_szoveg_path,
             ut_szoveg_path=r.ut_szoveg_path,
+            fl_pdf_path=r.fl_pdf_path,
+            ut_pdf_path=r.ut_pdf_path,
         )
 
     def with_assets(

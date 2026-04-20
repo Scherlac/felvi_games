@@ -45,6 +45,15 @@ def get_assets_dir() -> Path:
     return get_db_path().parent / "assets"
 
 
+def get_exams_dir() -> Path:
+    """Root folder for downloaded exam PDFs.
+    Env var FELVI_EXAMS overrides; default: <project_root>/exams."""
+    raw = os.environ.get("FELVI_EXAMS", "")
+    if raw:
+        return Path(raw)
+    return _PROJECT_ROOT / "exams"
+
+
 # ---------------------------------------------------------------------------
 # Asset path helpers
 # ---------------------------------------------------------------------------

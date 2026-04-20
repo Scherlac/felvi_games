@@ -67,8 +67,6 @@ class FeladatRecord(Base):
     magyarazat: Mapped[str] = mapped_column(Text, nullable=False)
 
     # Source tracking
-    pdf_source: Mapped[str | None] = mapped_column(String(256), nullable=True)
-    ut_source: Mapped[str | None] = mapped_column(String(256), nullable=True, index=True)
     ev: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     valtozat: Mapped[int | None] = mapped_column(Integer, nullable=True)
     feladat_sorszam: Mapped[str | None] = mapped_column(String(16), nullable=True)
@@ -79,8 +77,12 @@ class FeladatRecord(Base):
 
     # Extraction context
     kontextus: Mapped[str | None] = mapped_column(Text, nullable=True)
+    abra_van: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    feladat_oldal: Mapped[int | None] = mapped_column(Integer, nullable=True)
     fl_szoveg_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     ut_szoveg_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    fl_pdf_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    ut_pdf_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
@@ -152,8 +154,6 @@ class FeladatRepository:
                 existing.helyes_valasz = feladat.helyes_valasz
                 existing.hint = feladat.hint
                 existing.magyarazat = feladat.magyarazat
-                existing.pdf_source = feladat.pdf_source
-                existing.ut_source = feladat.ut_source
                 existing.ev = feladat.ev
                 existing.valtozat = feladat.valtozat
                 existing.feladat_sorszam = feladat.feladat_sorszam
@@ -161,12 +161,17 @@ class FeladatRepository:
                     existing.tts_kerdes_path = feladat.tts_kerdes_path
                 if feladat.tts_magyarazat_path is not None:
                     existing.tts_magyarazat_path = feladat.tts_magyarazat_path
-                if feladat.kontextus is not None:
-                    existing.kontextus = feladat.kontextus
+                existing.kontextus = feladat.kontextus
+                existing.abra_van = feladat.abra_van
+                existing.feladat_oldal = feladat.feladat_oldal
                 if feladat.fl_szoveg_path is not None:
                     existing.fl_szoveg_path = feladat.fl_szoveg_path
                 if feladat.ut_szoveg_path is not None:
                     existing.ut_szoveg_path = feladat.ut_szoveg_path
+                if feladat.fl_pdf_path is not None:
+                    existing.fl_pdf_path = feladat.fl_pdf_path
+                if feladat.ut_pdf_path is not None:
+                    existing.ut_pdf_path = feladat.ut_pdf_path
                 existing.updated_at = datetime.now(timezone.utc)
             else:
                 session.add(FeladatRecord(
@@ -178,16 +183,18 @@ class FeladatRepository:
                     helyes_valasz=feladat.helyes_valasz,
                     hint=feladat.hint,
                     magyarazat=feladat.magyarazat,
-                    pdf_source=feladat.pdf_source,
-                    ut_source=feladat.ut_source,
                     ev=feladat.ev,
                     valtozat=feladat.valtozat,
                     feladat_sorszam=feladat.feladat_sorszam,
                     tts_kerdes_path=feladat.tts_kerdes_path,
                     tts_magyarazat_path=feladat.tts_magyarazat_path,
                     kontextus=feladat.kontextus,
+                    abra_van=feladat.abra_van,
+                    feladat_oldal=feladat.feladat_oldal,
                     fl_szoveg_path=feladat.fl_szoveg_path,
                     ut_szoveg_path=feladat.ut_szoveg_path,
+                    fl_pdf_path=feladat.fl_pdf_path,
+                    ut_pdf_path=feladat.ut_pdf_path,
                 ))
             session.commit()
 
@@ -209,16 +216,18 @@ class FeladatRepository:
                         id=f.id, targy=f.targy, neh=f.neh, szint=f.szint,
                         kerdes=f.kerdes, helyes_valasz=f.helyes_valasz,
                         hint=f.hint, magyarazat=f.magyarazat,
-                        pdf_source=f.pdf_source,
-                        ut_source=f.ut_source,
                         ev=f.ev,
                         valtozat=f.valtozat,
                         feladat_sorszam=f.feladat_sorszam,
                         tts_kerdes_path=f.tts_kerdes_path,
                         tts_magyarazat_path=f.tts_magyarazat_path,
                         kontextus=f.kontextus,
+                        abra_van=f.abra_van,
+                        feladat_oldal=f.feladat_oldal,
                         fl_szoveg_path=f.fl_szoveg_path,
                         ut_szoveg_path=f.ut_szoveg_path,
+                        fl_pdf_path=f.fl_pdf_path,
+                        ut_pdf_path=f.ut_pdf_path,
                         updated_at=now,
                     ))
                 else:
@@ -226,16 +235,18 @@ class FeladatRepository:
                         id=f.id, targy=f.targy, neh=f.neh, szint=f.szint,
                         kerdes=f.kerdes, helyes_valasz=f.helyes_valasz,
                         hint=f.hint, magyarazat=f.magyarazat,
-                        pdf_source=f.pdf_source,
-                        ut_source=f.ut_source,
                         ev=f.ev,
                         valtozat=f.valtozat,
                         feladat_sorszam=f.feladat_sorszam,
                         tts_kerdes_path=f.tts_kerdes_path,
                         tts_magyarazat_path=f.tts_magyarazat_path,
                         kontextus=f.kontextus,
+                        abra_van=f.abra_van,
+                        feladat_oldal=f.feladat_oldal,
                         fl_szoveg_path=f.fl_szoveg_path,
                         ut_szoveg_path=f.ut_szoveg_path,
+                        fl_pdf_path=f.fl_pdf_path,
+                        ut_pdf_path=f.ut_pdf_path,
                     ))
             session.commit()
 

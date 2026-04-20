@@ -9,7 +9,7 @@ from pathlib import Path
 import streamlit as st
 
 from felvi_games.ai import check_answer, speech_to_text, text_to_speech
-from felvi_games.config import resolve_asset, text_cache_path
+from felvi_games.config import get_exams_dir, resolve_asset, text_cache_path
 from felvi_games.db import FeladatRepository
 from felvi_games.models import KATEGORIA_INFO, Ertekeles, Fazis, Feladat, GameState
 
@@ -186,6 +186,14 @@ def _render_kerdes(gs: GameState) -> None:
 
     st.info(f"**{feladat.kerdes}**")
 
+    if feladat.abra_van:
+        page_hint = f"\n\n📍 Feladat helye: **{feladat.feladat_oldal}. oldal**" if feladat.feladat_oldal else ""
+        st.warning(
+            "⚠️ Ez a feladat ábrára / grafikonra hivatkozik – "
+            f"az alábbi gombbal nyisd meg az eredeti feladatlapot!{page_hint}"
+        )
+    _render_pdf_button(feladat)
+
     col_tts, col_hint = st.columns(2)
     with col_tts:
         if st.button("🔊 Feladat felolvasása"):
@@ -264,6 +272,7 @@ def _render_eredmeny(feladatok: dict[str, list[Feladat]], gs: GameState) -> None
         st.write(feladat.magyarazat)
         st.markdown(f"**Helyes válasz:** `{feladat.helyes_valasz}`")
 
+    _render_pdf_button(feladat)
     # Source text inspection (both feladatlap and útmutató)
     _render_source_expanders(feladat, show_ut=True)
 
@@ -300,6 +309,23 @@ def _render_eredmeny(feladatok: dict[str, list[Feladat]], gs: GameState) -> None
         if st.button("🏠 Főmenü", use_container_width=True):
             gs.fazis = Fazis.VALASZTAS
             st.rerun()
+
+
+def _render_pdf_button(feladat: Feladat) -> None:
+    """Show a download button for the source feladatlap PDF.
+    Always visible; shows page number when known."""
+    if not feladat.fl_pdf_path:
+        return
+    pdf_path = get_exams_dir() / feladat.fl_pdf_path
+    if not pdf_path.exists():
+        return
+    page_info = f" – {feladat.feladat_oldal}. oldal" if feladat.feladat_oldal else ""
+    st.download_button(
+        label=f"📄 Feladatlap PDF{page_info}",
+        data=pdf_path.read_bytes(),
+        file_name=pdf_path.name,
+        mime="application/pdf",
+    )
 
 
 def _render_source_expanders(feladat: Feladat, *, show_ut: bool) -> None:

@@ -83,7 +83,7 @@ class TestPdfToText:
         pages_mock = ["A", "B", "C"]
         with patch("felvi_games.pdf_parser.pdftotext.PDF", return_value=pages_mock):
             result = pdf_to_text(p)
-        assert result == "A\n\nB\n\nC"
+        assert result == "[Oldal 1]\nA\n\n[Oldal 2]\nB\n\n[Oldal 3]\nC"
 
     def test_empty_pdf_returns_empty_string(self, tmp_path):
         p = tmp_path / "empty.pdf"
@@ -200,9 +200,10 @@ class TestExtractFeladatok:
         result = self._run([_SAMPLE_ITEM], targy="matek")
         assert result[0].targy == "matek"
 
-    def test_pdf_source_injected(self):
+    def test_pdf_source_none_without_parse_exam(self):
+        """pdf_source is derived from fl_pdf_path; extract_feladatok does not set it."""
         result = self._run([_SAMPLE_ITEM])
-        assert result[0].pdf_source == "M8_2025_1_fl.pdf"
+        assert result[0].pdf_source is None
 
     def test_invalid_item_skipped_not_raised(self):
         bad = {k: v for k, v in _SAMPLE_ITEM.items() if k != "hint"}
@@ -226,14 +227,15 @@ class TestExtractFeladatok:
         assert result[0].ev == 2025
         assert result[0].valtozat == 1
 
-    def test_ut_source_propagated(self):
+    def test_ut_source_none_without_parse_exam(self):
+        """ut_source is derived from ut_pdf_path; extract_feladatok does not set it."""
         mock_client = MagicMock()
         mock_client.chat.completions.create.return_value = _gpt_response([_SAMPLE_ITEM])
         with patch("felvi_games.pdf_parser._make_openai_client", return_value=mock_client):
             result = extract_feladatok(
                 "fl", "ut", "matek", "M8_2025_1_fl.pdf", "M8_2025_1_ut.pdf"
             )
-        assert result[0].ut_source == "M8_2025_1_ut.pdf"
+        assert result[0].ut_source is None
 
     def test_feladat_sorszam_from_gpt(self):
         item_with_sorszam = {**_SAMPLE_ITEM, "feladat_sorszam": "1a"}
@@ -340,7 +342,7 @@ class TestParseExam:
         assert len(result) == 1
         assert result[0].targy == "matek"
 
-    def test_pdf_source_set_to_fl_filename(self, tmp_path):
+    def test_pdf_source_set_to_fl_filename(self, tmp_path, monkeypatch):
         fl = tmp_path / "M8_2026_2_fl.pdf"
         ut = tmp_path / "M8_2026_2_ut.pdf"
         fl.write_bytes(b"%PDF placeholder")
@@ -352,7 +354,28 @@ class TestParseExam:
         with (
             patch("felvi_games.pdf_parser.pdftotext.PDF", return_value=["Lap"]),
             patch("felvi_games.pdf_parser._make_openai_client", return_value=mock_client),
+            patch("felvi_games.pdf_parser.get_exams_dir", return_value=tmp_path),
         ):
             result = parse_exam(fl, ut, "matek")
 
+        assert result[0].fl_pdf_path == "M8_2026_2_fl.pdf"
         assert result[0].pdf_source == "M8_2026_2_fl.pdf"
+
+    def test_ut_pdf_path_set_by_parse_exam(self, tmp_path):
+        fl = tmp_path / "M8_2026_2_fl.pdf"
+        ut = tmp_path / "M8_2026_2_ut.pdf"
+        fl.write_bytes(b"%PDF placeholder")
+        ut.write_bytes(b"%PDF placeholder")
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = _gpt_response([_SAMPLE_ITEM])
+
+        with (
+            patch("felvi_games.pdf_parser.pdftotext.PDF", return_value=["Lap"]),
+            patch("felvi_games.pdf_parser._make_openai_client", return_value=mock_client),
+            patch("felvi_games.pdf_parser.get_exams_dir", return_value=tmp_path),
+        ):
+            result = parse_exam(fl, ut, "matek")
+
+        assert result[0].ut_pdf_path == "M8_2026_2_ut.pdf"
+        assert result[0].ut_source == "M8_2026_2_ut.pdf"
