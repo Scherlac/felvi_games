@@ -144,6 +144,10 @@ class FeladatRepository:
                 existing.hint = feladat.hint
                 existing.magyarazat = feladat.magyarazat
                 existing.pdf_source = feladat.pdf_source
+                existing.ut_source = feladat.ut_source
+                existing.ev = feladat.ev
+                existing.valtozat = feladat.valtozat
+                existing.feladat_sorszam = feladat.feladat_sorszam
                 if feladat.tts_kerdes is not None:
                     existing.tts_kerdes = feladat.tts_kerdes
                 if feladat.tts_magyarazat is not None:
@@ -160,6 +164,10 @@ class FeladatRepository:
                     hint=feladat.hint,
                     magyarazat=feladat.magyarazat,
                     pdf_source=feladat.pdf_source,
+                    ut_source=feladat.ut_source,
+                    ev=feladat.ev,
+                    valtozat=feladat.valtozat,
+                    feladat_sorszam=feladat.feladat_sorszam,
                     tts_kerdes=feladat.tts_kerdes,
                     tts_magyarazat=feladat.tts_magyarazat,
                 ))
@@ -184,6 +192,10 @@ class FeladatRepository:
                         kerdes=f.kerdes, helyes_valasz=f.helyes_valasz,
                         hint=f.hint, magyarazat=f.magyarazat,
                         pdf_source=f.pdf_source,
+                        ut_source=f.ut_source,
+                        ev=f.ev,
+                        valtozat=f.valtozat,
+                        feladat_sorszam=f.feladat_sorszam,
                         tts_kerdes=f.tts_kerdes,
                         tts_magyarazat=f.tts_magyarazat,
                         updated_at=now,
@@ -194,6 +206,10 @@ class FeladatRepository:
                         kerdes=f.kerdes, helyes_valasz=f.helyes_valasz,
                         hint=f.hint, magyarazat=f.magyarazat,
                         pdf_source=f.pdf_source,
+                        ut_source=f.ut_source,
+                        ev=f.ev,
+                        valtozat=f.valtozat,
+                        feladat_sorszam=f.feladat_sorszam,
                         tts_kerdes=f.tts_kerdes,
                         tts_magyarazat=f.tts_magyarazat,
                     ))
