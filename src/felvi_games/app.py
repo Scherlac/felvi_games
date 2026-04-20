@@ -100,6 +100,7 @@ def start_kerdes(feladat: Feladat, gs: GameState) -> None:
     gs.kerdes_kezdete = datetime.now(timezone.utc)
     gs.segitseg_kert = False
     gs.hibajelezes = False
+    st.session_state.pop("_stt_hash", None)
     # Auto-load cached TTS from file if available
     if gs.aktualis and gs.aktualis.tts_kerdes_path:
         gs.tts_audio = resolve_asset(gs.aktualis.tts_kerdes_path).read_bytes()
@@ -260,7 +261,7 @@ def _render_kerdes(gs: GameState) -> None:
     with col_hint:
         if st.button("💡 Tipp"):
             gs.segitseg_kert = True
-            st.toast(feladat.hint, icon="💡")
+            st.rerun()
     with col_hiba:
         if st.button("🚩 Hibát jelzek", help="Hibás feladatszöveg bejelentése"):
             gs.hibajelezes = True
@@ -268,6 +269,9 @@ def _render_kerdes(gs: GameState) -> None:
 
     if gs.tts_audio:
         st.audio(gs.tts_audio, format="audio/mp3", autoplay=True)
+
+    if gs.segitseg_kert:
+        st.info(f"💡 **Tipp:** {feladat.hint}")
 
     # Source text inspection
     _render_source_expanders(feladat, show_ut=False)
@@ -277,8 +281,11 @@ def _render_kerdes(gs: GameState) -> None:
 
     audio_input = st.audio_input("🎤 Kattints és mondj egy választ")
     if audio_input:
-        with st.spinner("Átírás (Whisper)..."):
-            gs.atiras = speech_to_text(audio_input.getvalue())
+        audio_hash = hash(audio_input.getvalue())
+        if st.session_state.get("_stt_hash") != audio_hash:
+            st.session_state["_stt_hash"] = audio_hash
+            with st.spinner("Átírás (Whisper)..."):
+                gs.atiras = speech_to_text(audio_input.getvalue())
 
     szoveges = st.text_input(
         "✍️ Vagy írj ide:",
@@ -364,6 +371,22 @@ def _render_eredmeny(feladatok: dict[str, list[Feladat]], gs: GameState) -> None
                 gs.aktualis = updated
             st.audio(audio, format="audio/mp3", autoplay=True)
 
+    # Review section
+    if not feladat.review_elvegezve:
+        st.divider()
+        with st.expander("🔍 Feladat review kérése"):
+            st.caption(
+                "Ha úgy érzed, hogy a feladat vagy a helyes válasz hibás, "
+                "kérhetsz egy AI-alapú felülvizsgálatot."
+            )
+            megjegyzes = st.text_area(
+                "Megjegyzés (opcionális):",
+                placeholder="pl. A helyes válasz nem stimmel, mert…",
+                key=f"review_megjegyzes_{feladat.id}",
+            )
+            if st.button("🤖 AI Review indítása", key=f"review_btn_{feladat.id}"):
+                _run_ai_review(feladat, megjegyzes.strip() or None, gs)
+
     st.divider()
 
     # Session completion banner
@@ -391,6 +414,26 @@ def _render_eredmeny(feladatok: dict[str, list[Feladat]], gs: GameState) -> None
         if st.button("🏠 Főmenü", use_container_width=True):
             gs.fazis = Fazis.VALASZTAS
             st.rerun()
+
+
+def _run_ai_review(feladat: Feladat, megjegyzes: str | None, gs: GameState) -> None:
+    """Trigger an AI review pass, persist results, and update GameState."""
+    from felvi_games.review import review_feladat_ai
+
+    fl_text = ""
+    if feladat.fl_szoveg_path:
+        try:
+            fl_text = resolve_asset(feladat.fl_szoveg_path).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            pass
+
+    with st.spinner("AI ellenőrzi a feladatot…"):
+        reviewed = review_feladat_ai(feladat, fl_text, megjegyzes)
+
+    updated = get_repo().save_review(reviewed, megjegyzes)
+    gs.aktualis = updated
+    st.success("✅ Review kész – feladat frissítve.")
+    st.rerun()
 
 
 def _render_pdf_button(feladat: Feladat) -> None:

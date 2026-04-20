@@ -5,8 +5,8 @@ Pipeline
 1. pdf_to_text()          – pdftotext → one string per PDF
 2. extract_feladatok()    – GPT parses text pair (feladatlap + útmutató)
                             and returns a list of Feladat objects
-3. review_feladatok()     – interactive CLI review (accept / edit / skip)
-4. CLI main()             – glues everything together, upserts into DB
+3. CLI main()             – glues everything together, upserts into DB
+                            (optional: --review to run interactive CLI review)
 
 Filename convention
 -------------------
@@ -33,6 +33,7 @@ from openai import OpenAI
 from felvi_games.config import get_exams_dir, relative_text_path, text_cache_path
 from felvi_games.db import FeladatRepository
 from felvi_games.models import Feladat
+from felvi_games.review import print_feladat, review_feladatok
 
 load_dotenv()
 
@@ -252,112 +253,6 @@ def _dict_to_feladat(d: dict) -> Feladat:
 
 
 # ---------------------------------------------------------------------------
-# Step 3 – interactive review
-# ---------------------------------------------------------------------------
-
-_REVIEW_HELP = """
-Commands:
-  [Enter] / a  – accept as-is
-  e            – edit field(s) interactively
-  s            – skip (discard this feladat)
-  q            – quit review (keep accepted so far)
-"""
-
-
-def review_feladatok(feladatok: list[Feladat]) -> list[Feladat]:
-    """Interactive CLI review.  Returns only the accepted (possibly edited) feladatok."""
-    if not feladatok:
-        print("Nincs extrahált feladat.")
-        return []
-
-    print(_REVIEW_HELP)
-    accepted: list[Feladat] = []
-
-    for i, f in enumerate(feladatok, 1):
-        print(f"\n{'='*60}")
-        print(f"  [{i}/{len(feladatok)}]  {f.id}  |  {f.targy}  |  neh={f.neh}  |  {f.szint}")
-        print(f"{'='*60}")
-        _print_feladat(f)
-
-        while True:
-            cmd = input("\n  > Accept / Edit / Skip / Quit [a/e/s/q]: ").strip().lower()
-            if cmd in ("", "a"):
-                accepted.append(f)
-                print("  ✓ Elfogadva.")
-                break
-            elif cmd == "e":
-                f = _edit_feladat(f)
-                _print_feladat(f)
-            elif cmd == "s":
-                print("  – Kihagyva.")
-                break
-            elif cmd == "q":
-                print(f"\nReview leállítva. Elfogadva: {len(accepted)} feladat.")
-                return accepted
-            else:
-                print("  Érvénytelen parancs. Használj: a / e / s / q")
-
-    print(f"\nReview kész. Elfogadva: {len(accepted)}/{len(feladatok)} feladat.")
-    return accepted
-
-
-def _print_feladat(f: Feladat) -> None:
-    fields = [
-        ("id", f.id),
-        ("feladat_sorszam", f.feladat_sorszam or "-"),
-        ("ev / valtozat", f"{f.ev or '-'} / {f.valtozat or '-'}"),
-        ("pdf_source", f.pdf_source or "-"),
-        ("ut_source", f.ut_source or "-"),
-        ("abra_van", str(f.abra_van)),
-        ("feladat_oldal", str(f.feladat_oldal) if f.feladat_oldal else "-"),
-        ("kontextus", (f.kontextus[:120] + "…") if f.kontextus and len(f.kontextus) > 120 else (f.kontextus or "-")),
-        ("kerdes", f.kerdes),
-        ("helyes_valasz", f.helyes_valasz),
-        ("hint", f.hint),
-        ("magyarazat", f.magyarazat),
-        ("neh", str(f.neh)),
-        ("szint", f.szint),
-    ]
-    for name, value in fields:
-        print(f"  {name:15s}: {value}")
-
-
-def _edit_feladat(f: Feladat) -> Feladat:
-    """Prompt the user to edit individual fields.  Returns new (frozen) Feladat."""
-    editable = ["kerdes", "helyes_valasz", "hint", "magyarazat", "neh", "szint"]
-    print(f"\n  Szerkeszthető mezők: {', '.join(editable)}")
-    print("  (Üres Enter = mező megtartása)")
-
-    updates: dict = {}
-    for field in editable:
-        current = getattr(f, field)
-        val = input(f"  {field} [{current}]: ").strip()
-        if val:
-            updates[field] = val
-
-    if not updates:
-        return f
-
-    # Build a new Feladat with updated fields
-    d = {
-        "id": f.id, "neh": updates.get("neh", f.neh),
-        "szint": updates.get("szint", f.szint),
-        "kerdes": updates.get("kerdes", f.kerdes),
-        "helyes_valasz": updates.get("helyes_valasz", f.helyes_valasz),
-        "hint": updates.get("hint", f.hint),
-        "magyarazat": updates.get("magyarazat", f.magyarazat),
-        "targy": f.targy,
-        "ev": f.ev, "valtozat": f.valtozat,
-        "feladat_sorszam": f.feladat_sorszam,
-    }
-    try:
-        return _dict_to_feladat(d)
-    except (KeyError, ValueError) as exc:
-        print(f"  Szerkesztés sikertelen: {exc}. Eredeti megtartva.")
-        return f
-
-
-# ---------------------------------------------------------------------------
 # Pair discovery
 # ---------------------------------------------------------------------------
 
@@ -450,11 +345,11 @@ def main(argv: list[str] | None = None) -> None:  # noqa: C901
     """CLI entry point: felvi-parse
 
     Usage:
-      felvi-parse                        # process all unprocessed pairs
+      felvi-parse                        # process all unprocessed pairs (no review)
+      felvi-parse --review               # run interactive CLI review after extraction
       felvi-parse --year 2025            # only exams from 2025
       felvi-parse --targy matek          # only one subject
-      felvi-parse --dry-run              # extract + review, but do NOT save to DB
-      felvi-parse --no-review            # skip interactive review (accept all)
+      felvi-parse --dry-run              # extract but do NOT save to DB
       felvi-parse --model gpt-4o-mini    # override LLM model
     """
     import argparse
@@ -466,7 +361,7 @@ def main(argv: list[str] | None = None) -> None:  # noqa: C901
     parser.add_argument("--year", type=int, help="Only process exams from this year")
     parser.add_argument("--targy", choices=["matek", "magyar"], help="Subject filter")
     parser.add_argument("--dry-run", action="store_true", help="Do not save to DB")
-    parser.add_argument("--no-review", action="store_true", help="Accept all without review")
+    parser.add_argument("--review", action="store_true", help="Run interactive CLI review after extraction")
     parser.add_argument("--model", default=None, help="Override LLM model name")
     parser.add_argument("--exams-dir", default=str(_EXAMS_DIR), help="Path to exams folder")
     parser.add_argument("--limit", type=int, default=0, help="Max exam pairs to process")
@@ -524,7 +419,7 @@ def main(argv: list[str] | None = None) -> None:  # noqa: C901
 
         print(f"  Extrahált feladatok: {len(feladatok)}")
 
-        if not args.no_review:
+        if args.review:
             feladatok = review_feladatok(feladatok)
 
         if not feladatok:
@@ -536,7 +431,7 @@ def main(argv: list[str] | None = None) -> None:  # noqa: C901
         else:
             print(f"  [dry-run] Mentett volna: {len(feladatok)} feladat")
             for f in feladatok:
-                _print_feladat(f)
+                print_feladat(f)
 
         total_saved += len(feladatok)
 

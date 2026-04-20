@@ -44,6 +44,8 @@ class Feladat:
     ut_szoveg_path: str | None = None       # relative path to cached útmutató plain text
     fl_pdf_path: str | None = None          # relative path to feladatlap PDF (under exams dir)
     ut_pdf_path: str | None = None          # relative path to útmutató PDF (under exams dir)
+    review_elvegezve: bool = False          # True after a human/AI review pass
+    review_megjegyzes: str | None = None    # free-text reviewer comment
 
     @property
     def pdf_source(self) -> str | None:
@@ -98,6 +100,8 @@ class Feladat:
             ut_szoveg_path=r.ut_szoveg_path,
             fl_pdf_path=r.fl_pdf_path,
             ut_pdf_path=r.ut_pdf_path,
+            review_elvegezve=r.review_elvegezve,
+            review_megjegyzes=r.review_megjegyzes,
         )
 
     def with_assets(

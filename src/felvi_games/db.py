@@ -137,6 +137,8 @@ class FeladatRecord(Base):
     ut_szoveg_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     fl_pdf_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     ut_pdf_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    review_elvegezve: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    review_megjegyzes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
@@ -234,6 +236,9 @@ class FeladatRepository:
                     existing.fl_pdf_path = feladat.fl_pdf_path
                 if feladat.ut_pdf_path is not None:
                     existing.ut_pdf_path = feladat.ut_pdf_path
+                existing.review_elvegezve = feladat.review_elvegezve
+                if feladat.review_megjegyzes is not None:
+                    existing.review_megjegyzes = feladat.review_megjegyzes
                 existing.updated_at = datetime.now(timezone.utc)
             else:
                 session.add(FeladatRecord(
@@ -257,6 +262,8 @@ class FeladatRepository:
                     ut_szoveg_path=feladat.ut_szoveg_path,
                     fl_pdf_path=feladat.fl_pdf_path,
                     ut_pdf_path=feladat.ut_pdf_path,
+                    review_elvegezve=feladat.review_elvegezve,
+                    review_megjegyzes=feladat.review_megjegyzes,
                 ))
             session.commit()
 
@@ -290,6 +297,8 @@ class FeladatRepository:
                         ut_szoveg_path=f.ut_szoveg_path,
                         fl_pdf_path=f.fl_pdf_path,
                         ut_pdf_path=f.ut_pdf_path,
+                        review_elvegezve=f.review_elvegezve,
+                        review_megjegyzes=f.review_megjegyzes,
                         updated_at=now,
                     ))
                 else:
@@ -309,6 +318,8 @@ class FeladatRepository:
                         ut_szoveg_path=f.ut_szoveg_path,
                         fl_pdf_path=f.fl_pdf_path,
                         ut_pdf_path=f.ut_pdf_path,
+                        review_elvegezve=f.review_elvegezve,
+                        review_megjegyzes=f.review_megjegyzes,
                     ))
             session.commit()
 
@@ -414,6 +425,24 @@ class FeladatRepository:
                 hibajelezes=hibajelezes,
             ))
             session.commit()
+
+    def save_review(self, feladat: Feladat, megjegyzes: str | None = None) -> Feladat:
+        """Mark a feladat as reviewed, clear all pending hibajelezes flags, return updated domain."""
+        with Session(self._engine) as session:
+            record = session.get(FeladatRecord, feladat.id)
+            if record is None:
+                raise KeyError(f"Feladat not found: {feladat.id}")
+            record.review_elvegezve = True
+            record.review_megjegyzes = megjegyzes
+            record.updated_at = datetime.now(timezone.utc)
+            # Clear pending error flags on all attempts for this feladat
+            session.execute(
+                __import__("sqlalchemy").update(MegoldasRecord)
+                .where(MegoldasRecord.feladat_id == feladat.id)
+                .values(hibajelezes=False)
+            )
+            session.commit()
+            return record.to_domain()
 
     def stats(self) -> dict:
         """Return aggregate statistics across all attempts."""
