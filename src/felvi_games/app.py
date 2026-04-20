@@ -114,8 +114,10 @@ def start_kerdes(feladat: Feladat, gs: GameState) -> None:
 def _render_header(gs: GameState) -> None:
     col1, col2, col3 = st.columns([2, 1, 1])
     with col1:
-        st.title("🎯 Felvételi Kvíz")        if gs.felhasznalo:
-            st.caption(f"👤 {gs.felhasznalo}")    with col2:
+        st.title("🎯 Felvételi Kvíz")
+        if gs.felhasznalo:
+            st.caption(f"👤 {gs.felhasznalo}")
+    with col2:
         st.metric("Pont", gs.pont)
     with col3:
         streak = gs.streak
@@ -458,13 +460,23 @@ def _render_source_expanders(feladat: Feladat, *, show_ut: bool) -> None:
     if feladat.fl_szoveg_path:
         with st.expander("📄 Feladatlap szövege (forrás)"):
             try:
-                st.text(resolve_asset(feladat.fl_szoveg_path).read_text(encoding="utf-8"))
+                text = resolve_asset(feladat.fl_szoveg_path).read_text(encoding="utf-8")
+                st.markdown(
+                    f'<div style="max-height:50vh;overflow-y:auto;white-space:pre-wrap;'
+                    f'font-family:monospace;font-size:0.85em">{text}</div>',
+                    unsafe_allow_html=True,
+                )
             except FileNotFoundError:
                 st.caption(f"Fájl nem található: {feladat.fl_szoveg_path}")
     if show_ut and feladat.ut_szoveg_path:
         with st.expander("📋 Javítási útmutató szövege (forrás)"):
             try:
-                st.text(resolve_asset(feladat.ut_szoveg_path).read_text(encoding="utf-8"))
+                text = resolve_asset(feladat.ut_szoveg_path).read_text(encoding="utf-8")
+                st.markdown(
+                    f'<div style="max-height:50vh;overflow-y:auto;white-space:pre-wrap;'
+                    f'font-family:monospace;font-size:0.85em">{text}</div>',
+                    unsafe_allow_html=True,
+                )
             except FileNotFoundError:
                 st.caption(f"Fájl nem található: {feladat.ut_szoveg_path}")
 
