@@ -27,11 +27,20 @@ _EVAL_SYSTEM = (
 _EVAL_TEMPLATE = """\
 Feladat: {kerdes}
 Helyes válasz: {helyes}
+{elfogadott_sor}
+{tipus_sor}
 Tanuló válasza: {adott}
 Magyarázat: {magyarazat}
 
 Értékeld a választ, majd adj vissza CSAK egy JSON objektumot:
-{{"helyes": true/false, "visszajelzes": "...", "pont": 0-10}}"""
+{{"helyes": true/false, "visszajelzes": "...", "pont": 0-10}}
+
+Megjegyzés: ha az elfogadott válaszok listája nem üres, akkor az adott választ
+azokhoz kell hasonlítani (szinonimákat és eltolódásokat is fogadj el).
+Igaz/hamis feladatnál csak "igaz" vagy "hamis" szó elfogadható.
+Párosítás- és halmaz-típusú feladatoknál (ahol a helyes válasz több elem
+kombinációja) az elemek sorrendje ne számítson; részleges egyezésnél adj
+részletes visszajelzést arról, mely elemek helyesek."""
 
 
 def text_to_speech(szoveg: str) -> bytes:
@@ -61,10 +70,29 @@ def speech_to_text(audio_bytes: bytes) -> str:
         os.unlink(tmp_path)
 
 
-def check_answer(kerdes: str, helyes: str, adott: str, magyarazat: str) -> Ertekeles:
+def check_answer(
+    kerdes: str,
+    helyes: str,
+    adott: str,
+    magyarazat: str,
+    *,
+    elfogadott_valaszok: list[str] | None = None,
+    feladat_tipus: str | None = None,
+) -> Ertekeles:
     """GPT értékeli a választ. Visszatér egy `Ertekeles` példánnyal."""
+    elfogadott_sor = (
+        f"Elfogadott válaszok: {', '.join(elfogadott_valaszok)}"
+        if elfogadott_valaszok
+        else ""
+    )
+    tipus_sor = f"Feladat típusa: {feladat_tipus}" if feladat_tipus else ""
     prompt = _EVAL_TEMPLATE.format(
-        kerdes=kerdes, helyes=helyes, adott=adott, magyarazat=magyarazat
+        kerdes=kerdes,
+        helyes=helyes,
+        elfogadott_sor=elfogadott_sor,
+        tipus_sor=tipus_sor,
+        adott=adott,
+        magyarazat=magyarazat,
     )
     try:
         response = _client.chat.completions.create(

@@ -14,7 +14,7 @@ import json
 import logging
 import os
 
-from felvi_games.models import Feladat
+from felvi_games.models import Feladat, FeladatCsoport
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +78,14 @@ def print_feladat(f: Feladat) -> None:
         ("ut_source", f.ut_source or "-"),
         ("abra_van", str(f.abra_van)),
         ("feladat_oldal", str(f.feladat_oldal) if f.feladat_oldal else "-"),
+        ("feladat_tipus", f.feladat_tipus or "-"),
+        ("max_pont", str(f.max_pont)),
+        ("elfogadott_valaszok", ", ".join(f.elfogadott_valaszok) if f.elfogadott_valaszok else "-"),
+        ("valaszlehetosegek", ", ".join(f.valaszlehetosegek) if f.valaszlehetosegek else "-"),
+        ("reszpontozas", f.reszpontozas or "-"),
+        ("ertekeles_megjegyzes", f.ertekeles_megjegyzes or "-"),
+        ("csoport_id", f.csoport_id or "-"),
+        ("csoport_sorrend", str(f.csoport_sorrend) if f.csoport_sorrend is not None else "-"),
         ("review", "✓" if f.review_elvegezve else "–"),
         (
             "kontextus",
@@ -93,12 +101,28 @@ def print_feladat(f: Feladat) -> None:
         ("szint", f.szint),
     ]
     for name, value in fields:
-        print(f"  {name:15s}: {value}")
+        print(f"  {name:22s}: {value}")
+
+
+def print_csoport(csoport: FeladatCsoport, feladatok: list[Feladat]) -> None:
+    """Print a FeladatCsoport and all its member Feladatok."""
+    print(f"\n{'#' * 70}")
+    print(f"  CSOPORT  {csoport.id}  |  {csoport.targy}  |  {csoport.szint}")
+    print(f"  Feladat sorszám: {csoport.feladat_sorszam}  |  Ev: {csoport.ev or '-'}  |  Változat: {csoport.valtozat or '-'}")
+    if csoport.kontextus:
+        preview = csoport.kontextus[:120] + ("…" if len(csoport.kontextus) > 120 else "")
+        print(f"  Kontextus: {preview}")
+    print(f"  Max pont összesen: {csoport.max_pont_ossz}  |  Sorrend kötelező: {csoport.sorrend_kotelezo}")
+    print(f"{'#' * 70}")
+    for f in feladatok:
+        print(f"\n  --- {f.feladat_sorszam or f.id} (sorrend={f.csoport_sorrend}) ---")
+        print_feladat(f)
 
 
 def edit_feladat_cli(f: Feladat) -> Feladat:
     """Prompt the user to edit individual fields. Returns a new (frozen) Feladat."""
-    editable = ["kerdes", "helyes_valasz", "hint", "magyarazat", "neh", "szint"]
+    editable = ["kerdes", "helyes_valasz", "hint", "magyarazat", "neh", "szint",
+                "feladat_tipus", "max_pont"]
     print(f"\n  Szerkeszthető mezők: {', '.join(editable)}")
     print("  (Üres Enter = mező megtartása)")
 
@@ -120,6 +144,14 @@ def edit_feladat_cli(f: Feladat) -> Feladat:
     except (TypeError, ValueError):
         neh = f.neh
 
+    try:
+        max_pont = int(updates.get("max_pont", f.max_pont))
+        if max_pont < 1:
+            print("  max_pont legalább 1 legyen, eredeti megtartva.")
+            max_pont = f.max_pont
+    except (TypeError, ValueError):
+        max_pont = f.max_pont
+
     return dataclasses.replace(
         f,
         kerdes=updates.get("kerdes", f.kerdes),
@@ -128,6 +160,8 @@ def edit_feladat_cli(f: Feladat) -> Feladat:
         magyarazat=updates.get("magyarazat", f.magyarazat),
         neh=neh,
         szint=updates.get("szint", f.szint),
+        feladat_tipus=updates.get("feladat_tipus", f.feladat_tipus),
+        max_pont=max_pont,
     )
 
 
@@ -140,9 +174,12 @@ Felvételi feladat minőség-ellenőrző vagy. Megkapod az eredeti PDF szöveg r
 és a belőle kinyert feladat rekordot. Ellenőrizd:
 1. A kérdés érthető-e és egyértelműen következik-e a szövegből.
 2. A helyes válasz korrekt-e a szöveg alapján.
-3. A hint és a magyarázat segítőek és helyesek-e.
-4. A nehézségi szint reális-e.
-5. Az abra_van flag helyes-e (valóban hivatkozik-e a feladat ábrára).
+3. Az elfogadott válaszok listája teljes-e (pl. tört és tizedes alak egyaránt szerepel).
+4. A feladat típusa helyes-e.
+5. A max_pont helyes-e az útmutató alapján.
+6. A hint és a magyarázat segítőek és helyesek-e.
+7. A nehézségi szint realisális-e.
+8. Az abra_van flag helyes-e (valóban hivatkozik-e a feladat ábrára).
 
 Ha javítás szükséges, add meg a javított mezőket. Ha minden rendben, térj vissza üres
 "javitasok" objektummal.
@@ -154,6 +191,9 @@ Válaszolj JSON-ben:
   "javitasok": {
     "kerdes": "...",          // csak ha változott
     "helyes_valasz": "...",   // csak ha változott
+    "elfogadott_valaszok": ["..."],  // csak ha változott
+    "feladat_tipus": "...",   // csak ha változott
+    "max_pont": 1,            // csak ha változott
     "hint": "...",            // csak ha változott
     "magyarazat": "...",      // csak ha változott
     "neh": 1|2|3,             // csak ha változott
@@ -221,6 +261,9 @@ def review_feladat_ai(
         "id": feladat.id,
         "kerdes": feladat.kerdes,
         "helyes_valasz": feladat.helyes_valasz,
+        "elfogadott_valaszok": feladat.elfogadott_valaszok,
+        "feladat_tipus": feladat.feladat_tipus,
+        "max_pont": feladat.max_pont,
         "hint": feladat.hint,
         "magyarazat": feladat.magyarazat,
         "neh": feladat.neh,
@@ -264,9 +307,18 @@ def review_feladat_ai(
 
     # Apply corrections (only permitted fields, with validation)
     updates: dict = {}
-    for field_name in ("kerdes", "helyes_valasz", "hint", "magyarazat", "szint"):
+    for field_name in ("kerdes", "helyes_valasz", "hint", "magyarazat", "szint", "feladat_tipus"):
         if field_name in javitasok and javitasok[field_name]:
             updates[field_name] = str(javitasok[field_name])
+    if "elfogadott_valaszok" in javitasok and isinstance(javitasok["elfogadott_valaszok"], list):
+        updates["elfogadott_valaszok"] = [str(v) for v in javitasok["elfogadott_valaszok"]]
+    if "max_pont" in javitasok:
+        try:
+            mp = int(javitasok["max_pont"])
+            if mp >= 1:
+                updates["max_pont"] = mp
+        except (TypeError, ValueError):
+            pass
     if "neh" in javitasok:
         try:
             neh = int(javitasok["neh"])

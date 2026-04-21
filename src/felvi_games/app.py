@@ -25,6 +25,15 @@ _SZINT_CIMKEK: dict[str, str] = {"mind": "🌟 Mind"} | {
     info.szint_ertek: info.rovid for info in KATEGORIA_INFO.values()
 }
 
+_TIPUS_BADGE: dict[str, str] = {
+    "nyilt_valasz":  "📝 Nyílt válasz",
+    "tobbvalasztos": "🔤 Többválasztós",
+    "parositas":     "🔗 Párosítás",
+    "igaz_hamis":    "✅ Igaz / Hamis",
+    "fogalmazas":    "📄 Fogalmazás",
+    "kitoltes":      "✏️ Kitöltés",
+}
+
 # ---------------------------------------------------------------------------
 # Repository (singleton per process)
 # ---------------------------------------------------------------------------
@@ -228,18 +237,112 @@ def _render_valasztas(
         )
 
 
+def _render_csoport_context(feladat: Feladat) -> None:
+    """Show group position badge and shared context text."""
+    csoport = None
+    if feladat.csoport_id:
+        csoport = get_repo().get_csoport(feladat.csoport_id)
+
+    # Group position caption
+    if csoport and feladat.csoport_sorrend:
+        group_feladatok = get_repo().get_feladatok_by_csoport(feladat.csoport_id)  # type: ignore[arg-type]
+        total = len(group_feladatok)
+        max_ossz = csoport.max_pont_ossz
+        sorszam_label = feladat.feladat_sorszam or csoport.feladat_sorszam
+        pt_info = f" · összpontszám: {max_ossz}" if max_ossz > 1 else ""
+        st.caption(
+            f"📋 {sorszam_label}. feladat — "
+            f"részfeladat: {feladat.csoport_sorrend} / {total}{pt_info}"
+        )
+
+    # Shared context: prefer csoport.kontextus, fall back to feladat.kontextus
+    kontextus = (csoport.kontextus if csoport else None) or feladat.kontextus
+    if kontextus:
+        with st.expander("📌 Közös szöveg / kontextus", expanded=True):
+            st.markdown(kontextus)
+
+
+def _render_valasz_input(feladat: Feladat, gs: GameState) -> str:
+    """Smart answer input widget based on feladat_tipus.
+
+    - igaz_hamis → Igaz / Hamis radio
+    - tobbvalasztos (with options) → radio from valaszlehetosegek
+    - everything else → speech + text input
+    """
+    tipus = feladat.feladat_tipus
+
+    if tipus == "igaz_hamis":
+        sel = st.radio(
+            "Válaszod:",
+            options=["Igaz", "Hamis"],
+            index=None,
+            horizontal=True,
+            key=f"vh_{feladat.id}",
+        )
+        return sel.lower() if sel else ""
+
+    if tipus == "tobbvalasztos" and feladat.valaszlehetosegek:
+        sel = st.radio(
+            "Válaszd ki a helyes választ:",
+            options=feladat.valaszlehetosegek,
+            index=None,
+            key=f"tv_{feladat.id}",
+        )
+        return sel or ""
+
+    # Generic open-answer: speech + text
+    audio_input = st.audio_input("🎤 Kattints és mondj egy választ")
+    if audio_input:
+        audio_hash = hash(audio_input.getvalue())
+        if st.session_state.get("_stt_hash") != audio_hash:
+            st.session_state["_stt_hash"] = audio_hash
+            with st.spinner("Átírás (Whisper)..."):
+                gs.atiras = speech_to_text(audio_input.getvalue())
+
+    szoveges = st.text_input(
+        "✍️ Vagy írj ide:",
+        value=gs.atiras,
+        placeholder="pl. 32",
+    )
+    return (szoveges or gs.atiras).strip()
+
+
 def _render_kerdes(gs: GameState) -> None:
     feladat: Feladat = gs.aktualis  # type: ignore[assignment]
     badge = "📐" if gs.targy == "matek" else "📖"
-    st.subheader(f"{badge} {feladat.szint} — {feladat.neh_csillag()}")
 
-    # Shared preamble / context (reading passage, table, figure)
-    if feladat.kontextus:
-        with st.expander("📌 Közös kontextus (feladat alapja)", expanded=True):
-            st.markdown(feladat.kontextus)
+    # --- Header: szint, nehézség, feladat típus ---
+    tipus_label = _TIPUS_BADGE.get(feladat.feladat_tipus or "", "")
+    col_info, col_pont = st.columns([3, 1])
+    with col_info:
+        st.subheader(f"{badge} {feladat.szint} — {feladat.neh_csillag()}")
+        if tipus_label:
+            st.caption(tipus_label)
+    with col_pont:
+        if feladat.max_pont > 1:
+            st.metric("Max. pont", feladat.max_pont)
 
+    # --- Csoport pozíció + közös kontextus ---
+    _render_csoport_context(feladat)
+
+    # --- Kérdés ---
     st.info(f"**{feladat.kerdes}**")
 
+    # --- Válaszlehetőségek listázva (párosítás / ha nincs widget) ---
+    if (
+        feladat.valaszlehetosegek
+        and feladat.feladat_tipus not in ("tobbvalasztos", "igaz_hamis")
+    ):
+        with st.expander("📋 Válaszlehetőségek", expanded=True):
+            for opt in feladat.valaszlehetosegek:
+                st.markdown(f"- {opt}")
+
+    # --- Értékelési megjegyzés ---
+    if feladat.ertekeles_megjegyzes:
+        with st.expander("ℹ️ Értékelési feltétel"):
+            st.caption(feladat.ertekeles_megjegyzes)
+
+    # --- Ábra figyelmeztetés + PDF gomb ---
     if feladat.abra_van:
         page_hint = f"\n\n📍 Feladat helye: **{feladat.feladat_oldal}. oldal**" if feladat.feladat_oldal else ""
         st.warning(
@@ -248,6 +351,7 @@ def _render_kerdes(gs: GameState) -> None:
         )
     _render_pdf_button(feladat)
 
+    # --- TTS, Tipp, Hiba gombok ---
     col_tts, col_hint, col_hiba = st.columns(3)
     with col_tts:
         if st.button("🔊 Feladat felolvasása"):
@@ -275,26 +379,13 @@ def _render_kerdes(gs: GameState) -> None:
     if gs.segitseg_kert:
         st.info(f"💡 **Tipp:** {feladat.hint}")
 
-    # Source text inspection
+    # --- Forrásszöveg (debug / kontextus) ---
     _render_source_expanders(feladat, show_ut=False)
 
     st.markdown("---")
     st.markdown("### Válaszolj:")
 
-    audio_input = st.audio_input("🎤 Kattints és mondj egy választ")
-    if audio_input:
-        audio_hash = hash(audio_input.getvalue())
-        if st.session_state.get("_stt_hash") != audio_hash:
-            st.session_state["_stt_hash"] = audio_hash
-            with st.spinner("Átírás (Whisper)..."):
-                gs.atiras = speech_to_text(audio_input.getvalue())
-
-    szoveges = st.text_input(
-        "✍️ Vagy írj ide:",
-        value=gs.atiras,
-        placeholder="pl. 32",
-    )
-    valasz = (szoveges or gs.atiras).strip()
+    valasz = _render_valasz_input(feladat, gs)
 
     if valasz:
         st.caption(f"Felismert/beírt válasz: **{valasz}**")
@@ -308,6 +399,8 @@ def _render_kerdes(gs: GameState) -> None:
                     feladat.helyes_valasz,
                     valasz,
                     feladat.magyarazat,
+                    elfogadott_valaszok=feladat.elfogadott_valaszok_vagy_helyes(),
+                    feladat_tipus=feladat.feladat_tipus,
                 )
             elapsed = (
                 (datetime.now(timezone.utc) - gs.kerdes_kezdete).total_seconds()
@@ -349,9 +442,27 @@ def _render_eredmeny(feladatok: dict[str, list[Feladat]], gs: GameState) -> None
 
     st.markdown(f"**Visszajelzés:** {ert.visszajelzes}")
 
-    with st.expander("📚 Részletes magyarázat"):
+    with st.expander("📚 Részletes magyarázat", expanded=True):
         st.write(feladat.magyarazat)
         st.markdown(f"**Helyes válasz:** `{feladat.helyes_valasz}`")
+
+        # Show all accepted answers if there are multiple
+        if feladat.elfogadott_valaszok and len(feladat.elfogadott_valaszok) > 1:
+            st.caption("Elfogadható válaszok: " + ", ".join(
+                f"`{v}`" for v in feladat.elfogadott_valaszok
+            ))
+
+        # Partial scoring rule
+        if feladat.reszpontozas:
+            st.caption(f"📊 Részpontozás: {feladat.reszpontozas}")
+
+        # Grader note
+        if feladat.ertekeles_megjegyzes:
+            st.caption(f"ℹ️ {feladat.ertekeles_megjegyzes}")
+
+        # Max points for this sub-task
+        if feladat.max_pont > 1:
+            st.caption(f"Max. pont: {feladat.max_pont}")
 
     _render_pdf_button(feladat)
     # Source text inspection (both feladatlap and útmutató)

@@ -31,7 +31,7 @@ from felvi_games.config import (
     relative_asset_path,
     resolve_asset,
 )
-from felvi_games.models import Ertekeles, Feladat, Menet
+from felvi_games.models import Ertekeles, Feladat, FeladatCsoport, Menet, _list_to_json
 
 # ---------------------------------------------------------------------------
 # Engine
@@ -106,6 +106,39 @@ class MenetRecord(Base):
         )
 
 
+class FeladatCsoportRecord(Base):
+    """Összetartozó részfeladatok csoportja (pl. 3a, 3b, 3c)."""
+
+    __tablename__ = "feladat_csoportok"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    targy: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    szint: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    feladat_sorszam: Mapped[str] = mapped_column(String(16), nullable=False)
+    ev: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    valtozat: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    kontextus: Mapped[str | None] = mapped_column(Text, nullable=True)
+    abra_van: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    feladat_oldal: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fl_pdf_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    ut_pdf_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    fl_szoveg_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    ut_szoveg_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    sorrend_kotelezo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    max_pont_ossz: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    def to_domain(self) -> FeladatCsoport:
+        return FeladatCsoport.from_record(self)
+
+
 class FeladatRecord(Base):
     """Persisted feladat with compiled assets."""
 
@@ -124,6 +157,18 @@ class FeladatRecord(Base):
     ev: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     valtozat: Mapped[int | None] = mapped_column(Integer, nullable=True)
     feladat_sorszam: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
+    # Group membership (no FK constraint – SQLite compatible)
+    csoport_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    csoport_sorrend: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Task type & scoring
+    feladat_tipus: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    elfogadott_valaszok: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list
+    valaszlehetosegek: Mapped[str | None] = mapped_column(Text, nullable=True)    # JSON list
+    max_pont: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    reszpontozas: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ertekeles_megjegyzes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Compiled TTS assets – relative paths to MP3 files under assets_dir
     tts_kerdes_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
@@ -221,6 +266,14 @@ class FeladatRepository:
                 existing.ev = feladat.ev
                 existing.valtozat = feladat.valtozat
                 existing.feladat_sorszam = feladat.feladat_sorszam
+                existing.csoport_id = feladat.csoport_id
+                existing.csoport_sorrend = feladat.csoport_sorrend
+                existing.feladat_tipus = feladat.feladat_tipus
+                existing.elfogadott_valaszok = _list_to_json(feladat.elfogadott_valaszok)
+                existing.valaszlehetosegek = _list_to_json(feladat.valaszlehetosegek)
+                existing.max_pont = feladat.max_pont
+                existing.reszpontozas = feladat.reszpontozas
+                existing.ertekeles_megjegyzes = feladat.ertekeles_megjegyzes
                 if feladat.tts_kerdes_path is not None:
                     existing.tts_kerdes_path = feladat.tts_kerdes_path
                 if feladat.tts_magyarazat_path is not None:
@@ -253,6 +306,14 @@ class FeladatRepository:
                     ev=feladat.ev,
                     valtozat=feladat.valtozat,
                     feladat_sorszam=feladat.feladat_sorszam,
+                    csoport_id=feladat.csoport_id,
+                    csoport_sorrend=feladat.csoport_sorrend,
+                    feladat_tipus=feladat.feladat_tipus,
+                    elfogadott_valaszok=_list_to_json(feladat.elfogadott_valaszok),
+                    valaszlehetosegek=_list_to_json(feladat.valaszlehetosegek),
+                    max_pont=feladat.max_pont,
+                    reszpontozas=feladat.reszpontozas,
+                    ertekeles_megjegyzes=feladat.ertekeles_megjegyzes,
                     tts_kerdes_path=feladat.tts_kerdes_path,
                     tts_magyarazat_path=feladat.tts_magyarazat_path,
                     kontextus=feladat.kontextus,
@@ -288,6 +349,14 @@ class FeladatRepository:
                         ev=f.ev,
                         valtozat=f.valtozat,
                         feladat_sorszam=f.feladat_sorszam,
+                        csoport_id=f.csoport_id,
+                        csoport_sorrend=f.csoport_sorrend,
+                        feladat_tipus=f.feladat_tipus,
+                        elfogadott_valaszok=_list_to_json(f.elfogadott_valaszok),
+                        valaszlehetosegek=_list_to_json(f.valaszlehetosegek),
+                        max_pont=f.max_pont,
+                        reszpontozas=f.reszpontozas,
+                        ertekeles_megjegyzes=f.ertekeles_megjegyzes,
                         tts_kerdes_path=f.tts_kerdes_path,
                         tts_magyarazat_path=f.tts_magyarazat_path,
                         kontextus=f.kontextus,
@@ -309,6 +378,14 @@ class FeladatRepository:
                         ev=f.ev,
                         valtozat=f.valtozat,
                         feladat_sorszam=f.feladat_sorszam,
+                        csoport_id=f.csoport_id,
+                        csoport_sorrend=f.csoport_sorrend,
+                        feladat_tipus=f.feladat_tipus,
+                        elfogadott_valaszok=_list_to_json(f.elfogadott_valaszok),
+                        valaszlehetosegek=_list_to_json(f.valaszlehetosegek),
+                        max_pont=f.max_pont,
+                        reszpontozas=f.reszpontozas,
+                        ertekeles_megjegyzes=f.ertekeles_megjegyzes,
                         tts_kerdes_path=f.tts_kerdes_path,
                         tts_magyarazat_path=f.tts_magyarazat_path,
                         kontextus=f.kontextus,
@@ -340,6 +417,68 @@ class FeladatRepository:
     def count(self) -> int:
         with Session(self._engine) as session:
             return session.query(FeladatRecord).count()
+
+    # --- FeladatCsoport CRUD ---
+
+    def upsert_csoport(self, csoport: FeladatCsoport) -> None:
+        """Insert or update a FeladatCsoport record."""
+        with Session(self._engine) as session:
+            existing = session.get(FeladatCsoportRecord, csoport.id)
+            if existing:
+                existing.targy = csoport.targy
+                existing.szint = csoport.szint
+                existing.feladat_sorszam = csoport.feladat_sorszam
+                existing.ev = csoport.ev
+                existing.valtozat = csoport.valtozat
+                existing.kontextus = csoport.kontextus
+                existing.abra_van = csoport.abra_van
+                existing.feladat_oldal = csoport.feladat_oldal
+                existing.fl_pdf_path = csoport.fl_pdf_path
+                existing.ut_pdf_path = csoport.ut_pdf_path
+                existing.fl_szoveg_path = csoport.fl_szoveg_path
+                existing.ut_szoveg_path = csoport.ut_szoveg_path
+                existing.sorrend_kotelezo = csoport.sorrend_kotelezo
+                existing.max_pont_ossz = csoport.max_pont_ossz
+                existing.updated_at = datetime.now(timezone.utc)
+            else:
+                session.add(FeladatCsoportRecord(
+                    id=csoport.id,
+                    targy=csoport.targy,
+                    szint=csoport.szint,
+                    feladat_sorszam=csoport.feladat_sorszam,
+                    ev=csoport.ev,
+                    valtozat=csoport.valtozat,
+                    kontextus=csoport.kontextus,
+                    abra_van=csoport.abra_van,
+                    feladat_oldal=csoport.feladat_oldal,
+                    fl_pdf_path=csoport.fl_pdf_path,
+                    ut_pdf_path=csoport.ut_pdf_path,
+                    fl_szoveg_path=csoport.fl_szoveg_path,
+                    ut_szoveg_path=csoport.ut_szoveg_path,
+                    sorrend_kotelezo=csoport.sorrend_kotelezo,
+                    max_pont_ossz=csoport.max_pont_ossz,
+                ))
+            session.commit()
+
+    def upsert_many_csoportok(self, csoportok: list[FeladatCsoport]) -> None:
+        """Bulk upsert for FeladatCsoport records."""
+        for c in csoportok:
+            self.upsert_csoport(c)
+
+    def get_csoport(self, csoport_id: str) -> FeladatCsoport | None:
+        with Session(self._engine) as session:
+            record = session.get(FeladatCsoportRecord, csoport_id)
+            return record.to_domain() if record else None
+
+    def get_feladatok_by_csoport(self, csoport_id: str) -> list[Feladat]:
+        """Return all Feladatok belonging to a group, ordered by csoport_sorrend."""
+        with Session(self._engine) as session:
+            stmt = (
+                select(FeladatRecord)
+                .where(FeladatRecord.csoport_id == csoport_id)
+                .order_by(FeladatRecord.csoport_sorrend)
+            )
+            return [r.to_domain() for r in session.scalars(stmt)]
 
     # --- Asset operations ---
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -10,13 +11,116 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from felvi_games.db import FeladatRecord
+    from felvi_games.db import FeladatCsoportRecord, FeladatRecord
 
 
 class Fazis(str, Enum):
     VALASZTAS = "valasztas"
     KERDES = "kerdes"
     EREDMENY = "eredmeny"
+
+
+class FeladatTipus(str, Enum):
+    """Feladat típusok az értékelési logika számára."""
+    NYILT_VALASZ = "nyilt_valasz"       # szabad szöveges válasz
+    TOBBVALASZTOS = "tobbvalasztos"     # felkínált opciókból kell választani
+    PAROSITAS = "parositas"             # elemeket kell összepárosítani
+    IGAZ_HAMIS = "igaz_hamis"           # igaz/hamis döntés
+    FOGALMAZAS = "fogalmazas"           # hosszabb írásbeli szöveg (rubric-alapú)
+    KITOLTES = "kitoltes"               # hiányos szöveg kiegészítése
+
+
+# ---------------------------------------------------------------------------
+# Module-level helpers (used by Feladat.from_dict / from_record)
+# ---------------------------------------------------------------------------
+
+def _parse_str_list(value: object) -> list[str] | None:
+    """Convert GPT output or dict value to list[str] | None.
+
+    Accepts:
+    - None / missing → None
+    - list            → list[str] (elements coerced to str)
+    - str (JSON)      → parsed list[str]
+    - str (plain)     → [str] (single-element list)
+    """
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return [str(v) for v in value] if value else None
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        if stripped.startswith("["):
+            try:
+                parsed = json.loads(stripped)
+                return [str(v) for v in parsed] if parsed else None
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return [stripped]
+    return None
+
+
+def _json_to_list(value: str | None) -> list[str] | None:
+    """Deserialize a JSON-encoded list stored in a DB Text column."""
+    if not value:
+        return None
+    try:
+        parsed = json.loads(value)
+        return [str(v) for v in parsed] if parsed else None
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+
+def _list_to_json(value: list[str] | None) -> str | None:
+    """Serialize a list[str] to a JSON string for DB storage."""
+    if not value:
+        return None
+    return json.dumps(value, ensure_ascii=False)
+
+
+@dataclass(frozen=True)
+class FeladatCsoport:
+    """Összetartozó részfeladatok (pl. 3a, 3b, 3c) csoportja.
+
+    A kinyerés flat marad – a csoportosítás post-processing lépés.
+    A csoport tartalmazza a közös kontextust és az összpontszámot.
+    """
+    id: str                              # pl. "mat4_2025_1_3"
+    targy: str
+    szint: str
+    feladat_sorszam: str                 # főfeladat száma, pl. "3"
+    ev: int | None = None
+    valtozat: int | None = None
+    kontextus: str | None = None         # közös bevezető szöveg/ábraleírás
+    abra_van: bool = False
+    feladat_oldal: int | None = None
+    fl_pdf_path: str | None = None
+    ut_pdf_path: str | None = None
+    fl_szoveg_path: str | None = None
+    ut_szoveg_path: str | None = None
+    sorrend_kotelezo: bool = False       # ha True, a részek sorban oldandók meg
+    max_pont_ossz: int = 1               # csoport összpontszáma
+
+    @classmethod
+    def from_record(cls, r: "FeladatCsoportRecord") -> "FeladatCsoport":
+        return cls(
+            id=r.id,
+            targy=r.targy,
+            szint=r.szint,
+            feladat_sorszam=r.feladat_sorszam,
+            ev=r.ev,
+            valtozat=r.valtozat,
+            kontextus=r.kontextus,
+            abra_van=r.abra_van,
+            feladat_oldal=r.feladat_oldal,
+            fl_pdf_path=r.fl_pdf_path,
+            ut_pdf_path=r.ut_pdf_path,
+            fl_szoveg_path=r.fl_szoveg_path,
+            ut_szoveg_path=r.ut_szoveg_path,
+            sorrend_kotelezo=r.sorrend_kotelezo,
+            max_pont_ossz=r.max_pont_ossz,
+        )
 
 
 @dataclass(frozen=True)
@@ -33,11 +137,21 @@ class Feladat:
     ev: int | None = None                # exam year (e.g. 2025)
     valtozat: int | None = None          # variant within year (1 or 2)
     feladat_sorszam: str | None = None   # position in exam (e.g. "1a", "2b", "3")
+    # --- group membership ---
+    csoport_id: str | None = None        # FK to FeladatCsoport.id
+    csoport_sorrend: int | None = None   # order within the group (1, 2, 3 …)
+    # --- task type & scoring ---
+    feladat_tipus: str | None = None     # FeladatTipus value
+    elfogadott_valaszok: list[str] | None = None   # all accepted correct answers
+    valaszlehetosegek: list[str] | None = None     # offered options (multiple-choice / matching)
+    max_pont: int = 1                    # max points for this sub-task
+    reszpontozas: str | None = None      # partial scoring rule, e.g. "6/6=3p, 5/6=2p"
+    ertekeles_megjegyzes: str | None = None  # grader notes, exceptions, special rules
     # --- compiled assets (optional, cached after first use) ---
     tts_kerdes_path: str | None = None      # relative path to TTS MP3 for the question
     tts_magyarazat_path: str | None = None  # relative path to TTS MP3 for the explanation
     # --- extraction context ---
-    kontextus: str | None = None            # shared preamble/table/figure text (GPT-extracted)
+    kontextus: str | None = None            # shared preamble/table/figure text (for standalone tasks)
     abra_van: bool = False                  # True if task references a figure/graph
     feladat_oldal: int | None = None        # PDF page number where the task appears
     fl_szoveg_path: str | None = None       # relative path to cached feladatlap plain text
@@ -61,6 +175,7 @@ class Feladat:
     def from_dict(cls, d: dict, targy: str = "") -> "Feladat":
         ev_raw = d.get("ev")
         val_raw = d.get("valtozat")
+        max_pont_raw = d.get("max_pont", 1)
         return cls(
             id=d["id"],
             neh=d["neh"],
@@ -73,10 +188,19 @@ class Feladat:
             ev=int(ev_raw) if ev_raw is not None else None,
             valtozat=int(val_raw) if val_raw is not None else None,
             feladat_sorszam=d.get("feladat_sorszam"),
+            csoport_id=d.get("csoport_id"),
+            csoport_sorrend=int(d["csoport_sorrend"]) if d.get("csoport_sorrend") is not None else None,
+            feladat_tipus=d.get("feladat_tipus"),
+            elfogadott_valaszok=_parse_str_list(d.get("elfogadott_valaszok")),
+            valaszlehetosegek=_parse_str_list(d.get("valaszlehetosegek")),
+            max_pont=int(max_pont_raw) if max_pont_raw is not None else 1,
+            reszpontozas=d.get("reszpontozas"),
+            ertekeles_megjegyzes=d.get("ertekeles_megjegyzes"),
             kontextus=d.get("kontextus"),
             abra_van=bool(d.get("abra_van", False)),
             feladat_oldal=int(d["feladat_oldal"]) if d.get("feladat_oldal") else None,
         )
+
     @classmethod
     def from_record(cls, r: "FeladatRecord") -> "Feladat":
         return cls(
@@ -91,6 +215,14 @@ class Feladat:
             ev=r.ev,
             valtozat=r.valtozat,
             feladat_sorszam=r.feladat_sorszam,
+            csoport_id=r.csoport_id,
+            csoport_sorrend=r.csoport_sorrend,
+            feladat_tipus=r.feladat_tipus,
+            elfogadott_valaszok=_json_to_list(r.elfogadott_valaszok),
+            valaszlehetosegek=_json_to_list(r.valaszlehetosegek),
+            max_pont=r.max_pont if r.max_pont is not None else 1,
+            reszpontozas=r.reszpontozas,
+            ertekeles_megjegyzes=r.ertekeles_megjegyzes,
             tts_kerdes_path=r.tts_kerdes_path,
             tts_magyarazat_path=r.tts_magyarazat_path,
             kontextus=r.kontextus,
@@ -115,6 +247,12 @@ class Feladat:
             tts_kerdes_path=tts_kerdes_path if tts_kerdes_path is not None else self.tts_kerdes_path,
             tts_magyarazat_path=tts_magyarazat_path if tts_magyarazat_path is not None else self.tts_magyarazat_path,
         )
+
+    def elfogadott_valaszok_vagy_helyes(self) -> list[str]:
+        """Return the canonical accepted-answer list, falling back to helyes_valasz."""
+        if self.elfogadott_valaszok:
+            return self.elfogadott_valaszok
+        return [self.helyes_valasz]
 
     def neh_csillag(self) -> str:
         return "⭐" * self.neh + "☆" * (3 - self.neh)

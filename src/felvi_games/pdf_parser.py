@@ -32,8 +32,8 @@ from openai import OpenAI
 
 from felvi_games.config import get_db_path, get_exams_dir, relative_text_path, text_cache_path
 from felvi_games.db import FeladatRepository
-from felvi_games.models import Feladat
-from felvi_games.review import print_feladat, review_feladatok
+from felvi_games.models import Feladat, FeladatCsoport, _parse_str_list
+from felvi_games.review import print_csoport, print_feladat, review_feladatok
 
 load_dotenv()
 
@@ -63,6 +63,22 @@ _NEH_SCALE = (
     "3 = nehéz (komplex, ritka tudás vagy kreativitás kell)"
 )
 
+# Regexp for task block boundaries: matches "1.   ", "10.   " at line start
+_TASK_BLOCK_RE = re.compile(r"^\s{0,4}(\d{1,2})\.\s{3,}")
+# Matches [Oldal N] page markers emitted by pdf_to_text
+_PAGE_MARKER_RE = re.compile(r"^\[Oldal (\d+)\]")
+
+
+@dataclasses.dataclass(frozen=True)
+class TaskBlock:
+    """One main task's raw text extracted from a feladatlap or útmutató."""
+
+    sorszam: int      # task number as printed (1-based)
+    oldal_start: int  # PDF page where the task header was found
+    sor_start: int    # 1-based global line number of the task header line
+    raw_text: str     # full block text (header + body), stripped
+
+
 # ---------------------------------------------------------------------------
 # Step 1 – PDF → text
 # ---------------------------------------------------------------------------
@@ -77,6 +93,93 @@ def pdf_to_text(path: Path) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Step 1b – regexp-based task block splitting
+# ---------------------------------------------------------------------------
+
+
+def split_into_task_blocks(text: str) -> list[TaskBlock]:
+    """Split feladatlap/útmutató text into per-task blocks using a regexp.
+
+    Detects main task headers matching ``r'^\\s{0,4}(\\d{1,2})\\.\\s{3,}'``
+    (e.g. ``"1.   Feladat szövege"``).  ``[Oldal N]`` markers are tracked so
+    every block carries the PDF page where it starts.
+
+    Sub-task lines (``a)``, ``b)`` …) that follow a task header but precede
+    the next main-task header are included in the current block's text.
+
+    Returns blocks sorted by ``sorszam``.  Returns an empty list if no task
+    headers are found (caller should fall back to the single-batch path).
+    """
+    lines = text.splitlines()
+    blocks: list[TaskBlock] = []
+
+    current_sorszam: int | None = None
+    current_oldal: int = 1
+    current_oldal_start: int = 1
+    current_sor_start: int = 1
+    current_lines: list[str] = []
+
+    for line_num, line in enumerate(lines, start=1):
+        page_m = _PAGE_MARKER_RE.match(line)
+        if page_m:
+            current_oldal = int(page_m.group(1))
+
+        task_m = _TASK_BLOCK_RE.match(line)
+        if task_m:
+            # Close previous block before opening a new one
+            if current_sorszam is not None:
+                blocks.append(TaskBlock(
+                    sorszam=current_sorszam,
+                    oldal_start=current_oldal_start,
+                    sor_start=current_sor_start,
+                    raw_text="\n".join(current_lines).strip(),
+                ))
+            current_sorszam = int(task_m.group(1))
+            current_oldal_start = current_oldal
+            current_sor_start = line_num
+            current_lines = [line]
+        else:
+            current_lines.append(line)
+
+    # Flush last block
+    if current_sorszam is not None:
+        blocks.append(TaskBlock(
+            sorszam=current_sorszam,
+            oldal_start=current_oldal_start,
+            sor_start=current_sor_start,
+            raw_text="\n".join(current_lines).strip(),
+        ))
+
+    return sorted(blocks, key=lambda b: b.sorszam)
+
+
+def annotate_block(block: TaskBlock) -> str:
+    """Prepend a machine-readable metadata header to a block's raw text.
+
+    Format: ``## [Feladat N | Oldal X, sor Y]``
+    GPT is instructed to read ``feladat_oldal`` from this header.
+    """
+    return (
+        f"## [Feladat {block.sorszam} | Oldal {block.oldal_start}, sor {block.sor_start}]\n"
+        f"{block.raw_text}"
+    )
+
+
+def match_fl_ut_blocks(
+    fl_blocks: list[TaskBlock],
+    ut_blocks: list[TaskBlock],
+) -> list[tuple[TaskBlock, TaskBlock | None]]:
+    """Pair fl and ut blocks by ``sorszam``.
+
+    For each fl block, the matching ut block (same sorszam) is found.
+    If the útmutató omits a task, the second element is ``None``.
+    Order follows *fl_blocks*.
+    """
+    ut_map: dict[int, TaskBlock] = {b.sorszam: b for b in ut_blocks}
+    return [(fl_b, ut_map.get(fl_b.sorszam)) for fl_b in fl_blocks]
+
+
+# ---------------------------------------------------------------------------
 # Step 2 – text pair → Feladat list (via GPT)
 # ---------------------------------------------------------------------------
 
@@ -84,8 +187,21 @@ _SYSTEM_PROMPT = """\
 Felvételi feladatsor elemző vagy. Feladatlapot és javítási útmutatót kapod.
 Minden egyes részfeladatból (pl. 1a, 1b, 2a…) ONE JSON objektumot generálj.
 Komplex számítási/rajz/táblázat feladatokat egyszerűsítsd: a kérdést úgy fogalmazd,
-hogy szövegesen (egy válasszal) megválaszolható legyen, és add meg a helyes választ is.Fontos: ha több részfeladat egyazon bevezető szövegre, ábrára vagy táblázatra hivatkozik,
-minden érintett feladat kontextus mezőjébe másold be a teljes közös részt."""
+hogy szövegesen (egy válasszal) megválaszolható legyen, és add meg a helyes választ is.
+Fontos: ha több részfeladat egyazon bevezető szövegre, ábrára vagy táblázatra hivatkozik,
+minden érintett feladat kontextus mezőjébe másold be a teljes közös részt.
+A feladat típusát és az elfogadott válaszok listáját mindig az útmutatóból olvasd ki.
+Fogalmazás- vagy esszéírást igénylő feladatokat (amelyekhez nincs rövid, egyértelmű
+helyes válasz, pl. összefüggő szöveg írása) NE generálj – hagyd ki.
+Ha a feladat képre hivatkozik és az útmutatóból a helyes válasz kiolvasható,
+vedd be (az elfogadott_valaszok mezőbe is sorold fel); ha az útmutatóból sem
+olvasható ki, hagyd ki a feladatot.
+Ha a helyes válasz több elem összessége (pl. „A, B, E"), a helyes_valasz mezőbe
+vesszővel elválasztva írd; az elfogadott_valaszok mezőbe az összes elfogadható
+variációt sorold fel.
+A feladat_oldal értékét a feladatblokk fejlécéből olvasd ki:
+„## [Feladat N | Oldal X, sor Y]" → X az oldalszám.
+Ha ilyen fejléc nincs, becsüld meg a [Oldal N] markerekből."""
 
 _USER_TEMPLATE = """\
 ## Sorozat adatok
@@ -114,8 +230,28 @@ Az érték egy lista; minden elem tartalmazza:
 - "kontextus": string | null – ha a feladat egy közös bevezető szövegre, ábrára vagy
   táblázatra hivatkozik, ide másold be a teljes közös szöveget; egyébként null
 - "abra_van": bool – true ha a feladat szövege ábrára, grafikonra vagy rajzra hivatkozik
-- "feladat_oldal": int | null – a PDF [Oldal N] jelölő alapján az az oldalszám, ahol
-  a feladat (vagy az ábra) megjelenik; ha nem azonosítható egytelműen, null
+- "feladat_oldal": int | null – a feladatblokk fejlécéből olvasd ki: „## [Feladat N |
+  Oldal X, sor Y]" → X az oldalszám; ha ilyen fejléc nincs, becsüld a [Oldal N]
+  markerek alapján; ha egyáltalán nem azonosítható, null
+- "feladat_tipus": string | null – a feladat típusa az alábbiak egyike:
+  "nyilt_valasz" (szabad szöveges válasz),
+  "tobbvalasztos" (felkínált opciókból kell választani),
+  "parositas" (elemeket kell összepárosítani),
+  "igaz_hamis" (igaz/hamis döntés),
+  "fogalmazas" (hosszabb írásbeli szöveg),
+  "kitoltes" (hiányos szöveg kiegészítése);
+  ha nem egyértelmű, null
+- "elfogadott_valaszok": list[string] | null – az útmutatóból kiolvasott összes
+  elfogadható helyes válasz listában (pl. ["0,6", "3/5", "0.6"]); ha csak egy van,
+  akkor is listában; null ha nem ismert
+- "valaszlehetosegek": list[string] | null – a feladatlapban felkínált válaszlehetőségek
+  listában (többválasztós és párosítás feladatoknál); egyébként null
+- "max_pont": int – az útmutatóból kiolvasott maximális pontszám erre a részfeladatra
+  (alapértelmezett: 1)
+- "reszpontozas": string | null – részpontozási szabály szövegesen, ha az útmutató
+  megad ilyet (pl. "6/6=3p, 5/6=2p, 3-4/6=1p"); egyébként null
+- "ertekeles_megjegyzes": string | null – fontos javítói megjegyzések, kivételek,
+  elfogadási feltételek (pl. "Csak akkor adható pont, ha..."); egyébként null
 
 A szöveg magyar; hagyj minden szaktermint, nevet, számot magyarul.
 Ne generálj feladatot, ha a szövegből nem olvasható ki egyértelműen a helyes válasz.
@@ -191,6 +327,107 @@ def extract_feladatok(
     return feladatok
 
 
+def extract_feladatok_batched(
+    matched_blocks: list[tuple[TaskBlock, TaskBlock | None]],
+    targy: str,
+    pdf_source: str,
+    ut_source: str = "",
+    *,
+    model: str | None = None,
+    batch_size: int = 4,
+) -> list[Feladat]:
+    """Extract Feladat objects from pre-split task blocks via batched GPT calls.
+
+    Sends *batch_size* (fl, ut) block pairs per GPT call, each annotated with
+    page/line metadata so the model can fill ``feladat_oldal`` reliably and
+    never loses task content due to hard char-count truncation.
+
+    Args:
+        matched_blocks: paired (fl_block, ut_block | None) list from
+            :func:`match_fl_ut_blocks`.
+        targy: subject (\"matek\" or \"magyar\").
+        pdf_source: fl PDF filename (used for id prefix and metadata).
+        ut_source: ut PDF filename (informational only).
+        model: override GPT model name.
+        batch_size: task pairs per GPT call (default 4).
+
+    Returns:
+        Flat list of validated :class:`Feladat` objects.
+    """
+    if not matched_blocks:
+        return []
+
+    client = _make_openai_client()
+    model = model or os.getenv("LLM_MODEL", "gpt-4o")
+
+    meta = parse_filename_meta(pdf_source)
+    id_prefix = _id_prefix_from_source(pdf_source, targy)
+    szint = meta.get("szint") or "(ismeretlen szint)"
+
+    all_feladatok: list[Feladat] = []
+
+    for batch_start in range(0, len(matched_blocks), batch_size):
+        batch = matched_blocks[batch_start : batch_start + batch_size]
+        batch_nums = [fl_b.sorszam for fl_b, _ in batch]
+
+        fl_text = "\n\n".join(annotate_block(fl_b) for fl_b, _ in batch)
+        ut_text = "\n\n".join(
+            annotate_block(ut_b)
+            if ut_b is not None
+            else (
+                f"## [Feladat {fl_b.sorszam} | útmutató nincs]\n"
+                "(nincs útmutató ehhez a feladathoz)"
+            )
+            for fl_b, ut_b in batch
+        )
+
+        prompt = _USER_TEMPLATE.format(
+            targy=targy,
+            pdf_source=pdf_source,
+            ut_source=ut_source or "(ismeretlen)",
+            ev=meta["ev"] or "(ismeretlen)",
+            valtozat=meta["valtozat"] or "(ismeretlen)",
+            fl_text=fl_text,
+            ut_text=ut_text,
+            id_prefix=id_prefix,
+            neh_scale=_NEH_SCALE,
+            szint=szint,
+        )
+
+        logger.info("Calling GPT for %s, feladatok %s …", pdf_source, batch_nums)
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.2,
+                response_format={"type": "json_object"},
+            )
+            raw = json.loads(response.choices[0].message.content)
+        except Exception as exc:
+            logger.error("GPT call failed for batch %s: %s", batch_nums, exc)
+            continue
+
+        items: list[dict] = raw.get("feladatok", [])
+        for item in items:
+            try:
+                item["targy"] = targy
+                item.setdefault("ev", meta["ev"])
+                item.setdefault("valtozat", meta["valtozat"])
+                all_feladatok.append(_dict_to_feladat(item))
+            except (KeyError, ValueError, TypeError) as exc:
+                logger.warning("Skipping invalid item %s: %s", item.get("id"), exc)
+
+    n_calls = -(-len(matched_blocks) // batch_size)  # ceiling division
+    logger.info(
+        "Extracted %d feladatok from %s (batched, %d GPT call(s))",
+        len(all_feladatok), pdf_source, n_calls,
+    )
+    return all_feladatok
+
+
 def _id_prefix_from_source(pdf_source: str, targy: str) -> str:
     """'M8_2025_1_fl.pdf' → 'mat4_2025_1' / 'mat8_2025_1'."""
     meta = parse_filename_meta(pdf_source)
@@ -258,10 +495,93 @@ def _dict_to_feladat(d: dict) -> Feladat:
         ev=int(ev_raw) if ev_raw is not None else None,
         valtozat=int(val_raw) if val_raw is not None else None,
         feladat_sorszam=str(raw_sorszam) if raw_sorszam else None,
+        feladat_tipus=str(d["feladat_tipus"]) if d.get("feladat_tipus") else None,
+        elfogadott_valaszok=_parse_str_list(d.get("elfogadott_valaszok")),
+        valaszlehetosegek=_parse_str_list(d.get("valaszlehetosegek")),
+        max_pont=int(d["max_pont"]) if d.get("max_pont") is not None else 1,
+        reszpontozas=str(d["reszpontozas"]) if d.get("reszpontozas") else None,
+        ertekeles_megjegyzes=str(d["ertekeles_megjegyzes"]) if d.get("ertekeles_megjegyzes") else None,
         kontextus=str(d["kontextus"]) if d.get("kontextus") else None,
         abra_van=bool(d.get("abra_van", False)),
         feladat_oldal=int(d["feladat_oldal"]) if d.get("feladat_oldal") else None,
     )
+
+
+# ---------------------------------------------------------------------------
+# Post-processing: grouping
+# ---------------------------------------------------------------------------
+
+import re as _re
+
+
+def _group_feladatok(
+    feladatok: list[Feladat],
+    pdf_source: str,
+    ut_source: str = "",
+) -> tuple[list[Feladat], list[FeladatCsoport]]:
+    """Group flat Feladat list into FeladatCsoport records.
+
+    Grouping key: the numeric prefix of feladat_sorszam
+    (e.g. "3a", "3b", "3c" all belong to group "3").
+    Tasks without a sorszam are placed in singleton groups.
+
+    Returns:
+        (updated_feladatok, csoportok)
+        where updated_feladatok have csoport_id and csoport_sorrend set.
+    """
+    meta = parse_filename_meta(pdf_source)
+
+    # Group by numeric prefix of feladat_sorszam
+    from collections import defaultdict
+    groups: dict[str, list[tuple[int, Feladat]]] = defaultdict(list)
+    for i, f in enumerate(feladatok):
+        sorszam = f.feladat_sorszam or str(i)
+        num_match = _re.match(r"^(\d+)", sorszam)
+        group_key = num_match.group(1) if num_match else sorszam
+        groups[group_key].append((i, f))
+
+    updated_feladatok: list[Feladat] = [None] * len(feladatok)  # type: ignore[list-item]
+    csoportok: list[FeladatCsoport] = []
+    id_prefix = _id_prefix_from_source(pdf_source, feladatok[0].targy if feladatok else "")
+
+    for group_key, members in groups.items():
+        csoport_id = f"{id_prefix}_{group_key}"
+        # Derive shared fields from the first member (or first with non-null kontextus)
+        first_f = members[0][1]
+        shared_kontextus = next(
+            (f.kontextus for _, f in members if f.kontextus), None
+        )
+        shared_abra = any(f.abra_van for _, f in members)
+        shared_oldal = first_f.feladat_oldal
+        max_pont_ossz = sum(f.max_pont for _, f in members)
+
+        csoport = FeladatCsoport(
+            id=csoport_id,
+            targy=first_f.targy,
+            szint=first_f.szint,
+            feladat_sorszam=group_key,
+            ev=meta.get("ev"),
+            valtozat=meta.get("valtozat"),
+            kontextus=shared_kontextus,
+            abra_van=shared_abra,
+            feladat_oldal=shared_oldal,
+            fl_pdf_path=first_f.fl_pdf_path,
+            ut_pdf_path=first_f.ut_pdf_path,
+            fl_szoveg_path=first_f.fl_szoveg_path,
+            ut_szoveg_path=first_f.ut_szoveg_path,
+            sorrend_kotelezo=False,
+            max_pont_ossz=max_pont_ossz,
+        )
+        csoportok.append(csoport)
+
+        for sorrend, (orig_idx, f) in enumerate(members, start=1):
+            updated_feladatok[orig_idx] = dataclasses.replace(
+                f,
+                csoport_id=csoport_id,
+                csoport_sorrend=sorrend,
+            )
+
+    return updated_feladatok, csoportok
 
 
 # ---------------------------------------------------------------------------
@@ -308,8 +628,13 @@ def parse_exam(
     targy: str,
     *,
     model: str | None = None,
-) -> list[Feladat]:
-    """Full pipeline for one exam pair: pdf→text→GPT→Feladat list (no review, no DB)."""
+) -> tuple[list[Feladat], list[FeladatCsoport]]:
+    """Full pipeline for one exam pair: pdf→text→blocks→GPT→Feladat + FeladatCsoport.
+
+    Uses regexp-based task block splitting and batched GPT calls when task
+    structure is detected in the extracted text.  Falls back to a single GPT
+    call (:func:`extract_feladatok`) when no task headers are found.
+    """
     fl_text = pdf_to_text(fl_path)
     ut_text = pdf_to_text(ut_path)
 
@@ -317,12 +642,29 @@ def parse_exam(
     fl_rel = _save_text_cache(fl_text, fl_path.stem)
     ut_rel = _save_text_cache(ut_text, ut_path.stem)
 
-    feladatok = extract_feladatok(
-        fl_text, ut_text, targy,
-        pdf_source=fl_path.name,
-        ut_source=ut_path.name,
-        model=model,
-    )
+    # Split into per-task blocks; fall back to single-batch if none found
+    fl_blocks = split_into_task_blocks(fl_text)
+    ut_blocks = split_into_task_blocks(ut_text)
+
+    if fl_blocks:
+        matched = match_fl_ut_blocks(fl_blocks, ut_blocks)
+        feladatok = extract_feladatok_batched(
+            matched, targy,
+            pdf_source=fl_path.name,
+            ut_source=ut_path.name,
+            model=model,
+        )
+    else:
+        logger.warning(
+            "No task blocks found in %s – falling back to single-batch extraction",
+            fl_path.name,
+        )
+        feladatok = extract_feladatok(
+            fl_text, ut_text, targy,
+            pdf_source=fl_path.name,
+            ut_source=ut_path.name,
+            model=model,
+        )
     # Attach text-cache paths and PDF paths to every extracted feladat
     try:
         fl_pdf_rel = str(fl_path.relative_to(get_exams_dir()))
@@ -334,7 +676,7 @@ def parse_exam(
     except ValueError:
         ut_pdf_rel = None
 
-    return [
+    feladatok = [
         dataclasses.replace(
             f,
             fl_szoveg_path=fl_rel,
@@ -344,6 +686,12 @@ def parse_exam(
         )
         for f in feladatok
     ]
+
+    if not feladatok:
+        return [], []
+
+    feladatok, csoportok = _group_feladatok(feladatok, fl_path.name, ut_path.name)
+    return feladatok, csoportok
 
 
 def _save_text_cache(text: str, pdf_stem: str) -> str:
@@ -415,7 +763,7 @@ def run(
         print(f"{'─'*60}")
 
         try:
-            feladatok = parse_exam(fl_path, ut_path, targy_val, model=model)
+            feladatok, csoportok = parse_exam(fl_path, ut_path, targy_val, model=model)
         except Exception as exc:
             logger.error("Extraction failed for %s: %s", fl_path.name, exc)
             continue
@@ -424,21 +772,26 @@ def run(
             print("  Nem sikerült feladatot kinyerni.")
             continue
 
-        print(f"  Extrahált feladatok: {len(feladatok)}")
+        print(f"  Extrahált feladatok: {len(feladatok)}, csoportok: {len(csoportok)}")  # type: ignore[possibly-undefined]
 
         if review:
+            # review_feladatok now only reviews Feladatok; csoportok regenerated after
             feladatok = review_feladatok(feladatok)
+            if feladatok:
+                feladatok, csoportok = _group_feladatok(feladatok, fl_path.name, ut_path.name)
 
         if not feladatok:
             continue
 
         if repo:
+            repo.upsert_many_csoportok(csoportok)  # type: ignore[possibly-undefined]
             repo.upsert_many(feladatok)
-            print(f"  Mentve: {len(feladatok)} feladat → DB")
+            print(f"  Mentve: {len(feladatok)} feladat, {len(csoportok)} csoport → DB")  # type: ignore[possibly-undefined]
         else:
-            print(f"  [dry-run] Mentett volna: {len(feladatok)} feladat")
-            for f in feladatok:
-                print_feladat(f)
+            print(f"  [dry-run] Mentett volna: {len(feladatok)} feladat, {len(csoportok)} csoport")  # type: ignore[possibly-undefined]
+            for csoport in csoportok:  # type: ignore[possibly-undefined]
+                csoport_feladatok = [f for f in feladatok if f.csoport_id == csoport.id]
+                print_csoport(csoport, csoport_feladatok)
 
         total_saved += len(feladatok)
 

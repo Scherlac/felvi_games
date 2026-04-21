@@ -416,3 +416,130 @@ class TestMegoldasWithTracking:
         repo.save_megoldas(feladat_matek, "42", Ertekeles(True, "OK", 9))
         stats = repo.stats()
         assert stats["total_attempts"] == 1
+
+
+# ---------------------------------------------------------------------------
+# FeladatCsoport CRUD
+# ---------------------------------------------------------------------------
+
+
+from felvi_games.models import FeladatCsoport
+
+
+def _make_csoport(
+    id: str = "cg_01",
+    targy: str = "matek",
+    feladat_sorszam: str = "3",
+    max_pont_ossz: int = 3,
+) -> FeladatCsoport:
+    return FeladatCsoport(
+        id=id,
+        targy=targy,
+        szint="6 osztályos",
+        feladat_sorszam=feladat_sorszam,
+        ev=2025,
+        valtozat=1,
+        kontextus="Közös bevezető szöveg.",
+        abra_van=False,
+        feladat_oldal=5,
+        fl_pdf_path=None,
+        ut_pdf_path=None,
+        fl_szoveg_path=None,
+        ut_szoveg_path=None,
+        sorrend_kotelezo=False,
+        max_pont_ossz=max_pont_ossz,
+    )
+
+
+class TestFeladatCsoport:
+    def test_upsert_csoport_and_get(self, repo):
+        c = _make_csoport()
+        repo.upsert_csoport(c)
+        result = repo.get_csoport(c.id)
+        assert result is not None
+        assert result.id == c.id
+        assert result.feladat_sorszam == "3"
+        assert result.max_pont_ossz == 3
+
+    def test_upsert_csoport_update(self, repo):
+        c = _make_csoport(max_pont_ossz=3)
+        repo.upsert_csoport(c)
+        import dataclasses
+        c2 = dataclasses.replace(c, max_pont_ossz=5)
+        repo.upsert_csoport(c2)
+        result = repo.get_csoport(c.id)
+        assert result.max_pont_ossz == 5
+
+    def test_get_csoport_missing_returns_none(self, repo):
+        assert repo.get_csoport("no_such_id") is None
+
+    def test_upsert_many_csoportok(self, repo):
+        csoportok = [_make_csoport(id=f"cg_{i:02}", feladat_sorszam=str(i)) for i in range(3)]
+        repo.upsert_many_csoportok(csoportok)
+        for c in csoportok:
+            assert repo.get_csoport(c.id) is not None
+
+    def test_get_feladatok_by_csoport_order(self, repo):
+        """Feladatok are returned ordered by csoport_sorrend."""
+        c = _make_csoport()
+        repo.upsert_csoport(c)
+        # Insert feladatok in reverse sorrend order
+        for sorrend in (3, 1, 2):
+            f = Feladat.from_dict(
+                {
+                    "id": f"f_{sorrend}",
+                    "neh": 1,
+                    "szint": "6 osztályos",
+                    "kerdes": f"Kérdés {sorrend}",
+                    "helyes_valasz": "X",
+                    "hint": "H",
+                    "magyarazat": "M",
+                    "csoport_id": c.id,
+                    "csoport_sorrend": sorrend,
+                },
+                targy="matek",
+            )
+            repo.upsert(f)
+        results = repo.get_feladatok_by_csoport(c.id)
+        assert [r.csoport_sorrend for r in results] == [1, 2, 3]
+
+    def test_get_feladatok_by_csoport_empty(self, repo):
+        assert repo.get_feladatok_by_csoport("no_csoport") == []
+
+
+# ---------------------------------------------------------------------------
+# New Feladat fields: elfogadott_valaszok, feladat_tipus, max_pont
+# ---------------------------------------------------------------------------
+
+
+class TestNewFeladatFields:
+    def test_elfogadott_valaszok_roundtrip(self, repo):
+        f = Feladat.from_dict(
+            {
+                "id": "f_ev",
+                "neh": 1,
+                "szint": "6 osztályos",
+                "kerdes": "Mennyi 2/3 tizedes alakja?",
+                "helyes_valasz": "0,667",
+                "hint": "Osszuk el",
+                "magyarazat": "2 osztva 3-mal",
+                "elfogadott_valaszok": ["0,667", "0.667", "2/3"],
+                "max_pont": 2,
+                "feladat_tipus": "nyilt_valasz",
+            },
+            targy="matek",
+        )
+        repo.upsert(f)
+        r = repo.get("f_ev")
+        assert r.elfogadott_valaszok == ["0,667", "0.667", "2/3"]
+        assert r.max_pont == 2
+        assert r.feladat_tipus == "nyilt_valasz"
+
+    def test_null_list_fields_roundtrip(self, repo):
+        f = _make_feladat("f_null")
+        repo.upsert(f)
+        r = repo.get("f_null")
+        assert r.elfogadott_valaszok is None
+        assert r.valaszlehetosegek is None
+        assert r.reszpontozas is None
+        assert r.ertekeles_megjegyzes is None

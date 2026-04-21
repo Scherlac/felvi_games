@@ -136,6 +136,8 @@ def test_edit_feladat_cli_changes_kerdes(feladat, monkeypatch):
         "magyarazat": "",
         "neh": "",
         "szint": "",
+        "feladat_tipus": "",
+        "max_pont": "",
     }
     call_count = [0]
 
