@@ -5,6 +5,7 @@ Parancssori felületek a felvi_games eszközökhöz (typer).
 
 Belépési pont:
   felvi          →  app()
+    felvi info     – Konfiguráció, PDF-ek és DB állapot kiírása
     felvi scrape   – PDF-ek letöltése
     felvi parse    – PDF-ek feldolgozása DB-be
 """
@@ -32,6 +33,22 @@ class EvfolyamKulcs(str, Enum):
 class Targy(str, Enum):
     matek = "matek"
     magyar = "magyar"
+
+
+# ---------------------------------------------------------------------------
+# felvi info
+# ---------------------------------------------------------------------------
+
+@app.command()
+def info(
+    szint: Annotated[
+        Optional[EvfolyamKulcs], typer.Option("--szint", help="Csak egy évfolyam: 4, 6 vagy 8")
+    ] = None,
+) -> None:
+    """Konfiguráció, letöltött PDF-ek és DB állapot áttekintése."""
+    from felvi_games.status import run as _run
+
+    _run(szint=szint.value if szint else None)
 
 
 # ---------------------------------------------------------------------------

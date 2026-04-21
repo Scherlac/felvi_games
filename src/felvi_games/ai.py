@@ -31,9 +31,10 @@ Helyes válasz: {helyes}
 {tipus_sor}
 Tanuló válasza: {adott}
 Magyarázat: {magyarazat}
+Max. pontszám: {max_pont}
 
 Értékeld a választ, majd adj vissza CSAK egy JSON objektumot:
-{{"helyes": true/false, "visszajelzes": "...", "pont": 0-10}}
+{{"helyes": true/false, "visszajelzes": "...", "pont": 0-{max_pont}}}
 
 Megjegyzés: ha az elfogadott válaszok listája nem üres, akkor az adott választ
 azokhoz kell hasonlítani (szinonimákat és eltolódásokat is fogadj el).
@@ -78,6 +79,7 @@ def check_answer(
     *,
     elfogadott_valaszok: list[str] | None = None,
     feladat_tipus: str | None = None,
+    max_pont: int = 1,
 ) -> Ertekeles:
     """GPT értékeli a választ. Visszatér egy `Ertekeles` példánnyal."""
     elfogadott_sor = (
@@ -93,6 +95,7 @@ def check_answer(
         tipus_sor=tipus_sor,
         adott=adott,
         magyarazat=magyarazat,
+        max_pont=max_pont,
     )
     try:
         response = _client.chat.completions.create(
@@ -104,6 +107,11 @@ def check_answer(
             temperature=0.3,
             response_format={"type": "json_object"},
         )
-        return Ertekeles.from_dict(json.loads(response.choices[0].message.content))
+        ert = Ertekeles.from_dict(json.loads(response.choices[0].message.content))
+        # Clamp point to valid range
+        clamped = max(0, min(ert.pont, max_pont))
+        if clamped != ert.pont:
+            ert = Ertekeles(helyes=ert.helyes, visszajelzes=ert.visszajelzes, pont=clamped)
+        return ert
     except Exception:
         return Ertekeles.hiba()

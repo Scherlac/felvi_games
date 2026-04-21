@@ -326,6 +326,7 @@ class GameState:
     szint: str = "mind"
     fazis: Fazis = Fazis.VALASZTAS
     atiras: str = ""
+    utolso_valasz: str = ""      # the answer submitted for the last question
     ertekeles: Ertekeles | None = None
     tts_audio: bytes | None = None
     # --- user & session tracking ---
@@ -336,6 +337,7 @@ class GameState:
     kerdes_kezdete: datetime | None = None
     segitseg_kert: bool = False    # hint used on current question
     hibajelezes: bool = False      # error flagged on current question
+    feladat_sor: list[str] = field(default_factory=list)  # ordered queue of feladat IDs
 
     def record_answer(self, feladat: Feladat, ertekeles: Ertekeles) -> None:
         self.megoldott_ids.add(feladat.id)

@@ -87,15 +87,71 @@ def get_state() -> GameState:
     return st.session_state.gs  # type: ignore[return-value]
 
 
+def _group_members(feladat: Feladat, keszlet: list[Feladat]) -> list[Feladat]:
+    """Return all members of feladat's group, sorted by csoport_sorrend."""
+    return sorted(
+        [f for f in keszlet if f.csoport_id == feladat.csoport_id
+         and f.csoport_sorrend is not None],
+        key=lambda f: f.csoport_sorrend,  # type: ignore[arg-type]
+    )
+
+
 def next_feladat(feladatok: dict[str, list[Feladat]], gs: GameState) -> Feladat | None:
     keszlet = feladatok.get(gs.targy, [])
     if gs.szint != "mind":
         keszlet = [f for f in keszlet if f.szint == gs.szint]
+
+    # --- drain the pre-built queue first ---
+    feladat_by_id = {f.id: f for f in keszlet}
+    while gs.feladat_sor:
+        fid = gs.feladat_sor.pop(0)
+        if fid in feladat_by_id:
+            return feladat_by_id[fid]
+
     maradek = [f for f in keszlet if f.id not in gs.megoldott_ids]
     if not maradek:
         gs.megoldott_ids.clear()
         maradek = keszlet
-    return random.choice(maradek) if maradek else None
+
+    if not maradek:
+        return None
+
+    # How many questions remain in the current session?
+    hátralevo = max(1, gs.menet_cel - gs.menet_megoldott)
+
+    # Prefer standalone tasks when possible to keep group logic clean
+    standalone = [f for f in maradek if not f.csoport_id]
+    grouped = [f for f in maradek if f.csoport_id]
+
+    # Try to pick a group whose full (unsolved) member list fits the quota
+    random.shuffle(grouped)
+    for candidate in grouped:
+        members = _group_members(candidate, keszlet)
+        unsolved = [f for f in members if f.id not in gs.megoldott_ids]
+        if not unsolved:
+            continue
+        if len(unsolved) <= hátralevo:
+            # Enqueue the whole group in order; return first immediately
+            gs.feladat_sor = [f.id for f in unsolved[1:]]
+            return unsolved[0]
+
+    # No group fits → fall back to a standalone task
+    if standalone:
+        return random.choice(standalone)
+
+    # Last resort: pick any remaining task (or force-enqueue the smallest group)
+    if grouped:
+        candidate = min(
+            grouped,
+            key=lambda f: len(_group_members(f, keszlet)),
+        )
+        members = _group_members(candidate, keszlet)
+        unsolved = [f for f in members if f.id not in gs.megoldott_ids]
+        if unsolved:
+            gs.feladat_sor = [f.id for f in unsolved[1:]]
+            return unsolved[0]
+
+    return random.choice(maradek)
 
 
 def start_kerdes(feladat: Feladat, gs: GameState) -> None:
@@ -325,8 +381,8 @@ def _render_kerdes(gs: GameState) -> None:
     # --- Csoport pozíció + közös kontextus ---
     _render_csoport_context(feladat)
 
-    # --- Kérdés ---
-    st.info(f"**{feladat.kerdes}**")
+    # --- Kérdés (Markdown + LaTeX math renderelés) ---
+    st.info(feladat.kerdes)
 
     # --- Válaszlehetőségek listázva (párosítás / ha nincs widget) ---
     if (
@@ -401,11 +457,13 @@ def _render_kerdes(gs: GameState) -> None:
                     feladat.magyarazat,
                     elfogadott_valaszok=feladat.elfogadott_valaszok_vagy_helyes(),
                     feladat_tipus=feladat.feladat_tipus,
+                    max_pont=feladat.max_pont,
                 )
             elapsed = (
                 (datetime.now(timezone.utc) - gs.kerdes_kezdete).total_seconds()
                 if gs.kerdes_kezdete else None
             )
+            gs.utolso_valasz = valasz
             gs.record_answer(feladat, ert)
             get_repo().save_megoldas(
                 feladat, valasz, ert,
@@ -442,14 +500,21 @@ def _render_eredmeny(feladatok: dict[str, list[Feladat]], gs: GameState) -> None
 
     st.markdown(f"**Visszajelzés:** {ert.visszajelzes}")
 
-    with st.expander("📚 Részletes magyarázat", expanded=True):
-        st.write(feladat.magyarazat)
-        st.markdown(f"**Helyes válasz:** `{feladat.helyes_valasz}`")
+    # --- A tanuló válasza vs. helyes válasz ---
+    col_adott, col_helyes = st.columns(2)
+    with col_adott:
+        st.markdown(f"**Adott válasz:** {gs.utolso_valasz}")
+    with col_helyes:
+        st.markdown(f"**Helyes válasz:** {feladat.helyes_valasz}")
+
+    with st.expander("📚 Részletes magyarázat", expanded=not ert.helyes):
+        st.markdown(feladat.magyarazat)
+        st.markdown(f"**Helyes válasz:** {feladat.helyes_valasz}")
 
         # Show all accepted answers if there are multiple
         if feladat.elfogadott_valaszok and len(feladat.elfogadott_valaszok) > 1:
-            st.caption("Elfogadható válaszok: " + ", ".join(
-                f"`{v}`" for v in feladat.elfogadott_valaszok
+            st.markdown("**Elfogadható válaszok:** " + ", ".join(
+                feladat.elfogadott_valaszok
             ))
 
         # Partial scoring rule
@@ -579,17 +644,7 @@ def _render_source_expanders(feladat: Feladat, *, show_ut: bool) -> None:
                 )
             except FileNotFoundError:
                 st.caption(f"Fájl nem található: {feladat.fl_szoveg_path}")
-    if show_ut and feladat.ut_szoveg_path:
-        with st.expander("📋 Javítási útmutató szövege (forrás)"):
-            try:
-                text = resolve_asset(feladat.ut_szoveg_path).read_text(encoding="utf-8")
-                st.markdown(
-                    f'<div style="max-height:50vh;overflow-y:auto;white-space:pre-wrap;'
-                    f'font-family:monospace;font-size:0.85em">{text}</div>',
-                    unsafe_allow_html=True,
-                )
-            except FileNotFoundError:
-                st.caption(f"Fájl nem található: {feladat.ut_szoveg_path}")
+
 
 
 # ---------------------------------------------------------------------------
@@ -599,8 +654,8 @@ def _render_source_expanders(feladat: Feladat, *, show_ut: bool) -> None:
 
 def _render_login(gs: GameState) -> None:
     st.title("🎯 Felvételi Kvíz")
-    st.markdown("### Kinek szól a játék?")
-    nev = st.text_input("Neved:", placeholder="pl. Bence", max_chars=64)
+    st.markdown("### Add meg a neved:")
+    nev = st.text_input("Neved:", placeholder="pl. Jani", max_chars=64)
     if st.button("Tovább →", type="primary", disabled=not nev.strip()):
         gs.felhasznalo = nev.strip()
         get_repo().get_or_create_felhasznalo(nev.strip())

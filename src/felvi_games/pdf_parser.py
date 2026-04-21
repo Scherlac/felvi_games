@@ -201,7 +201,11 @@ vesszővel elválasztva írd; az elfogadott_valaszok mezőbe az összes elfogadh
 variációt sorold fel.
 A feladat_oldal értékét a feladatblokk fejlécéből olvasd ki:
 „## [Feladat N | Oldal X, sor Y]" → X az oldalszám.
-Ha ilyen fejléc nincs, becsüld meg a [Oldal N] markerekből."""
+Ha ilyen fejléc nincs, becsüld meg a [Oldal N] markerekből.
+Formázás: a szöveges mezőkben (kerdes, helyes_valasz, magyarazat, hint, kontextus)
+használj Markdown formázást (pl. **félkövér**, listák). Matematikai képleteket és
+kifejezéseket LaTeX jelöléssel írd: inline képleteknél $...$, önálló sorban lévő
+(display) képleteknél $$...$$. Például: „A kerület $2r\\pi$." vagy „$$\\frac{a}{b} = c$$"."""
 
 _USER_TEMPLATE = """\
 ## Sorozat adatok
@@ -221,14 +225,18 @@ Generálj egy JSON objektumot, amely egyetlen "feladatok" kulcsot tartalmaz.
 Az érték egy lista; minden elem tartalmazza:
 - "id": string – egyedi azonosító, formátum: "{id_prefix}_<feladat_szam>_<betű>"
   például "{id_prefix}_1_a", "{id_prefix}_2_b"
-- "kerdes": string – a részfeladat kérdése, teljes mondatban (max 3 mondat)
-- "helyes_valasz": string – a helyes válasz, rövid, tömör (max 1-2 mondat)
+- "kerdes": string – a részfeladat kérdése, teljes mondatban (max 3 mondat);
+  Markdown formázás megengedett; matematikai kifejezéseket LaTeX jelöléssel ($...$)
+- "helyes_valasz": string – a helyes válasz, rövid, tömör (max 1-2 mondat);
+  matematikai kifejezéseket LaTeX jelöléssel
 - "hint": string – egy segítő tipp a megoldáshoz (max 1 mondat)
-- "magyarazat": string – rövid magyarázat miért helyes (max 2 mondat)
+- "magyarazat": string – rövid magyarázat miért helyes (max 2 mondat);
+  Markdown + LaTeX math megengedett
 - "neh": int – nehézség 1–3 ({neh_scale})
 - "szint": "{szint}"
 - "kontextus": string | null – ha a feladat egy közös bevezető szövegre, ábrára vagy
-  táblázatra hivatkozik, ide másold be a teljes közös szöveget; egyébként null
+  táblázatra hivatkozik, ide másold be a teljes közös szöveget; egyébként null;
+  Markdown + LaTeX math formázás megengedett
 - "abra_van": bool – true ha a feladat szövege ábrára, grafikonra vagy rajzra hivatkozik
 - "feladat_oldal": int | null – a feladatblokk fejlécéből olvasd ki: „## [Feladat N |
   Oldal X, sor Y]" → X az oldalszám; ha ilyen fejléc nincs, becsüld a [Oldal N]
@@ -310,7 +318,7 @@ def extract_feladatok(
         response_format={"type": "json_object"},
     )
 
-    raw = json.loads(response.choices[0].message.content)
+    raw = json.loads(response.choices[0].message.content or "{}")
     items: list[dict] = raw.get("feladatok", [])
 
     feladatok: list[Feladat] = []
@@ -405,7 +413,7 @@ def extract_feladatok_batched(
                 temperature=0.2,
                 response_format={"type": "json_object"},
             )
-            raw = json.loads(response.choices[0].message.content)
+            raw = json.loads(response.choices[0].message.content or "{}")
         except Exception as exc:
             logger.error("GPT call failed for batch %s: %s", batch_nums, exc)
             continue
