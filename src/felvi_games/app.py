@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import random
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,6 +16,8 @@ from felvi_games.db import FeladatRepository
 from felvi_games.models import KATEGORIA_INFO, Ertekeles, Fazis, Feladat, GameState, InterakcioTipus
 
 setup_logging()
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -282,22 +285,31 @@ def _render_sidebar(gs: GameState) -> None:
 def _render_valasztas(
     feladatok: dict[str, list[Feladat]], gs: GameState
 ) -> None:
+    logger.debug("render_valasztas | targy=%s szint=%s menet_id=%s", gs.targy, gs.szint, gs.menet_id)
+
+    # Seed widget state from gs on the VERY FIRST render only, then let
+    # Streamlit own the values (explicit keys prevent positional-key resets).
+    if "radio_targy" not in st.session_state:
+        st.session_state["radio_targy"] = gs.targy
+    if "radio_szint" not in st.session_state:
+        st.session_state["radio_szint"] = gs.szint
+
     col_t, col_s = st.columns(2)
     with col_t:
         gs.targy = st.radio(
             "Tárgy",
             options=_TARGYAK,
             format_func=lambda x: "📐 Matematika" if x == "matek" else "📖 Magyar",
-            index=_TARGYAK.index(gs.targy),
             horizontal=True,
+            key="radio_targy",
         )
     with col_s:
         gs.szint = st.radio(
             "Szint",
             options=_SZINTEK,
             format_func=lambda x: _SZINT_CIMKEK.get(x, x),
-            index=_SZINTEK.index(gs.szint) if gs.szint in _SZINTEK else 0,
             horizontal=True,
+            key="radio_szint",
         )
 
     if gs.menet_id is None:
@@ -749,7 +761,7 @@ def _render_login(gs: GameState) -> None:
 # ---------------------------------------------------------------------------
 
 
-@st.dialog("� Napi áttekintő")
+
 def _show_daily_insight_dialog(insight_data: dict) -> None:
     """Display the AI-generated daily progress insight."""
     from felvi_games.medal_assets import get_medal_asset
@@ -786,7 +798,7 @@ def _show_daily_insight_dialog(insight_data: dict) -> None:
                     st.image(kep if isinstance(kep, bytes) else kep, width=160)
 
     if st.button("💪 Rajta, nézzük!", use_container_width=True, type="primary"):
-        st.session_state.pop("_napi_insight", None)
+        st.session_state["_napi_insight"] = None
         st.rerun()
 
 
@@ -850,8 +862,19 @@ def main() -> None:
     _render_header(gs)
     _render_sidebar(gs)
 
+    logger.debug(
+        "main rerun | user=%s fazis=%s insight=%s insight_seen=%s uj_eremek=%s",
+        gs.felhasznalo,
+        gs.fazis,
+        "present" if st.session_state.get("_napi_insight") else
+            ("None" if "_napi_insight" in st.session_state else "missing"),
+        st.session_state.get("_napi_insight_seen"),
+        bool(st.session_state.get("_uj_eremek")),
+    )
+
     # Daily insight: trigger once per calendar day (runs in a spinner, non-blocking)
     if "_napi_insight" not in st.session_state:
+        logger.debug("daily_check | running for user=%s", gs.felhasznalo)
         with st.spinner("Napi áttekintés betöltése..."):
             try:
                 from felvi_games.progress_check import daily_check
@@ -859,6 +882,7 @@ def main() -> None:
             except Exception:
                 insight = None
         if insight is not None:
+            logger.debug("daily_check | insight received, storing in session_state")
             # serialise to a plain dict so Streamlit can keep it in session_state
             st.session_state["_napi_insight"] = {
                 "greeting": insight.greeting,
@@ -877,12 +901,19 @@ def main() -> None:
                 "new_medal_created": insight.new_medal_created,
             }
         else:
+            logger.debug("daily_check | no insight (not first login today)")
             # Mark as checked so we don't call again this session
             st.session_state["_napi_insight"] = None
 
-    if st.session_state.get("_napi_insight"):
+    # Daily insight: show as a standalone page (return early) so selection widgets
+    # never render at the same time — prevents double-click from layout shift.
+    if st.session_state.get("_napi_insight") and not st.session_state.get("_napi_insight_seen"):
+        logger.debug("main | showing insight page, returning early")
+        st.session_state["_napi_insight_seen"] = True
         _show_daily_insight_dialog(st.session_state["_napi_insight"])
+        return
 
+    logger.debug("main | rendering fazis=%s", gs.fazis)
     # Award modal: triggered after a session ends with new medals
     if st.session_state.get("_uj_eremek"):
         _show_medal_dialog(st.session_state["_uj_eremek"])
