@@ -573,6 +573,73 @@ def medal_delete_cmd(
 
 
 # ---------------------------------------------------------------------------
+# felvi stats
+# ---------------------------------------------------------------------------
+
+@app.command("stats")
+def stats_cmd(
+    db: Annotated[
+        Optional[Path], typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
+    ] = None,
+) -> None:
+    """Feladatok és megoldások összefoglaló statisztikája a DB-ből."""
+    from sqlalchemy import func, select
+    from sqlalchemy.orm import Session
+
+    from felvi_games.config import get_db_path
+    from felvi_games.db import FeladatRecord, MegoldasRecord, get_engine
+
+    db_path = db or get_db_path()
+    if not db_path.exists():
+        typer.echo(f"[!] DB nem található: {db_path}")
+        raise typer.Exit(code=1)
+
+    engine = get_engine(db_path)
+    with Session(engine) as sess:
+        total_feladatok = sess.scalar(select(func.count()).select_from(FeladatRecord)) or 0
+        total_attempts = sess.scalar(select(func.count()).select_from(MegoldasRecord)) or 0
+        total_correct = sess.scalar(
+            select(func.count()).select_from(MegoldasRecord).where(MegoldasRecord.helyes.is_(True))
+        ) or 0
+        accuracy = round(100.0 * total_correct / total_attempts, 1) if total_attempts else 0.0
+
+        by_targy_szint = sess.execute(
+            select(FeladatRecord.targy, FeladatRecord.szint, func.count().label("n"))
+            .group_by(FeladatRecord.targy, FeladatRecord.szint)
+            .order_by(FeladatRecord.targy, FeladatRecord.szint)
+        ).all()
+
+        by_ev = sess.execute(
+            select(FeladatRecord.ev, func.count().label("n"))
+            .group_by(FeladatRecord.ev)
+            .order_by(FeladatRecord.ev)
+        ).all()
+
+        reviewed = sess.scalar(
+            select(func.count()).select_from(FeladatRecord).where(FeladatRecord.review_elvegezve.is_(True))
+        ) or 0
+
+    typer.echo(f"\n=== DB Statistics  ({db_path}) ===\n")
+    typer.echo(f"  Feladatok összesen:   {total_feladatok}")
+    typer.echo(f"  Felülvizsgált:        {reviewed} / {total_feladatok}")
+    typer.echo(f"  Megoldási kísérletek: {total_attempts}")
+    typer.echo(f"  Helyes válaszok:      {total_correct}  ({accuracy:.1f}%)")
+
+    if by_targy_szint:
+        typer.echo("\n  Tárgy / Szint:")
+        for row in by_targy_szint:
+            typer.echo(f"    {row.targy:<10} {row.szint:<6}  {row.n} feladat")
+
+    if by_ev:
+        typer.echo("\n  Évenkénti bontás:")
+        for row in by_ev:
+            label = str(row.ev) if row.ev is not None else "(ismeretlen)"
+            typer.echo(f"    {label:<10}  {row.n} feladat")
+
+    typer.echo()
+
+
+# ---------------------------------------------------------------------------
 # felvi user-stats
 # ---------------------------------------------------------------------------
 
