@@ -331,6 +331,9 @@ def medals(
     generate: Annotated[
         bool, typer.Option("--generate", help="Új dinamikus érem generálása és mentése a katalógusba")
     ] = False,
+    generator_inputs: Annotated[
+        bool, typer.Option("--generator-inputs", help="A dinamikus éremgenerátornak átadott bemeneti adatok kiírása")
+    ] = False,
     window_hours: Annotated[
         int, typer.Option("--window-hours", help="Dry-run javaslat időablaka órában (1-18)")
     ] = 18,
@@ -353,9 +356,58 @@ def medals(
     from sqlalchemy.orm import Session
     import json as _json
 
+    def _collect_generator_inputs(
+        repo: FeladatRepository,
+        player: str,
+        hours: int,
+    ) -> dict[str, object]:
+        stats = get_user_stats(player, repo)
+        close_medals = estimate_close_medals(player, repo, stats)
+        earned_count = len(repo.get_eremek(player, include_expired=True))
+        close_payload = [
+            {
+                "id": cm.erem.id,
+                "nev": cm.erem.nev,
+                "ikon": cm.erem.ikon,
+                "kategoria": cm.erem.kategoria,
+                "progress": round(cm.progress, 3),
+                "progress_pct": int(cm.progress * 100),
+                "hint": cm.hint,
+            }
+            for cm in close_medals
+        ]
+        return {
+            "user": player,
+            "window_hours": hours,
+            "earned_count": earned_count,
+            "stats": stats,
+            "close_medals": close_payload,
+        }
+
     if generate and generate_dry_run:
         typer.echo("[!] A --generate és --generate-dry-run együtt nem használható.")
         raise typer.Exit(code=2)
+
+    if generator_inputs:
+        if not user:
+            typer.echo("[!] A --generator-inputs használatához add meg a --user opciót.")
+            raise typer.Exit(code=2)
+        if window_hours < 1 or window_hours > 18:
+            typer.echo("[!] A --window-hours értéke 1 és 18 közé essen.")
+            raise typer.Exit(code=2)
+
+        db_path = db or get_db_path()
+        if not db_path.exists():
+            typer.echo(f"[!] DB nem található: {db_path}")
+            raise typer.Exit(code=1)
+
+        repo = FeladatRepository(db_path)
+        payload = _collect_generator_inputs(repo, user, window_hours)
+
+        typer.echo(f"\n=== Dinamikus generátor bemenet  (DB: {db_path}) ===\n")
+        typer.echo(_json.dumps(payload, ensure_ascii=False, indent=2))
+        typer.echo("\nMegjegyzés: ez a strukturált payload megy a dinamikus éremgenerátorhoz a prompt részeként.\n")
+        return
 
     if generate_dry_run or generate:
         if not user:
@@ -371,9 +423,10 @@ def medals(
             raise typer.Exit(code=1)
 
         repo = FeladatRepository(db_path)
-        stats = get_user_stats(user, repo)
+        generator_payload = _collect_generator_inputs(repo, user, window_hours)
+        stats = generator_payload["stats"]
         close = estimate_close_medals(user, repo, stats)
-        earned_count = len(repo.get_eremek(user, include_expired=True))
+        earned_count = int(generator_payload["earned_count"])
 
         insight = generate_daily_insight(
             user,
