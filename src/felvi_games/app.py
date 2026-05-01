@@ -456,10 +456,12 @@ def _render_kerdes(gs: GameState) -> None:
 
     # --- Header: szint, nehézség, feladat típus ---
     tipus_label = _TIPUS_BADGE.get(feladat.feladat_tipus or "", "")
-    col_info, col_pont = st.columns([3, 1])
+    col_info, col_tipus, col_pont = st.columns([3, 2, 1])
     with col_info:
         st.subheader(f"{badge} {feladat.szint} — {feladat.neh_csillag()}")
+    with col_tipus:
         if tipus_label:
+            st.caption(" ")
             st.caption(tipus_label)
     with col_pont:
         if feladat.max_pont > 1:
@@ -480,15 +482,20 @@ def _render_kerdes(gs: GameState) -> None:
             for opt in feladat.valaszlehetosegek:
                 st.markdown(f"- {opt}")
 
-    # --- Ábra figyelmeztetés + PDF gomb egy sorban ---
-    if feladat.abra_van or feladat.fl_pdf_path:
+    # --- Ábra figyelmeztetés + PDF gomb ---
+    if feladat.abra_van:
         col_abra, col_pdf = st.columns([3, 1])
         with col_abra:
-            if feladat.abra_van:
-                page_hint = f" · **{feladat.feladat_oldal}. oldal**" if feladat.feladat_oldal else ""
-                st.warning(f"⚠️ Ábrára hivatkozik!{page_hint}")
+            page_hint = f" · **{feladat.feladat_oldal}. oldal**" if feladat.feladat_oldal else ""
+            st.warning(f"⚠️ Ábrára hivatkozik!{page_hint}")
         with col_pdf:
             _render_pdf_button(feladat)
+    elif feladat.fl_pdf_path:
+        _render_pdf_button(feladat)
+
+    # --- TTS audio (cached) megjelenítése a kérdés közelében ---
+    if gs.tts_audio:
+        st.audio(gs.tts_audio, format="audio/mp3", autoplay=True)
 
     # --- TTS, Tipp, Hiba gombok ---
     col_tts, col_hint, col_hiba = st.columns(3)
@@ -523,9 +530,6 @@ def _render_kerdes(gs: GameState) -> None:
         if st.button("🚩 Hibát jelzek", help="Hibás feladatszöveg bejelentése"):
             gs.hibajelezes = True
             st.toast("Köszönjük a visszajelzést!", icon="🚩")
-
-    if gs.tts_audio:
-        st.audio(gs.tts_audio, format="audio/mp3", autoplay=True)
 
     if gs.segitseg_kert:
         st.info(f"💡 **Tipp:** {feladat.hint}")
@@ -653,21 +657,23 @@ def _render_eredmeny(feladatok: dict[str, list[Feladat]], gs: GameState) -> None
     # Source text inspection (both feladatlap and útmutató)
     _render_source_expanders(feladat, show_ut=True)
 
-    if st.button("🔊 Visszajelzés felolvasása"):
-        with st.spinner("Hangszintézis..."):
-            audio = text_to_speech(feladat.eredmeny_tts_szoveg(ert.visszajelzes))
-        st.audio(audio, format="audio/mp3", autoplay=True)
-
-    if st.button("📚 Magyarázat felolvasása"):
-        if feladat.tts_magyarazat_path:
-            st.audio(resolve_asset(feladat.tts_magyarazat_path).read_bytes(), format="audio/mp3", autoplay=True)
-        else:
+    col_tts1, col_tts2 = st.columns(2)
+    with col_tts1:
+        if st.button("🔊 Visszajelzés felolvasása", use_container_width=True):
             with st.spinner("Hangszintézis..."):
-                mag_szoveg = f"A helyes válasz: {feladat.helyes_valasz}. {feladat.magyarazat}"
-                audio = text_to_speech(mag_szoveg)
-                updated = get_repo().save_tts_assets(feladat, tts_magyarazat=audio)
-                gs.aktualis = updated
+                audio = text_to_speech(feladat.eredmeny_tts_szoveg(ert.visszajelzes))
             st.audio(audio, format="audio/mp3", autoplay=True)
+    with col_tts2:
+        if st.button("📚 Magyarázat felolvasása", use_container_width=True):
+            if feladat.tts_magyarazat_path:
+                st.audio(resolve_asset(feladat.tts_magyarazat_path).read_bytes(), format="audio/mp3", autoplay=True)
+            else:
+                with st.spinner("Hangszintézis..."):
+                    mag_szoveg = f"A helyes válasz: {feladat.helyes_valasz}. {feladat.magyarazat}"
+                    audio = text_to_speech(mag_szoveg)
+                    updated = get_repo().save_tts_assets(feladat, tts_magyarazat=audio)
+                    gs.aktualis = updated
+                st.audio(audio, format="audio/mp3", autoplay=True)
 
     # Review section
     if not feladat.review_elvegezve:
