@@ -931,6 +931,49 @@ def review_cmd(
 
 
 # ---------------------------------------------------------------------------
+# felvi tts-clear  – TTS szöveg törlése (újrageneráláshoz)
+# ---------------------------------------------------------------------------
+
+@app.command("tts-clear")
+def tts_clear_cmd(
+    feladat_id: Annotated[
+        Optional[str], typer.Argument(help="Csak ezt a feladatot érinti")
+    ] = None,
+    targy: Annotated[
+        Optional[Targy], typer.Option("--targy", help="Csak ezt a tárgyat érinti (matek/magyar)")
+    ] = None,
+    db: Annotated[
+        Optional[Path], typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
+    ] = None,
+) -> None:
+    """TTS kérdésszöveg (tts_kerdes_szoveg) törlése DB-ből.
+
+    A törölt rekordok a következő lejátszáskor az aktuális kontextussal
+    (csoport-szöveg + kérdés) újragenerálódnak.
+
+    \b
+    felvi tts-clear                  # minden feladat
+    felvi tts-clear --targy matek    # csak matek
+    felvi tts-clear M8_2023_1_3a    # egy feladat
+    """
+    from felvi_games.config import get_db_path
+    from felvi_games.db import FeladatRepository
+
+    db_path = db or get_db_path()
+    if not db_path.exists():
+        typer.echo(f"[!] DB nem található: {db_path}")
+        raise typer.Exit(code=1)
+
+    repo = FeladatRepository(db_path)
+    count = repo.clear_tts_szoveg(
+        feladat_id=feladat_id,
+        targy=targy.value if targy else None,
+    )
+    scope = feladat_id or (f"targy={targy.value}" if targy else "összes")
+    typer.echo(f"✓ {count} feladat tts_kerdes_szoveg törölve ({scope}).")
+
+
+# ---------------------------------------------------------------------------
 # Entry point (pyproject.toml → project.scripts)
 # ---------------------------------------------------------------------------
 

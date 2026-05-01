@@ -30,6 +30,7 @@ _TTS_PREP_SYSTEM = (
     "- A LaTeX matematikai jelöléseket ($...$ és $$...$$) alakítsd át természetes szóbeli "
     "  megfogalmazássá (pl. $x^2$ → 'x négyzet', $\\frac{a}{b}$ → 'a per b'). "
     "- Táblázatokat, listákat folyó szöveggé fogalmazd át. "
+    "- Számokat, egyenleteket, speciális karaktereket is alakítsd át szöveggé (pl. '3', '≥', '∑' → 'három', 'nagyobb vagy egyenlő', 'szumma'). "
     "- Legyen természetes, folyékony, felolvasható szöveg. "
     "- Csak a szöveget add vissza, semmi mást."
 )

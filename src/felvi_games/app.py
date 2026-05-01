@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import random
@@ -498,23 +499,35 @@ def _render_kerdes(gs: GameState) -> None:
     if gs.tts_audio:
         st.audio(gs.tts_audio, format="audio/mp3", autoplay=True)
 
+    # Resolve kontextus for TTS (group shared text must be read before the question)
+    _csoport_tts = get_repo().get_csoport(feladat.csoport_id) if feladat.csoport_id else None
+    _kontextus_tts = (_csoport_tts.kontextus if _csoport_tts else None) or feladat.kontextus
+    if len(_kontextus_tts or "") > 200:
+        # Too long kontextus, only read the question
+        _tts_bemeneti = feladat.kerdes
+    else:
+        _tts_bemeneti = f"{_kontextus_tts}\n\n{feladat.kerdes}" if _kontextus_tts else feladat.kerdes
+
+    # Stale when the SHA256 hash of the current raw input differs from the stored hash.
+    _bemeneti_hash = hashlib.sha256(_tts_bemeneti.encode()).hexdigest()[:12]
+    _stale = feladat.tts_kerdes_bemenet_hash != _bemeneti_hash
+
     # --- TTS, Tipp, Hiba gombok ---
     col_tts, col_hint, col_hiba = st.columns(3)
     with col_tts:
         if st.button("🔊 Felolvasás", help=feladat.tts_szoveg()):
-            # Regenerate if audio exists but the plain-text TTS script is missing
-            stale = feladat.tts_kerdes_path and not feladat.tts_kerdes_szoveg
-            if feladat.tts_kerdes_path and not stale:
+            if feladat.tts_kerdes_path and not _stale:
                 gs.tts_audio = resolve_asset(feladat.tts_kerdes_path).read_bytes()
             else:
-                tts_text = kerdes_to_tts_szoveg(feladat.kerdes)
+                tts_text = kerdes_to_tts_szoveg(_tts_bemeneti)
                 with st.spinner("Hangszintézis..."):
                     audio = text_to_speech(tts_text)
                     gs.tts_audio = audio
                     updated = get_repo().save_tts_assets(
                         feladat,
                         tts_kerdes=audio,
-                        tts_kerdes_szoveg=tts_text,
+                        tts_kerdes_szoveg=tts_text,          # LLM-processed output (shown in help tooltip)
+                        tts_kerdes_bemenet_hash=_bemeneti_hash,  # hash of raw input (stale detection)
                     )
                     gs.aktualis = updated
             if gs.felhasznalo:

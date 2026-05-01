@@ -200,7 +200,8 @@ class FeladatRecord(Base):
     # Compiled TTS assets – relative paths to MP3 files under assets_dir
     tts_kerdes_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     tts_magyarazat_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    tts_kerdes_szoveg: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tts_kerdes_szoveg: Mapped[str | None] = mapped_column(Text, nullable=True)          # LLM-processed spoken text
+    tts_kerdes_bemenet_hash: Mapped[str | None] = mapped_column(String(16), nullable=True)  # SHA256[:12] of raw TTS input
 
     # Extraction context
     kontextus: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -686,6 +687,7 @@ class FeladatRepository:
         tts_kerdes: bytes | None = None,
         tts_magyarazat: bytes | None = None,
         tts_kerdes_szoveg: str | None = None,
+        tts_kerdes_bemenet_hash: str | None = None,
     ) -> Feladat:
         """
         Write TTS bytes to files and persist the relative paths in the DB.
@@ -710,6 +712,7 @@ class FeladatRepository:
 
             if tts_kerdes_szoveg is not None:
                 record.tts_kerdes_szoveg = tts_kerdes_szoveg
+                record.tts_kerdes_bemenet_hash = tts_kerdes_bemenet_hash
 
             if tts_magyarazat is not None:
                 rel = relative_asset_path(feladat.id, "magyarazat", feladat.szint, feladat.ev, feladat.valtozat)
@@ -726,6 +729,7 @@ class FeladatRepository:
             tts_kerdes_path=new_kerdes_path,
             tts_magyarazat_path=new_magyarazat_path,
             tts_kerdes_szoveg=tts_kerdes_szoveg,
+            tts_kerdes_bemenet_hash=tts_kerdes_bemenet_hash,
         )
 
     def load_tts_bytes(self, relative_path: str) -> bytes:
@@ -740,7 +744,32 @@ class FeladatRepository:
                 stmt = stmt.where(FeladatRecord.targy == targy)
             return [r.to_domain() for r in session.scalars(stmt)]
 
-    # --- Megoldas (attempt) tracking ---
+    def clear_tts_szoveg(
+        self,
+        *,
+        targy: str | None = None,
+        feladat_id: str | None = None,
+    ) -> int:
+        """Set tts_kerdes_szoveg and tts_kerdes_bemenet_hash to NULL so TTS regenerates.
+
+        Optionally scoped to a single feladat or a subject.
+        Returns the number of rows updated.
+        """
+        with Session(self._engine) as session:
+            stmt = select(FeladatRecord).where(
+                FeladatRecord.tts_kerdes_szoveg.is_not(None)
+                | FeladatRecord.tts_kerdes_bemenet_hash.is_not(None)
+            )
+            if feladat_id:
+                stmt = stmt.where(FeladatRecord.id == feladat_id)
+            elif targy:
+                stmt = stmt.where(FeladatRecord.targy == targy)
+            records = list(session.scalars(stmt))
+            for r in records:
+                r.tts_kerdes_szoveg = None
+                r.tts_kerdes_bemenet_hash = None
+            session.commit()
+        return len(records)
 
     def save_megoldas(
         self,
