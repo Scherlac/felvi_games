@@ -544,14 +544,14 @@ def _rule_heti_haromszor(user: str, session_id: int | None, engine: "Engine") ->
 
 
 def _rule_reggeli_tanulas(user: str, session_id: int | None, engine: "Engine") -> bool:
-    """Any answer submitted before 08:00 local time (timestamps stored as naive local)."""
+    """Any answer submitted before 08:00 local time (timestamps stored as UTC)."""
     from felvi_games.db import MegoldasRecord
     with Session(engine) as s:
         rows = s.scalars(
             select(MegoldasRecord.created_at)
             .where(
                 MegoldasRecord.felhasznalo_nev == user,
-                func.strftime("%H", MegoldasRecord.created_at) < "08",
+                func.strftime("%H", func.datetime(MegoldasRecord.created_at, "localtime")) < "08",
             )
         ).all()
     return len(rows) > 0
@@ -654,14 +654,14 @@ def _rule_otszaz_pont(user: str, session_id: int | None, engine: "Engine") -> bo
 
 
 def _rule_esti_tanulas(user: str, session_id: int | None, engine: "Engine") -> bool:
-    """Any answer submitted at or after 22:00 local time (timestamps stored as naive local)."""
+    """Any answer submitted at or after 22:00 local time (timestamps stored as UTC)."""
     from felvi_games.db import MegoldasRecord
     with Session(engine) as s:
         rows = s.scalars(
             select(MegoldasRecord.created_at)
             .where(
                 MegoldasRecord.felhasznalo_nev == user,
-                func.strftime("%H", MegoldasRecord.created_at) >= "22",
+                func.strftime("%H", func.datetime(MegoldasRecord.created_at, "localtime")) >= "22",
             )
         ).all()
     return len(rows) > 0
@@ -805,7 +805,7 @@ def _eval_dynamic_condition(
                 .where(
                     MegoldasRecord.felhasznalo_nev == user,
                     MegoldasRecord.created_at >= cutoff,
-                    func.strftime("%H", MegoldasRecord.created_at) < f"{hour:02d}",
+                    func.strftime("%H", func.datetime(MegoldasRecord.created_at, "localtime")) < f"{hour:02d}",
                 )
             ) or 0
             return cnt >= n
@@ -817,7 +817,7 @@ def _eval_dynamic_condition(
                 .where(
                     MegoldasRecord.felhasznalo_nev == user,
                     MegoldasRecord.created_at >= cutoff,
-                    func.strftime("%H", MegoldasRecord.created_at) >= f"{hour:02d}",
+                    func.strftime("%H", func.datetime(MegoldasRecord.created_at, "localtime")) >= f"{hour:02d}",
                 )
             ) or 0
             return cnt >= n
