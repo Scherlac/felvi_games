@@ -454,11 +454,19 @@ def medals(
         typer.echo(f"  Kategória: {nm.get('kategoria', '-')}")
         typer.echo(f"  Leírás:    {nm.get('leiras', '-')}")
         typer.echo(f"  Feltétel:  {_json.dumps(cond, ensure_ascii=False)}")
+        # Check if the condition is ALREADY satisfied at creation time (bad – n should require future effort)
         try:
-            now_ok = _eval_dynamic_condition(user, cond or {}, repo._engine)
-            typer.echo(f"  Teljesül most: {'igen' if now_ok else 'nem'}")
+            already_done = _eval_dynamic_condition(user, cond or {}, repo._engine, valid_from=datetime.now(timezone.utc))
+            if already_done:
+                typer.echo("  ⚠️  Figyelem: a feltétel már most teljesül – nem jó kihívás!")
+                if generate:
+                    typer.echo("  ❌ Mentés megtagadva: a kihívás már teljesítve.")
+                    typer.echo("     Próbáld újra: felvi medals --generate --user ...\n")
+                    return
+            else:
+                typer.echo("  ✅ A feltétel még nem teljesül – jó jövőbeli kihívás.")
         except Exception as exc:  # noqa: BLE001
-            typer.echo(f"  Teljesül most: hiba ({exc})")
+            typer.echo(f"  Ellenőrzés: hiba ({exc})")
 
         if generate:
             safe_user = re.sub(r"[^a-z0-9]+", "_", user.lower()).strip("_") or "user"
@@ -533,8 +541,14 @@ def medals(
                 typer.echo(f"    condition: {_json.dumps(cond, ensure_ascii=False)}")
                 if user:
                     try:
-                        ok = _eval_dynamic_condition(user, cond, repo._engine)
-                        typer.echo(f"    teljesül({user}): {'igen' if ok else 'nem'}")
+                        from datetime import datetime, timezone as _tz
+                        vf = r.created_at
+                        if isinstance(vf, str):
+                            vf = datetime.fromisoformat(vf)
+                        if vf is not None and vf.tzinfo is None:
+                            vf = vf.replace(tzinfo=_tz.utc)
+                        ok = _eval_dynamic_condition(user, cond, repo._engine, valid_from=vf)
+                        typer.echo(f"    teljesül({user}): {'igen ✅' if ok else 'nem ⏳'}  (számít: {vf} óta)")
                     except Exception as exc:  # noqa: BLE001
                         typer.echo(f"    teljesül({user}): hiba ({exc})")
             except Exception:

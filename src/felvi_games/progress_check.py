@@ -21,6 +21,7 @@ Public API
 """
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
@@ -85,9 +86,14 @@ def is_first_login_today(user: str, repo: "FeladatRepository") -> bool:
 
 def get_user_stats(user: str, repo: "FeladatRepository") -> dict:
     """Return a dict of aggregate player statistics for AI / closeness checks."""
-    from felvi_games.db import MegoldasRecord, MenetRecord, InterakcioRecord
+    from felvi_games.db import FeladatRecord, InterakcioRecord, MegoldasRecord, MenetRecord
 
     engine = repo._engine
+    now_utc = datetime.now(timezone.utc)
+    cutoff_24h = now_utc - timedelta(hours=24)
+    cutoff_48h = now_utc - timedelta(hours=48)
+    cutoff_7d = now_utc - timedelta(days=7)
+
     with Session(engine) as s:
         total_attempts = s.scalar(
             select(func.count()).select_from(MegoldasRecord)
@@ -111,16 +117,17 @@ def get_user_stats(user: str, repo: "FeladatRepository") -> dict:
                    MenetRecord.ended_at.is_not(None))
         ) or 0
 
-        subjects_used = set(s.scalars(
+        subject_rows = list(s.scalars(
             select(MenetRecord.targy).where(MenetRecord.felhasznalo_nev == user)
         ).all())
+        subjects_used = {value for value in subject_rows if _is_real_dimension_value(value)}
 
-        levels_used = set(s.scalars(
+        level_rows = list(s.scalars(
             select(MenetRecord.szint).where(MenetRecord.felhasznalo_nev == user)
         ).all())
+        levels_used = {value for value in level_rows if _is_real_dimension_value(value)}
 
         # last 7 days play days
-        cutoff_7d = datetime.now(timezone.utc) - timedelta(days=7)
         recent_sessions = list(s.scalars(
             select(MenetRecord.started_at)
             .where(MenetRecord.felhasznalo_nev == user,
@@ -165,7 +172,152 @@ def get_user_stats(user: str, repo: "FeladatRepository") -> dict:
                    MegoldasRecord.elapsed_sec.is_not(None))
         )
 
+        attempt_rows_7d = list(s.execute(
+            select(
+                MegoldasRecord.created_at,
+                MegoldasRecord.helyes,
+                MegoldasRecord.pont,
+                MegoldasRecord.segitseg_kert,
+            )
+            .where(MegoldasRecord.felhasznalo_nev == user,
+                   MegoldasRecord.created_at >= cutoff_7d)
+            .order_by(MegoldasRecord.created_at.asc(), MegoldasRecord.id.asc())
+        ).all())
+
+        subject_rows_7d = list(s.execute(
+            select(MenetRecord.targy)
+            .where(MenetRecord.felhasznalo_nev == user,
+                   MenetRecord.started_at >= cutoff_7d)
+        ).all())
+        level_rows_7d = list(s.execute(
+            select(MenetRecord.szint)
+            .where(MenetRecord.felhasznalo_nev == user,
+                   MenetRecord.started_at >= cutoff_7d)
+        ).all())
+        feladat_tipus_counts = Counter(
+            value
+            for value in s.scalars(
+                select(FeladatRecord.feladat_tipus)
+                .join(MegoldasRecord, MegoldasRecord.feladat_id == FeladatRecord.id)
+                .where(MegoldasRecord.felhasznalo_nev == user)
+            ).all()
+            if _is_real_dimension_value(value)
+        )
+
+        event_rows_7d = list(s.execute(
+            select(
+                InterakcioRecord.tipus,
+                InterakcioRecord.created_at,
+                InterakcioRecord.targy,
+                InterakcioRecord.szint,
+                InterakcioRecord.feladat_id,
+            )
+            .where(InterakcioRecord.felhasznalo_nev == user,
+                   InterakcioRecord.created_at >= cutoff_7d)
+            .order_by(InterakcioRecord.created_at.desc(), InterakcioRecord.id.desc())
+        ).all())
+
+        pending_rewards_count = s.scalar(
+            select(func.count()).select_from(MegoldasRecord)
+            .where(MegoldasRecord.felhasznalo_nev == user,
+                   MegoldasRecord.jutalom_varakozik.is_(True))
+        ) or 0
+
+        reevaluation_rows_7d = list(s.execute(
+            select(MegoldasRecord.eredeti_pont, MegoldasRecord.pont)
+            .where(MegoldasRecord.felhasznalo_nev == user,
+                   MegoldasRecord.ujraertekelt.is_(True),
+                   MegoldasRecord.ujraertekelt_at.is_not(None),
+                   MegoldasRecord.ujraertekelt_at >= cutoff_7d)
+        ).all())
+
     accuracy = round(correct / total_attempts * 100, 1) if total_attempts else 0.0
+
+    attempts_last_24h = 0
+    attempts_prev_24h = 0
+    correct_last_24h = 0
+    correct_prev_24h = 0
+    points_last_24h = 0
+    points_prev_24h = 0
+    hint_uses_last_24h = 0
+    hint_uses_prev_24h = 0
+    daily_attempts_7d: dict[str, dict[str, int | float | str]] = {}
+    answer_outcomes_7d = Counter()
+
+    for created_at, is_correct, points, segitseg_kert in attempt_rows_7d:
+        created_utc = _as_utc(created_at)
+        day_key = created_utc.date().isoformat()
+        if day_key not in daily_attempts_7d:
+            daily_attempts_7d[day_key] = {
+                "date": day_key,
+                "attempts": 0,
+                "correct": 0,
+                "points": 0,
+                "accuracy_pct": 0.0,
+            }
+        bucket = daily_attempts_7d[day_key]
+        bucket["attempts"] = int(bucket["attempts"]) + 1
+        bucket["points"] = int(bucket["points"]) + int(points or 0)
+        if is_correct:
+            bucket["correct"] = int(bucket["correct"]) + 1
+
+        if created_utc >= cutoff_24h:
+            attempts_last_24h += 1
+            points_last_24h += int(points or 0)
+            hint_uses_last_24h += 1 if segitseg_kert else 0
+            if is_correct:
+                correct_last_24h += 1
+        elif created_utc >= cutoff_48h:
+            attempts_prev_24h += 1
+            points_prev_24h += int(points or 0)
+            hint_uses_prev_24h += 1 if segitseg_kert else 0
+            if is_correct:
+                correct_prev_24h += 1
+
+        if is_correct:
+            answer_outcomes_7d["helyes"] += 1
+        elif int(points or 0) > 0:
+            answer_outcomes_7d["reszleges"] += 1
+        else:
+            answer_outcomes_7d["helytelen"] += 1
+
+    for bucket in daily_attempts_7d.values():
+        attempts = int(bucket["attempts"])
+        correct_attempts = int(bucket["correct"])
+        bucket["accuracy_pct"] = round(correct_attempts / attempts * 100, 1) if attempts else 0.0
+
+    event_counts_last_24h = Counter()
+    event_counts_last_7d = Counter()
+    recent_events: list[dict[str, object]] = []
+    for tipus, created_at, targy, szint, feladat_id in event_rows_7d:
+        created_utc = _as_utc(created_at)
+        event_counts_last_7d[str(tipus)] += 1
+        if created_utc >= cutoff_24h:
+            event_counts_last_24h[str(tipus)] += 1
+        if len(recent_events) < 8:
+            recent_events.append(
+                {
+                    "type": str(tipus),
+                    "created_at": created_utc.isoformat(),
+                    "targy": targy,
+                    "szint": szint if _is_real_dimension_value(szint) else None,
+                    "feladat_id": feladat_id,
+                }
+            )
+
+    reevaluation_improved_count = sum(
+        1
+        for old_points, new_points in reevaluation_rows_7d
+        if old_points is not None and int(new_points or 0) > int(old_points or 0)
+    )
+
+    subject_session_counts = Counter(value for value in subject_rows if _is_real_dimension_value(value))
+    subject_session_counts_7d = Counter(value for (value,) in subject_rows_7d if _is_real_dimension_value(value))
+    level_session_counts = Counter(value for value in level_rows if _is_real_dimension_value(value))
+    level_session_counts_7d = Counter(value for (value,) in level_rows_7d if _is_real_dimension_value(value))
+
+    accuracy_last_24h = round(correct_last_24h / attempts_last_24h * 100, 1) if attempts_last_24h else None
+    accuracy_prev_24h = round(correct_prev_24h / attempts_prev_24h * 100, 1) if attempts_prev_24h else None
 
     return {
         "total_attempts": total_attempts,
@@ -181,7 +333,67 @@ def get_user_stats(user: str, repo: "FeladatRepository") -> dict:
         "current_correct_streak": current_correct_streak,
         "hint_free_correct_last20": hint_free_correct,
         "avg_elapsed_sec": round(float(avg_elapsed), 1) if avg_elapsed else None,
+        "trends": {
+            "attempts_last_24h": attempts_last_24h,
+            "attempts_prev_24h": attempts_prev_24h,
+            "correct_last_24h": correct_last_24h,
+            "correct_prev_24h": correct_prev_24h,
+            "points_last_24h": points_last_24h,
+            "points_prev_24h": points_prev_24h,
+            "accuracy_last_24h": accuracy_last_24h,
+            "accuracy_prev_24h": accuracy_prev_24h,
+            "hint_uses_last_24h": hint_uses_last_24h,
+            "hint_uses_prev_24h": hint_uses_prev_24h,
+            "activity_trend": _trend_label(attempts_last_24h, attempts_prev_24h),
+            "accuracy_trend": _trend_label(accuracy_last_24h, accuracy_prev_24h),
+            "daily_attempts_7d": [daily_attempts_7d[key] for key in sorted(daily_attempts_7d)],
+            "answer_outcomes_7d": dict(answer_outcomes_7d),
+        },
+        "patterns": {
+            "subject_session_counts": dict(subject_session_counts),
+            "subject_session_counts_7d": dict(subject_session_counts_7d),
+            "level_session_counts": dict(level_session_counts),
+            "level_session_counts_7d": dict(level_session_counts_7d),
+            "attempt_task_type_counts": dict(feladat_tipus_counts),
+            "help_usage_last20": {
+                "hint_free_correct": hint_free_correct,
+                "hint_used_correct": max(0, len(last_20_correct_hints) - hint_free_correct),
+            },
+        },
+        "events": {
+            "counts_last_24h": dict(event_counts_last_24h),
+            "counts_last_7d": dict(event_counts_last_7d),
+            "reevaluations_last_7d": len(reevaluation_rows_7d),
+            "reevaluation_improved_last_7d": reevaluation_improved_count,
+            "pending_reward_attempts": int(pending_rewards_count),
+            "recent": recent_events,
+        },
     }
+
+
+def _as_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _is_real_dimension_value(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    normalized = value.strip().lower()
+    return bool(normalized) and normalized not in {"mind", "osszes", "összes", "all", "*"}
+
+
+def _trend_label(current: float | int | None, previous: float | int | None) -> str:
+    if current is None and previous is None:
+        return "nincs adat"
+    current_value = float(current or 0)
+    previous_value = float(previous or 0)
+    if current_value == previous_value:
+        return "stabil"
+    if current_value > previous_value:
+        return "javul"
+    return "csökken"
 
 
 def _trailing_streak(dates: list) -> int:

@@ -705,14 +705,26 @@ def _eval_dynamic_condition(
     user: str,
     condition: dict,
     engine: "Engine",
+    valid_from: datetime | None = None,
 ) -> bool:
-    """Evaluate a dynamic (LLM-generated) medal condition. Returns bool."""
+    """Evaluate a dynamic (LLM-generated) medal condition. Returns bool.
+
+    ``valid_from``: when set (e.g. erem.created_at), only events AFTER that
+    timestamp are counted.  This is the correct anchor for saved dynamic medals
+    so that a condition cannot already be satisfied at creation time.
+    If None, falls back to the legacy ``now - window_hours`` rolling window.
+    """
     from felvi_games.db import InterakcioRecord, MegoldasRecord, MenetRecord
 
     ctype = condition.get("type", "")
     n = int(condition.get("n", 1))
     window_h = float(condition.get("window_hours", 24))
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=window_h)
+    # If an explicit start anchor is provided, count only events AFTER that
+    # timestamp; otherwise fall back to a rolling window from now.
+    if valid_from is not None:
+        cutoff = valid_from if valid_from.tzinfo else valid_from.replace(tzinfo=timezone.utc)
+    else:
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=window_h)
 
     with Session(engine) as s:
         if ctype == "feladat_count":

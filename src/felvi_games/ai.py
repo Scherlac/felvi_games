@@ -227,60 +227,51 @@ _DAILY_INSIGHT_SYSTEM = (
 )
 
 # Supported condition types for dynamic medals.
-# window_hours: the time window within which the condition must be met (1–18h).
+# IMPORTANT: n counts events AFTER the medal is created, not historical lookback.
 _CONDITION_TYPES_DOC = """\
-Elérhető condition type értékek (gépileg kiértékelhető):
-  feladat_count      – {"type":"feladat_count","n":5,"window_hours":12}
-  helyes_count       – {"type":"helyes_count","n":3,"window_hours":8}
-  pont_sum           – {"type":"pont_sum","n":20,"window_hours":18}
-  streak             – {"type":"streak","n":5,"window_hours":18}  (all-time legjobb sorozat)
-  session_count      – {"type":"session_count","n":2,"window_hours":6}
-  tokeletes_session  – {"type":"tokeletes_session","window_hours":18}
-  feladat_subject    – {"type":"feladat_subject","n":5,"subject":"matek","window_hours":12}
-  before_hour        – {"type":"before_hour","n":3,"hour":8,"window_hours":18}
-  after_hour         – {"type":"after_hour","n":3,"hour":20,"window_hours":18}
-  special_date       – {"type":"special_date","date":"MM-DD","feladat_count":1}
-    interakcio_count   – {"type":"interakcio_count","event_type":"segitseg_kert","n":2,"window_hours":12}
-    interakcio_exists  – {"type":"interakcio_exists","event_type":"ujraertekeles","window_hours":24}
+Feltétel típusok (gépileg kiértékelhető, n = esemény EZUTÁN az érem létrehozása után):
+  feladat_count  – {"type":"feladat_count","n":5,"window_hours":12}
+  helyes_count   – {"type":"helyes_count","n":3,"window_hours":8}
+  pont_sum       – {"type":"pont_sum","n":20,"window_hours":18}
+  session_count  – {"type":"session_count","n":2,"window_hours":6}
+  tokeletes_session – {"type":"tokeletes_session","window_hours":18}
+  feladat_subject – {"type":"feladat_subject","n":5,"subject":"matek","window_hours":12}
 
-Interakciós feltételnél opcionális további szűrők:
-    - "targy": "matek" | "magyar"
-    - "szint": "4 osztályos" | "6 osztályos" | "8 osztályos"
-    - "feladat_id": "mag4_2021_3_8_a"
-    - "meta_contains": "deferred_reward"
-
-Példa event_type értékek:
-    menet_indul, menet_vegzett, helyes_valasz, reszleges_valasz, helytelen_valasz,
-    segitseg_kert, hibajelezes, targy_valtas, szint_valtas, tts_lejatszo,
-    feladat_kihagyas, ujraertekeles, ujraertekeles_jutalom
-
-FONTOS: n és window_hours legyen reálisan elérhető a statisztikák alapján.
-window_hours: 1–18 között legyen (rövid idejű kihívás).
-A "leiras" mező foglalja össze röviden a feltételt (pl. "Oldj meg 5 feladatot 8 órán belül!")."""
+Szabályok:
+- n és window_hours legyen reálisan elérhető a közelmúlt alapján.
+- window_hours: 1–18 között (rövid kihívás).
+- leiras: pl. "Oldj meg 5 feladatot 8 órán belül!"
+- FONTOS: a feltétel az érem LÉTREHOZÁSA UTÁN teljesítendő, nem a múltban."""
 
 _DAILY_INSIGHT_TEMPLATE = """\
-Felhasználó: {user}
-Statisztikák:
-  - Összes megoldott feladat: {total_attempts}
-  - Helyes válasz arány: {accuracy_pct}%
-  - Lezárt menetek: {completed_sessions}
-  - Jelenlegi napi sorozat: {current_streak_days} nap
-  - Elmúlt 7 napból aktív napok: {recent_days_7d}
-  - Legjobb egymást követő helyes sorozat: {best_correct_streak}
-  - Tárgyak amelyeket játszott: {subjects_used}
-  - Szintek amelyeket játszott: {levels_used}
-  - Megszerzett érmek száma: {earned_count}
+Felhasználó: {user}  (most: {now_str})
 
-Közel lévő érmek (progress 0–1):
+Összesített statisztika:
+  - Összes megoldott: {total_attempts}, helyes: {correct}, arány: {accuracy_pct}%
+  - Lezárt menetek: {completed_sessions}, aktív napok (7d): {recent_days_7d}
+  - Jelenlegi napi sorozat: {current_streak_days} nap
+  - Legjobb helyes sorozat: {best_correct_streak}
+  - Tárgyak: {subjects_used}
+  - Megszerzett érmek: {earned_count}
+
+Utolsó 7 nap (napi összesítő):
+{daily_summary_text}
+
+Interakciók (utolsó 24 óra):
+{event_counts_24h_text}
+
+Közel lévő érmek:
 {close_medals_text}
 
 {condition_types_doc}
 
 Feladatod:
-1. Írj egy rövid, személyre szabott motiváló üzenetet (greeting).
-2. Javasolj egy privát időkorlátozott kihívás érmet amelyet a felhasználó
-   a következő {window_hours} órán belül megszerezhet, HA van erre reális lehetőség.
-   Válassz egy gépileg kiértékelhető condition type-ot (lásd fent).
+1. Írj egy rövid, személyre szabott motiváló üzenetet (greeting, max 2 mondat).
+2. Javasolj egy privát kihívás érmet, amelyet a felhasználó a következő {window_hours} órán belül
+   szerezhet meg HA az az elmúlt teljesítmény alapján reálisan elérhető.
+   FONTOS: a feltételben lévő n az érem LÉTREHOZÁSA UTÁNI teljesítményből számít!
+   Tehát pl. ha tegnap 8 feladatot csinált, ne adj n=8-at – az újból teljesítendő.
+   Javasolj mérsékelten ambiciózus, de nem lehetetlen n értéket.
    Ha nincs jó ötlet, hagyj new_medal null-on.
 
 Válaszolj CSAK JSON-ban:
@@ -288,11 +279,11 @@ Válaszolj CSAK JSON-ban:
   "greeting": "...",
   "new_medal": {{
     "nev": "...",
-    "leiras": "Rövid magyar leírás a feltételről (pl. 5 feladat 8 órán belül)",
+    "leiras": "Rövid leírás a feltételről",
     "ikon": "emoji",
     "kategoria": "teljesitmeny|merfoldko|rendszeresseg|felfedezes|kitartas",
     "ervenyes_napig": 1,
-    "condition": {{ ...egy condition objektum a fentiek közül... }}
+    "condition": {{ ...egy condition objektum... }}
   }} | null
 }}"""
 
@@ -318,21 +309,48 @@ def generate_daily_insight(
         Dict with ``greeting`` (str) and ``new_medal`` (dict | None).
         ``new_medal`` includes a ``condition`` dict for machine evaluation.
     """
+    from datetime import datetime, timezone
+
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
     close_text = "\n".join(
         f"  - {cm.erem.ikon} {cm.erem.nev}: {cm.hint} ({int(cm.progress * 100)}%)"
         for cm in close_medals
     ) or "  (nincs közel lévő érem)"
 
+    # Build compact daily summary (last 7 days, one line each)
+    daily_buckets = stats.get("trends", {}).get("daily_attempts_7d", [])
+    if daily_buckets:
+        daily_lines = [
+            f"  {b['date']}: {b['attempts']} feladat, {b['correct']} helyes ({b['accuracy_pct']}%)"
+            for b in daily_buckets
+        ]
+        daily_summary_text = "\n".join(daily_lines)
+    else:
+        daily_summary_text = "  (nincs adat)"
+
+    # Build compact event counts (last 24h, only non-zero)
+    event_24h = stats.get("events", {}).get("counts_last_24h", {})
+    if event_24h:
+        event_lines = [f"  {etype}: {cnt}" for etype, cnt in sorted(event_24h.items())]
+        event_counts_24h_text = "\n".join(event_lines)
+    else:
+        event_counts_24h_text = "  (nincs esemény az elmúlt 24 órában)"
+
     prompt = _DAILY_INSIGHT_TEMPLATE.format(
         user=user,
+        now_str=now_str,
         close_medals_text=close_text,
         earned_count=earned_count,
         condition_types_doc=_CONDITION_TYPES_DOC,
+        daily_summary_text=daily_summary_text,
+        event_counts_24h_text=event_counts_24h_text,
         window_hours=window_hours,
+        correct=stats.get("correct", 0),
         **{k: stats[k] for k in (
             "total_attempts", "accuracy_pct", "completed_sessions",
             "current_streak_days", "recent_days_7d",
-            "best_correct_streak", "subjects_used", "levels_used",
+            "best_correct_streak", "subjects_used",
         )},
     )
 
