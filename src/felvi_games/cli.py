@@ -855,7 +855,7 @@ def review_cmd(
     """
     from felvi_games.config import get_db_path
     from felvi_games.db import FeladatRepository
-    from felvi_games.review import review_feladat_ai
+    from felvi_games.review import run_feladat_review
 
     db_path = db or get_db_path()
     if not db_path.exists():
@@ -892,54 +892,38 @@ def review_cmd(
         typer.echo(f"    Kérdés:  {kerdes_short}")
         typer.echo(f"    Helyes:  {feladat.helyes_valasz}")
 
-        # Load feladatlap source text for context
-        fl_text = ""
-        if feladat.fl_szoveg_path:
-            from felvi_games.config import resolve_asset
-            fl_path = resolve_asset(feladat.fl_szoveg_path)
-            if fl_path.exists():
-                fl_text = fl_path.read_text(encoding="utf-8")
-            else:
-                typer.echo(f"    [!] fl_szoveg_path nem található: {fl_path}")
-
         typer.echo("    AI review fut…", nl=False)
         try:
-            reviewed = review_feladat_ai(feladat, fl_text, megjegyzes, model=model)
+            result = run_feladat_review(
+                feladat, repo,
+                megjegyzes=megjegyzes, model=model, dry_run=dry_run,
+            )
         except Exception as exc:
             typer.echo(f" HIBA: {exc}")
             continue
         typer.echo(" kész.")
 
-        # Show diff
-        changed_fields = []
-        for field in ("kerdes", "helyes_valasz", "elfogadott_valaszok", "hint",
-                      "magyarazat", "neh", "feladat_tipus", "max_pont"):
-            old_val = getattr(feladat, field)
-            new_val = getattr(reviewed, field)
-            if old_val != new_val:
-                changed_fields.append(field)
-                old_s = str(old_val)[:60]
-                new_s = str(new_val)[:60]
-                typer.echo(f"    ~ {field}:")
-                typer.echo(f"        előtte: {old_s}")
-                typer.echo(f"        utána:  {new_s}")
+        for field in result.changed_fields:
+            old_s = str(getattr(feladat, field))[:60]
+            new_s = str(getattr(result.updated, field))[:60]
+            typer.echo(f"    ~ {field}:")
+            typer.echo(f"        előtte: {old_s}")
+            typer.echo(f"        utána:  {new_s}")
 
-        if reviewed.review_megjegyzes:
-            typer.echo(f"    AI megjegyzés: {reviewed.review_megjegyzes}")
+        if result.updated.review_megjegyzes:
+            typer.echo(f"    AI megjegyzés: {result.updated.review_megjegyzes}")
 
-        if not changed_fields:
+        if not result.changed_fields:
             typer.echo("    → Tartalom nem változott.")
         else:
-            typer.echo(f"    → Változott mezők: {', '.join(changed_fields)}")
+            typer.echo(f"    → Változott mezők: {', '.join(result.changed_fields)}")
 
         if dry_run:
             typer.echo("    [dry-run] Nem mentve.")
+        elif result.versioned:
+            typer.echo(f"    ✓ Új verzió: {result.original_id}  →  {result.updated.id}  (archivált: {result.original_id})")
         else:
-            updated = repo.save_review(reviewed, megjegyzes)
-            if updated.id != feladat.id:
-                typer.echo(f"    ✓ Új verzió: {feladat.id}  →  {updated.id}  (archivált: {feladat.id})")
-            else:
-                typer.echo(f"    ✓ In-place frissítve: {updated.id}")
+            typer.echo(f"    ✓ In-place frissítve: {result.updated.id}")
 
         typer.echo()
 

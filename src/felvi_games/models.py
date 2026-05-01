@@ -375,8 +375,9 @@ class GameState:
         self.megoldott_ids.add(feladat.id)
         self.menet_megoldott += 1
         self.ertekeles = ertekeles
-        if ertekeles.helyes:
+        if ertekeles.pont > 0:
             self.pont += ertekeles.pont
+        if ertekeles.helyes:
             self.streak += 1
             self.max_streak = max(self.streak, self.max_streak)
         else:

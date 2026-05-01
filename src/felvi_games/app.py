@@ -393,6 +393,7 @@ def _render_csoport_context(feladat: Feladat) -> None:
         st.caption(
             f"📋 {sorszam_label}. feladat — "
             f"részfeladat: {feladat.csoport_sorrend} / {total}{pt_info}"
+            f"  ·  `{feladat.id}`"
         )
 
     # Shared context: prefer csoport.kontextus, fall back to feladat.kontextus
@@ -500,7 +501,7 @@ def _render_kerdes(gs: GameState) -> None:
     # --- TTS, Tipp, Hiba gombok ---
     col_tts, col_hint, col_hiba = st.columns(3)
     with col_tts:
-        if st.button("🔊 Felolvasás", help=feladat.tts_kerdes_szoveg or None):
+        if st.button("🔊 Felolvasás", help=feladat.tts_szoveg()):
             # Regenerate if audio exists but the plain-text TTS script is missing
             stale = feladat.tts_kerdes_path and not feladat.tts_kerdes_szoveg
             if feladat.tts_kerdes_path and not stale:
@@ -559,6 +560,7 @@ def _render_kerdes(gs: GameState) -> None:
                     elfogadott_valaszok=feladat.elfogadott_valaszok_vagy_helyes(),
                     feladat_tipus=feladat.feladat_tipus,
                     max_pont=feladat.max_pont,
+                    reszpontozas=feladat.reszpontozas,
                 )
             elapsed = (
                 (datetime.now(timezone.utc) - gs.kerdes_kezdete).total_seconds()
@@ -616,18 +618,48 @@ def _render_kerdes(gs: GameState) -> None:
     _render_source_expanders(feladat, show_ut=False)
 
 
+def _render_score_bar(pont: int, max_pont: int) -> None:
+    """Render a colored HTML progress bar for pont / max_pont."""
+    if max_pont <= 0:
+        return
+    ratio = pont / max_pont
+    pct = int(ratio * 100)
+    if ratio >= 1.0:
+        color = "#28a745"  # green
+    elif ratio > 0:
+        color = "#fd7e14"  # orange
+    else:
+        color = "#dc3545"  # red
+    st.markdown(
+        f"""
+        <div style="background:#e9ecef;border-radius:8px;overflow:hidden;
+                    height:28px;margin:6px 0">
+          <div style="width:{pct}%;background:{color};height:100%;
+                      display:flex;align-items:center;justify-content:center;
+                      color:white;font-weight:bold;font-size:14px;min-width:2rem">
+            {pont}&nbsp;/&nbsp;{max_pont}
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
 
 def _render_eredmeny(feladatok: dict[str, list[Feladat]], gs: GameState) -> None:
     feladat: Feladat = gs.aktualis  # type: ignore[assignment]
     ert: Ertekeles = gs.ertekeles  # type: ignore[assignment]
 
+    ratio = ert.pont / feladat.max_pont if feladat.max_pont > 0 else 0.0
     if ert.helyes:
         st.success(f"## 🎉 Helyes! +{ert.pont} pont")
         if gs.streak >= 3:
             st.balloons()
             st.success(f"🔥 {gs.streak} helyes válasz egymás után!")
+    elif ert.pont > 0:
+        st.warning(f"## 🟡 Részben helyes! +{ert.pont} / {feladat.max_pont} pont")
     else:
         st.error("## ❌ Nem egészen...")
+    _render_score_bar(ert.pont, feladat.max_pont)
 
     st.markdown(f"**Visszajelzés:** {ert.visszajelzes}")
 
@@ -638,7 +670,7 @@ def _render_eredmeny(feladatok: dict[str, list[Feladat]], gs: GameState) -> None
     with col_helyes:
         st.markdown(f"**Helyes válasz:** {feladat.helyes_valasz}")
 
-    with st.expander("📚 Részletes magyarázat", expanded=not ert.helyes):
+    with st.expander("📚 Részletes magyarázat", expanded=ratio < 1.0):
         st.markdown(feladat.magyarazat)
         st.markdown(f"**Helyes válasz:** {feladat.helyes_valasz}")
 
@@ -729,39 +761,25 @@ def _render_eredmeny(feladatok: dict[str, list[Feladat]], gs: GameState) -> None
 
 def _run_ai_review(feladat: Feladat, megjegyzes: str | None, gs: GameState) -> None:
     """Trigger an AI review pass, persist results, and update GameState."""
-    from felvi_games.review import review_feladat_ai
-
-    fl_text = ""
-    if feladat.fl_szoveg_path:
-        try:
-            fl_text = resolve_asset(feladat.fl_szoveg_path).read_text(encoding="utf-8")
-        except FileNotFoundError:
-            pass
+    from felvi_games.review import run_feladat_review
 
     with st.spinner("AI ellenőrzi a feladatot…"):
-        reviewed = review_feladat_ai(feladat, fl_text, megjegyzes)
+        result = run_feladat_review(feladat, get_repo(), megjegyzes=megjegyzes)
 
-    updated = get_repo().save_review(reviewed, megjegyzes)
-
-    # If save_review() created a new version (new ID), update all in-session
-    # references so the current game session remains consistent.
-    if updated.id != feladat.id:
+    if result.versioned:
         load_feladatok.clear()  # evict stale cache – next call returns active records only
-        # Replace old ID in the pre-built task queue
         gs.feladat_sor = [
-            updated.id if fid == feladat.id else fid
+            result.updated.id if fid == feladat.id else fid
             for fid in gs.feladat_sor
         ]
-        # Transfer "already solved" flag to the new version so it won't be
-        # shown again in the same session.
         if feladat.id in gs.megoldott_ids:
             gs.megoldott_ids.discard(feladat.id)
-            gs.megoldott_ids.add(updated.id)
-        msg = f"✅ Review kész – új verzió: `{updated.id}`"
+            gs.megoldott_ids.add(result.updated.id)
+        msg = f"✅ Review kész – új verzió: `{result.updated.id}`"
     else:
         msg = "✅ Review kész – feladat frissítve (tartalom nem változott)."
 
-    gs.aktualis = updated
+    gs.aktualis = result.updated
     st.success(msg)
     st.rerun()
 

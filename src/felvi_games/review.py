@@ -3,6 +3,7 @@
 Provides:
   - review_feladatok()      interactive CLI review loop
   - review_feladat_ai()     GPT-assisted single-feladat review
+  - run_feladat_review()    service layer: load text + AI + persist → ReviewResult
   - print_feladat()         pretty-print a Feladat to stdout
   - edit_feladat_cli()      interactive field editor (CLI)
 """
@@ -13,8 +14,12 @@ import dataclasses
 import json
 import logging
 import os
+from typing import TYPE_CHECKING
 
 from felvi_games.models import Feladat, FeladatCsoport
+
+if TYPE_CHECKING:
+    from felvi_games.db import FeladatRepository
 
 logger = logging.getLogger(__name__)
 
@@ -335,4 +340,70 @@ def review_feladat_ai(
         **updates,
         review_elvegezve=True,
         review_megjegyzes=final_megjegyzes or None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Service layer
+# ---------------------------------------------------------------------------
+
+# All fields the AI review may change; used for diff reporting.
+_REVIEW_DIFF_FIELDS: tuple[str, ...] = (
+    "kerdes", "helyes_valasz", "elfogadott_valaszok", "hint",
+    "magyarazat", "neh", "feladat_tipus", "max_pont", "abra_van",
+    "reszpontozas", "ertekeles_megjegyzes",
+)
+
+
+@dataclasses.dataclass
+class ReviewResult:
+    """Structured outcome of a single feladat review pass."""
+    original_id: str
+    updated: Feladat          # persisted record (or reviewed-but-unsaved on dry_run)
+    changed_fields: list[str] # names of fields that differ from the original
+    versioned: bool           # True when save_review() created a new DB record
+
+
+def run_feladat_review(
+    feladat: Feladat,
+    repo: FeladatRepository,
+    *,
+    megjegyzes: str | None = None,
+    model: str | None = None,
+    dry_run: bool = False,
+) -> ReviewResult:
+    """Load FL text, run AI review, persist (unless dry_run), return ReviewResult.
+
+    This is the single entry-point used by both the CLI and the Streamlit UI.
+    """
+    from felvi_games.config import resolve_asset
+
+    fl_text = ""
+    if feladat.fl_szoveg_path:
+        try:
+            fl_text = resolve_asset(feladat.fl_szoveg_path).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            pass
+
+    reviewed = review_feladat_ai(feladat, fl_text, megjegyzes, model=model)
+
+    changed_fields = [
+        f for f in _REVIEW_DIFF_FIELDS
+        if getattr(feladat, f) != getattr(reviewed, f)
+    ]
+
+    if dry_run:
+        return ReviewResult(
+            original_id=feladat.id,
+            updated=reviewed,
+            changed_fields=changed_fields,
+            versioned=False,
+        )
+
+    updated = repo.save_review(reviewed, megjegyzes)
+    return ReviewResult(
+        original_id=feladat.id,
+        updated=updated,
+        changed_fields=changed_fields,
+        versioned=updated.id != feladat.id,
     )

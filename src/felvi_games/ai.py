@@ -47,16 +47,19 @@ Helyes válasz: {helyes}
 Tanuló válasza: {adott}
 Magyarázat: {magyarazat}
 Max. pontszám: {max_pont}
+{reszpontozas_sor}
 
 Értékeld a választ, majd adj vissza CSAK egy JSON objektumot:
-{{"helyes": true/false, "visszajelzes": "...", "pont": 0-{max_pont}}}
+{{"visszajelzes": "...", "pont": 0-{max_pont}}}
 
 Megjegyzés: ha az elfogadott válaszok listája nem üres, akkor az adott választ
 azokhoz kell hasonlítani (szinonimákat és eltolódásokat is fogadj el).
 Igaz/hamis feladatnál csak "igaz" vagy "hamis" szó elfogadható.
 Párosítás- és halmaz-típusú feladatoknál (ahol a helyes válasz több elem
 kombinációja) az elemek sorrendje ne számítson; részleges egyezésnél adj
-részletes visszajelzést arról, mely elemek helyesek."""
+részletes visszajelzést arról, mely elemek helyesek.
+Ha van részpontozási szabály (lásd fent), alkalmazd pontosan: számítsd ki a
+pontot a szabály szerint."""
 
 
 def text_to_speech(szoveg: str) -> bytes:
@@ -113,6 +116,7 @@ def check_answer(
     elfogadott_valaszok: list[str] | None = None,
     feladat_tipus: str | None = None,
     max_pont: int = 1,
+    reszpontozas: str | None = None,
 ) -> Ertekeles:
     """GPT értékeli a választ. Visszatér egy `Ertekeles` példánnyal."""
     elfogadott_sor = (
@@ -121,11 +125,13 @@ def check_answer(
         else ""
     )
     tipus_sor = f"Feladat típusa: {feladat_tipus}" if feladat_tipus else ""
+    reszpontozas_sor = f"Részpontozási szabály: {reszpontozas}" if reszpontozas else ""
     prompt = _EVAL_TEMPLATE.format(
         kerdes=kerdes,
         helyes=helyes,
         elfogadott_sor=elfogadott_sor,
         tipus_sor=tipus_sor,
+        reszpontozas_sor=reszpontozas_sor,
         adott=adott,
         magyarazat=magyarazat,
         max_pont=max_pont,
@@ -141,11 +147,9 @@ def check_answer(
             response_format={"type": "json_object"},
         )
         ert = Ertekeles.from_dict(json.loads(response.choices[0].message.content))
-        # Clamp point to valid range
+        # Clamp point to valid range; derive helyes from score (GPT no longer returns it)
         clamped = max(0, min(ert.pont, max_pont))
-        if clamped != ert.pont:
-            ert = Ertekeles(helyes=ert.helyes, visszajelzes=ert.visszajelzes, pont=clamped)
-        return ert
+        return Ertekeles(helyes=(clamped == max_pont), visszajelzes=ert.visszajelzes, pont=clamped)
     except Exception:
         return Ertekeles.hiba()
 
