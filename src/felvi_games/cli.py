@@ -298,13 +298,47 @@ def medals(
     include_expired: Annotated[
         bool, typer.Option("--expired", help="Lejárt ideiglenes érmek megjelenítése is")
     ] = False,
+    dynamic: Annotated[
+        bool, typer.Option("--dynamic", help="Csak a dinamikus (LLM-generált) éremszabályok listázása, időrend szerint")
+    ] = False,
 ) -> None:
     """Érmek / achievements: katalógus és felhasználói haladás."""
     from felvi_games.achievements import EREM_KATALOGUS, get_all_medals_for_user
     from felvi_games.config import get_db_path
     from felvi_games.db import FelhasznaloRecord, FeladatRepository, get_engine
-    from sqlalchemy import select
+    from sqlalchemy import select, text
     from sqlalchemy.orm import Session
+    import json as _json
+
+    if dynamic:
+        db_path = db or get_db_path()
+        if not db_path.exists():
+            typer.echo(f"[!] DB nem található: {db_path}")
+            raise typer.Exit(code=1)
+        engine = get_engine(db_path)
+        with Session(engine) as s:
+            rows = s.execute(
+                text(
+                    "SELECT id, nev, ikon, kategoria, condition_json, created_at, cel_felhasznalo "
+                    "FROM eremek WHERE condition_json IS NOT NULL AND condition_json != '' "
+                    "ORDER BY created_at DESC"
+                )
+            ).all()
+        typer.echo(f"\n=== Dinamikus éremszabályok  (DB: {db_path})  összesen: {len(rows)} ===\n")
+        if not rows:
+            typer.echo("  (Még nem jött létre dinamikus érem.)\n")
+            return
+        for r in rows:
+            cel = f"  → {r.cel_felhasznalo}" if r.cel_felhasznalo else ""
+            typer.echo(f"  {r.created_at}  {r.ikon}  {r.nev}  [{r.kategoria}]{cel}")
+            typer.echo(f"    id: {r.id}")
+            try:
+                cond = _json.loads(r.condition_json)
+                typer.echo(f"    condition: {_json.dumps(cond, ensure_ascii=False)}")
+            except Exception:
+                typer.echo(f"    condition_json: {r.condition_json}")
+        typer.echo()
+        return
 
     if list_all:
         typer.echo("\n=== Érem katalógus ===")
