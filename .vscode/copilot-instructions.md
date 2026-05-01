@@ -18,13 +18,8 @@ Due to the project's domain language, Hungarian, it is acceptable to use Hungari
   - *Example*: `cd ./src; python -m pytest`
 
 ## Python Environment Handling
-- **Activation**: Before running any Python scripts, check for a virtual environment in the current directory (`.venv` or `venv`).
-- **PowerShell Activation Logic**: Use the following logic to activate:
-  ```powershell
-  if (Test-Path ".\.venv\Scripts\Activate.ps1") { .\.venv\Scripts\Activate.ps1 }
-  ```
-- **Execution**: Prefer running modules via `python -m <module>` to ensure the venv-linked binary is used even if activation is bypassed.
-- **Pip**: Always use `python -m pip` instead of just `pip`.
+- **Activation**: Before running any Python scripts, always activate the virtual environment in the same terminal session. 
+  - *Example*: `conda activate felvi; python script.py`
 
 ## Command Confirmation
 - Always present the full command to me for review before execution.
