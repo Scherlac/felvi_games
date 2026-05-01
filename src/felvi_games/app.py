@@ -742,8 +742,27 @@ def _run_ai_review(feladat: Feladat, megjegyzes: str | None, gs: GameState) -> N
         reviewed = review_feladat_ai(feladat, fl_text, megjegyzes)
 
     updated = get_repo().save_review(reviewed, megjegyzes)
+
+    # If save_review() created a new version (new ID), update all in-session
+    # references so the current game session remains consistent.
+    if updated.id != feladat.id:
+        load_feladatok.clear()  # evict stale cache – next call returns active records only
+        # Replace old ID in the pre-built task queue
+        gs.feladat_sor = [
+            updated.id if fid == feladat.id else fid
+            for fid in gs.feladat_sor
+        ]
+        # Transfer "already solved" flag to the new version so it won't be
+        # shown again in the same session.
+        if feladat.id in gs.megoldott_ids:
+            gs.megoldott_ids.discard(feladat.id)
+            gs.megoldott_ids.add(updated.id)
+        msg = f"✅ Review kész – új verzió: `{updated.id}`"
+    else:
+        msg = "✅ Review kész – feladat frissítve (tartalom nem változott)."
+
     gs.aktualis = updated
-    st.success("✅ Review kész – feladat frissítve.")
+    st.success(msg)
     st.rerun()
 
 

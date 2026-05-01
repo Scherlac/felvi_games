@@ -44,6 +44,12 @@ class FeladatTipus(str, Enum):
     KITOLTES = "kitoltes"               # hiányos szöveg kiegészítése
 
 
+class FeladatStatusz(str, Enum):
+    """Feladat életciklus-állapot."""
+    AKTIV = "aktiv"          # aktuális verzió, megjelenik a játékban
+    ARCHIVALT = "archivalt"  # korai verzió, régi hivatkozások számára megőrzve
+
+
 # ---------------------------------------------------------------------------
 # Module-level helpers (used by Feladat.from_dict / from_record)
 # ---------------------------------------------------------------------------
@@ -175,6 +181,10 @@ class Feladat:
     ut_pdf_path: str | None = None          # relative path to útmutató PDF (under exams dir)
     review_elvegezve: bool = False          # True after a human/AI review pass
     review_megjegyzes: str | None = None    # free-text reviewer comment
+    # --- versioning ---
+    verzio: int = 1                                           # version counter (1 = first)
+    statusz: str = FeladatStatusz.AKTIV                       # aktiv | archivalt
+    elozmeny_feladat_id: str | None = None                    # ID of the previous version
 
     @property
     def pdf_source(self) -> str | None:
@@ -250,6 +260,9 @@ class Feladat:
             ut_pdf_path=r.ut_pdf_path,
             review_elvegezve=r.review_elvegezve,
             review_megjegyzes=r.review_megjegyzes,
+            verzio=r.verzio if r.verzio is not None else 1,
+            statusz=r.statusz if r.statusz is not None else FeladatStatusz.AKTIV,
+            elozmeny_feladat_id=r.elozmeny_feladat_id,
         )
 
     def with_assets(

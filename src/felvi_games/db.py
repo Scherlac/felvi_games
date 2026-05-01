@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +20,8 @@ from sqlalchemy import (
     func,
     or_,
     select,
+    text,
+    update,
 )
 from sqlalchemy.orm import (
     DeclarativeBase,
@@ -39,6 +42,7 @@ from felvi_games.models import (
     Ertekeles,
     Feladat,
     FeladatCsoport,
+    FeladatStatusz,
     FelhasznaloErem,
     Menet,
     _list_to_json,
@@ -209,6 +213,13 @@ class FeladatRecord(Base):
     review_elvegezve: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     review_megjegyzes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Versioning – immutable history
+    verzio: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    statusz: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=FeladatStatusz.AKTIV, server_default="aktiv", index=True
+    )
+    elozmeny_feladat_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
@@ -359,9 +370,33 @@ class FelhasznaloEremRecord(Base):
         )
 
 
+def _ensure_feladat_columns(engine) -> None:
+    """Add new columns to the feladatok table on existing databases.
+
+    SQLAlchemy's create_all() only creates missing *tables*, not missing
+    columns.  This lightweight helper issues ALTER TABLE statements so that
+    existing databases are kept in sync without requiring a full Alembic
+    migration (that comes later).
+    """
+    new_columns = [
+        ("verzio", "INTEGER NOT NULL DEFAULT 1"),
+        ("statusz", "VARCHAR(16) NOT NULL DEFAULT 'aktiv'"),
+        ("elozmeny_feladat_id", "VARCHAR(64)"),
+    ]
+    with engine.connect() as conn:
+        for col_name, col_def in new_columns:
+            try:
+                conn.execute(text(f"ALTER TABLE feladatok ADD COLUMN {col_name} {col_def}"))
+                conn.commit()
+            except Exception:
+                pass  # column already exists – safe to ignore
+
+
 def init_db(db_path: Path | None = None) -> None:
-    """Create all tables if they don't exist."""
-    Base.metadata.create_all(get_engine(db_path))
+    """Create all tables if they don't exist, then ensure new columns exist."""
+    engine = get_engine(db_path)
+    Base.metadata.create_all(engine)
+    _ensure_feladat_columns(engine)
 
 
 # ---------------------------------------------------------------------------
@@ -456,6 +491,9 @@ class FeladatRepository:
                     ut_pdf_path=feladat.ut_pdf_path,
                     review_elvegezve=feladat.review_elvegezve,
                     review_megjegyzes=feladat.review_megjegyzes,
+                    verzio=feladat.verzio,
+                    statusz=feladat.statusz,
+                    elozmeny_feladat_id=feladat.elozmeny_feladat_id,
                 ))
             session.commit()
 
@@ -471,6 +509,16 @@ class FeladatRepository:
                 )
             }
             now = datetime.now(timezone.utc)
+            # Preserve current statusz for existing records – a bulk re-import
+            # must never reactivate an archived feladat.
+            existing_statusz: dict[str, str] = {
+                row[0]: row[1]
+                for row in session.execute(
+                    select(FeladatRecord.id, FeladatRecord.statusz).where(
+                        FeladatRecord.id.in_(existing_ids)
+                    )
+                )
+            }
             for f in feladatok:
                 if f.id in existing_ids:
                     session.merge(FeladatRecord(
@@ -500,6 +548,9 @@ class FeladatRepository:
                         ut_pdf_path=f.ut_pdf_path,
                         review_elvegezve=f.review_elvegezve,
                         review_megjegyzes=f.review_megjegyzes,
+                        statusz=existing_statusz.get(f.id, FeladatStatusz.AKTIV),
+                        verzio=f.verzio,
+                        elozmeny_feladat_id=f.elozmeny_feladat_id,
                         updated_at=now,
                     ))
                 else:
@@ -530,6 +581,9 @@ class FeladatRepository:
                         ut_pdf_path=f.ut_pdf_path,
                         review_elvegezve=f.review_elvegezve,
                         review_megjegyzes=f.review_megjegyzes,
+                        verzio=f.verzio,
+                        statusz=f.statusz,
+                        elozmeny_feladat_id=f.elozmeny_feladat_id,
                     ))
             session.commit()
 
@@ -538,9 +592,16 @@ class FeladatRepository:
             record = session.get(FeladatRecord, feladat_id)
             return record.to_domain() if record else None
 
-    def all(self, targy: str | None = None, szint: str | None = None) -> list[Feladat]:
+    def all(
+        self,
+        targy: str | None = None,
+        szint: str | None = None,
+        include_archivalt: bool = False,
+    ) -> list[Feladat]:
         with Session(self._engine) as session:
             stmt = select(FeladatRecord)
+            if not include_archivalt:
+                stmt = stmt.where(FeladatRecord.statusz == FeladatStatusz.AKTIV)
             if targy:
                 stmt = stmt.where(FeladatRecord.targy == targy)
             if szint:
@@ -603,7 +664,9 @@ class FeladatRepository:
             record = session.get(FeladatCsoportRecord, csoport_id)
             return record.to_domain() if record else None
 
-    def get_feladatok_by_csoport(self, csoport_id: str) -> list[Feladat]:
+    def get_feladatok_by_csoport(
+        self, csoport_id: str, include_archivalt: bool = False
+    ) -> list[Feladat]:
         """Return all Feladatok belonging to a group, ordered by csoport_sorrend."""
         with Session(self._engine) as session:
             stmt = (
@@ -611,6 +674,8 @@ class FeladatRepository:
                 .where(FeladatRecord.csoport_id == csoport_id)
                 .order_by(FeladatRecord.csoport_sorrend)
             )
+            if not include_archivalt:
+                stmt = stmt.where(FeladatRecord.statusz == FeladatStatusz.AKTIV)
             return [r.to_domain() for r in session.scalars(stmt)]
 
     # --- Asset operations ---
@@ -707,22 +772,102 @@ class FeladatRepository:
             session.commit()
 
     def save_review(self, feladat: Feladat, megjegyzes: str | None = None) -> Feladat:
-        """Mark a feladat as reviewed, clear all pending hibajelezes flags, return updated domain."""
+        """Persist a reviewed feladat.
+
+        - If no content field changed: mark the existing record as reviewed
+          in-place (original behaviour, cheap).
+        - If content changed: archive the old record (statusz → archivalt)
+          and insert a new record with an incremented version number.  The
+          new record's ID is ``<base_id>_v<verzio>`` where *base_id* is the
+          canonical ID without any previous ``_v<n>`` suffix.
+
+        In both cases pending hibajelezes flags on all attempts for the
+        original feladat_id are cleared.
+        """
+        _CONTENT_FIELDS = (
+            "kerdes", "helyes_valasz", "hint", "magyarazat",
+            "neh", "feladat_tipus", "max_pont",
+            "reszpontozas", "ertekeles_megjegyzes", "abra_van",
+        )
+
         with Session(self._engine) as session:
             record = session.get(FeladatRecord, feladat.id)
             if record is None:
                 raise KeyError(f"Feladat not found: {feladat.id}")
-            record.review_elvegezve = True
-            record.review_megjegyzes = megjegyzes
+
+            # Detect whether any reviewable content field changed.
+            content_changed = any(
+                getattr(feladat, f) != getattr(feladat.from_record(record), f)
+                for f in _CONTENT_FIELDS
+            ) or _list_to_json(feladat.elfogadott_valaszok) != record.elfogadott_valaszok
+
+            if not content_changed:
+                # --- In-place update ---
+                record.review_elvegezve = True
+                record.review_megjegyzes = megjegyzes
+                record.updated_at = datetime.now(timezone.utc)
+                session.execute(
+                    update(MegoldasRecord)
+                    .where(MegoldasRecord.feladat_id == feladat.id)
+                    .values(hibajelezes=False)
+                )
+                session.commit()
+                return record.to_domain()
+
+            # --- Versioned update: archive old, insert new ---
+            base_id = re.sub(r'_v\d+$', '', record.id)
+            new_verzio = (record.verzio if record.verzio is not None else 1) + 1
+            new_id = f"{base_id}_v{new_verzio}"
+
+            record.statusz = FeladatStatusz.ARCHIVALT
             record.updated_at = datetime.now(timezone.utc)
-            # Clear pending error flags on all attempts for this feladat
+
+            new_record = FeladatRecord(
+                id=new_id,
+                targy=feladat.targy,
+                neh=feladat.neh,
+                szint=feladat.szint,
+                kerdes=feladat.kerdes,
+                helyes_valasz=feladat.helyes_valasz,
+                hint=feladat.hint,
+                magyarazat=feladat.magyarazat,
+                ev=feladat.ev,
+                valtozat=feladat.valtozat,
+                feladat_sorszam=feladat.feladat_sorszam,
+                csoport_id=feladat.csoport_id,
+                csoport_sorrend=feladat.csoport_sorrend,
+                feladat_tipus=feladat.feladat_tipus,
+                elfogadott_valaszok=_list_to_json(feladat.elfogadott_valaszok),
+                valaszlehetosegek=_list_to_json(feladat.valaszlehetosegek),
+                max_pont=feladat.max_pont,
+                reszpontozas=feladat.reszpontozas,
+                ertekeles_megjegyzes=feladat.ertekeles_megjegyzes,
+                tts_kerdes_path=feladat.tts_kerdes_path,
+                tts_magyarazat_path=feladat.tts_magyarazat_path,
+                tts_kerdes_szoveg=feladat.tts_kerdes_szoveg,
+                kontextus=feladat.kontextus,
+                abra_van=feladat.abra_van,
+                feladat_oldal=feladat.feladat_oldal,
+                fl_szoveg_path=feladat.fl_szoveg_path,
+                ut_szoveg_path=feladat.ut_szoveg_path,
+                fl_pdf_path=feladat.fl_pdf_path,
+                ut_pdf_path=feladat.ut_pdf_path,
+                review_elvegezve=True,
+                review_megjegyzes=megjegyzes,
+                verzio=new_verzio,
+                statusz=FeladatStatusz.AKTIV,
+                elozmeny_feladat_id=record.id,
+            )
+            session.add(new_record)
+
+            # Clear error flags on the original feladat's attempts.
             session.execute(
-                __import__("sqlalchemy").update(MegoldasRecord)
+                update(MegoldasRecord)
                 .where(MegoldasRecord.feladat_id == feladat.id)
                 .values(hibajelezes=False)
             )
             session.commit()
-            return record.to_domain()
+            return new_record.to_domain()
 
     def stats(self) -> dict:
         """Return aggregate statistics across all attempts."""
