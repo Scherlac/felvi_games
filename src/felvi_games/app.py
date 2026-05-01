@@ -40,6 +40,17 @@ _TIPUS_BADGE: dict[str, str] = {
     "kitoltes":      "✏️ Kitöltés",
 }
 
+_NAPOK: list[tuple[str, str]] = [
+    ("hetfo", "Hétfő"),
+    ("kedd", "Kedd"),
+    ("szerda", "Szerda"),
+    ("csutortok", "Csütörtök"),
+    ("pentek", "Péntek"),
+    ("szombat", "Szombat"),
+    ("vasarnap", "Vasárnap"),
+]
+_NAP_CIMKEK: dict[str, str] = dict(_NAPOK)
+
 # ---------------------------------------------------------------------------
 # Repository (singleton per process)
 # ---------------------------------------------------------------------------
@@ -210,26 +221,36 @@ def start_kerdes(feladat: Feladat, gs: GameState) -> None:
 
 
 def _render_header(gs: GameState) -> None:
+    today_stats = (
+        get_repo().get_today_stats(gs.felhasznalo)
+        if gs.felhasznalo
+        else {"pont": gs.pont, "streak": gs.streak}
+    )
     col1, col2, col3 = st.columns([2, 1, 1])
     with col1:
         st.title("🎯 Felvételi Kvíz")
         if gs.felhasznalo:
             st.caption(f"👤 {gs.felhasznalo}")
     with col2:
-        st.metric("Pont", gs.pont)
+        st.metric("Pont", today_stats["pont"])
     with col3:
-        streak = gs.streak
+        streak = today_stats["streak"]
         st.metric("Sorozat", f"{'🔥' * min(streak, 5)} {streak}")
     st.divider()
 
 
 def _render_sidebar(gs: GameState) -> None:
     with st.sidebar:
+        today_stats = (
+            get_repo().get_today_stats(gs.felhasznalo)
+            if gs.felhasznalo
+            else {"pont": gs.pont, "streak": gs.streak, "max_streak": gs.max_streak, "megoldott": len(gs.megoldott_ids)}
+        )
         st.header("📊 Statisztika")
-        st.metric("Összes pont", gs.pont)
-        st.metric("Jelenlegi sorozat", gs.streak)
-        st.metric("Legjobb sorozat", gs.max_streak)
-        st.metric("Megoldott feladatok", len(gs.megoldott_ids))
+        st.metric("Összes pont", today_stats["pont"])
+        st.metric("Jelenlegi sorozat", today_stats["streak"])
+        st.metric("Legjobb sorozat", today_stats["max_streak"])
+        st.metric("Megoldott feladatok", today_stats["megoldott"])
 
         if gs.menet_id:
             st.divider()
@@ -253,6 +274,14 @@ def _render_sidebar(gs: GameState) -> None:
                     get_repo().end_menet(gs.menet_id)
                 gs.reset()
                 gs.felhasznalo = ""
+                st.rerun()
+
+        if st.button("⚙️ Beállítások", use_container_width=True):
+            st.session_state["_active_page"] = "settings"
+            st.rerun()
+        if st.session_state.get("_active_page") == "settings":
+            if st.button("🎮 Vissza a játékhoz", use_container_width=True):
+                st.session_state["_active_page"] = "game"
                 st.rerun()
 
         if gs.felhasznalo:
@@ -308,6 +337,126 @@ def _render_sidebar(gs: GameState) -> None:
                         st.markdown("---")
         st.divider()
         st.caption("Felvételi Kvíz v0.1\nOpenAI TTS + Whisper + GPT")
+
+
+def _render_settings_page(gs: GameState) -> None:
+    st.header("⚙️ Saját célok és beállítások")
+    st.caption("Itt rögzítheted a céljaidat. A reward rendszer a target típusú rekordokat is használhatja.")
+
+    repo = get_repo()
+    tab_targets, tab_flexible = st.tabs(["🎯 Cél beállítása", "🧩 Rugalmas beállítás"])
+
+    with tab_targets:
+        with st.form("target_form", clear_on_submit=True):
+            st.subheader("Új target record")
+            targy = st.selectbox(
+                "Tárgy",
+                options=["mind", *_TARGYAK],
+                format_func=lambda x: "🌐 Mind" if x == "mind" else ("📐 Matematika" if x == "matek" else "📖 Magyar"),
+            )
+            szint = st.selectbox(
+                "Szint",
+                options=_SZINTEK,
+                format_func=lambda x: _SZINT_CIMKEK.get(str(x), str(x)),
+            )
+            selected_days = st.multiselect(
+                "Kiválasztott napok",
+                options=[k for k, _ in _NAPOK],
+                format_func=lambda x: _NAP_CIMKEK.get(str(x), str(x)),
+                default=["hetfo", "kedd", "szerda", "csutortok", "pentek"],
+            )
+            target_point = int(st.number_input("Cél pont", min_value=1, max_value=10000, value=100, step=10))
+            target_name = st.text_input("Cél neve (opcionális)", placeholder="pl. Heti matek cél")
+
+            submitted = st.form_submit_button("💾 Target mentése", type="primary")
+            if submitted:
+                base_key = f"{targy}:{szint}:{'-'.join(sorted(selected_days))}:{target_point}"
+                setting_key = target_name.strip() or base_key
+                payload = {
+                    "targy": targy,
+                    "szint": szint,
+                    "selected_days": selected_days,
+                    "target_point": target_point,
+                    "name": target_name.strip() or None,
+                    "target_type": "score",
+                }
+                repo.upsert_user_setting(
+                    gs.felhasznalo,
+                    "target_record",
+                    setting_key,
+                    payload,
+                    enabled=True,
+                )
+                st.success("A target record elmentve.")
+
+        targets = repo.list_user_settings(gs.felhasznalo, setting_class="target_record")
+        st.markdown("### Mentett target rekordok")
+        if not targets:
+            st.info("Még nincs mentett target rekordod.")
+        else:
+            for row in targets:
+                p = row.get("payload", {})
+                days = ", ".join(_NAP_CIMKEK.get(str(d), str(d)) for d in p.get("selected_days", []))
+                st.markdown(
+                    f"- **{row['setting_key']}** · tárgy: `{p.get('targy', 'mind')}` · "
+                    f"szint: `{p.get('szint', 'mind')}` · napok: {days or '-'} · "
+                    f"cél pont: **{p.get('target_point', 0)}**"
+                )
+
+            ids = [r["id"] for r in targets]
+            delete_id = st.selectbox("Törlendő target rekord", options=ids, format_func=lambda x: f"ID {x}")
+            if st.button("🗑️ Törlés", key="delete_target_btn"):
+                if delete_id is not None and repo.delete_user_setting(gs.felhasznalo, int(delete_id)):
+                    st.success("Target rekord törölve.")
+                    st.rerun()
+
+    with tab_flexible:
+        with st.form("flex_settings_form", clear_on_submit=True):
+            st.subheader("Egyedi beállítás mentése")
+            setting_class = st.text_input("Data class", value="reward_target")
+            setting_key = st.text_input("Azonosító kulcs", placeholder="pl. weekly_accuracy_goal")
+            payload_text = st.text_area(
+                "Payload (JSON)",
+                value='{"metric": "accuracy", "operator": ">=", "value": 0.8}',
+                height=140,
+            )
+            enabled = st.checkbox("Aktív", value=True)
+            flex_submit = st.form_submit_button("💾 Egyedi beállítás mentése", type="primary")
+            if flex_submit:
+                try:
+                    payload = json.loads(payload_text)
+                    if not isinstance(payload, dict):
+                        st.error("A payload csak JSON objektum lehet.")
+                    elif not setting_class.strip() or not setting_key.strip():
+                        st.error("A data class és az azonosító kulcs kötelező.")
+                    else:
+                        repo.upsert_user_setting(
+                            gs.felhasznalo,
+                            setting_class.strip(),
+                            setting_key.strip(),
+                            payload,
+                            enabled=enabled,
+                        )
+                        st.success("Egyedi beállítás elmentve.")
+                except json.JSONDecodeError as exc:
+                    st.error(f"Érvénytelen JSON: {exc}")
+
+        all_settings = repo.list_user_settings(gs.felhasznalo)
+        st.markdown("### Minden mentett beállítás")
+        if not all_settings:
+            st.info("Még nincs mentett beállítás.")
+        else:
+            table_rows = [
+                {
+                    "id": r["id"],
+                    "class": r["setting_class"],
+                    "key": r["setting_key"],
+                    "enabled": r["enabled"],
+                    "payload": json.dumps(r["payload"], ensure_ascii=False),
+                }
+                for r in all_settings
+            ]
+            st.dataframe(table_rows, use_container_width=True)
 
 
 def _render_valasztas(
@@ -761,14 +910,14 @@ def _render_eredmeny(feladatok: dict[str, list[Feladat]], gs: GameState) -> None
     col_next, col_home = st.columns(2)
     with col_next:
         if st.button("➡️ Következő feladat", use_container_width=True, type="primary"):
-            feladat = next_feladat(feladatok, gs)
-            if feladat:
+            kov_feladat = next_feladat(feladatok, gs)
+            if kov_feladat:
                 if gs.menet_id is None:
                     gs.menet_id = get_repo().start_menet(
                         gs.felhasznalo, gs.targy, gs.szint, gs.menet_cel
                     )
                     gs.menet_megoldott = 0
-                start_kerdes(feladat, gs)
+                start_kerdes(kov_feladat, gs)
                 st.rerun()
             else:
                 st.success("🏆 Minden feladatot megoldottál!")
@@ -960,6 +1109,10 @@ def main() -> None:
 
     _render_header(gs)
     _render_sidebar(gs)
+
+    if st.session_state.get("_active_page") == "settings":
+        _render_settings_page(gs)
+        return
 
     logger.debug(
         "main rerun | user=%s fazis=%s insight=%s insight_seen=%s uj_eremek=%s",

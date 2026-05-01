@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-import pytest
+from datetime import datetime, timedelta, timezone
 
-from felvi_games.db import FeladatRepository
+import pytest
+from sqlalchemy import update
+from sqlalchemy.orm import Session
+
+from felvi_games.db import FeladatRepository, MegoldasRecord
 from felvi_games.models import Ertekeles, Feladat
 
 
@@ -254,9 +258,48 @@ class TestMegoldas:
         assert stats["total_attempts"] == 0
         assert stats["accuracy"] == 0.0
 
+    def test_get_today_stats_counts_only_today(self, repo, feladat_matek):
+        repo.upsert(feladat_matek)
+        user = "MaiTeszt"
+
+        # One attempt from yesterday
+        repo.save_megoldas(feladat_matek, "42", Ertekeles(True, "OK", 5), felhasznalo_nev=user)
+        now_utc = datetime.now(timezone.utc)
+        with Session(repo._engine) as session:
+            latest_id = session.query(MegoldasRecord.id).order_by(MegoldasRecord.id.desc()).first()[0]
+            session.execute(
+                update(MegoldasRecord)
+                .where(MegoldasRecord.id == latest_id)
+                .values(created_at=now_utc - timedelta(days=1))
+            )
+            session.commit()
+
+        # Today's attempts
+        repo.save_megoldas(feladat_matek, "42", Ertekeles(True, "OK", 3), felhasznalo_nev=user)
+        repo.save_megoldas(feladat_matek, "0", Ertekeles(False, "Nem", 0), felhasznalo_nev=user)
+
+        stats = repo.get_today_stats(user)
+        assert stats["pont"] == 3
+        assert stats["megoldott"] == 2
+        assert stats["streak"] == 0
+        assert stats["max_streak"] == 1
+
+    def test_get_today_stats_streak_keeps_partial_points(self, repo, feladat_matek):
+        repo.upsert(feladat_matek)
+        user = "SorozatTeszt"
+
+        repo.save_megoldas(feladat_matek, "42", Ertekeles(True, "OK", 2), felhasznalo_nev=user)
+        repo.save_megoldas(feladat_matek, "reszleges", Ertekeles(False, "Részleges", 1), felhasznalo_nev=user)
+        repo.save_megoldas(feladat_matek, "42", Ertekeles(True, "OK", 2), felhasznalo_nev=user)
+
+        stats = repo.get_today_stats(user)
+        assert stats["pont"] == 5
+        assert stats["megoldott"] == 3
+        assert stats["streak"] == 2
+        assert stats["max_streak"] == 2
+
     def test_cascade_delete_removes_megoldasok(self, tmp_path):
         """Deleting a feladat removes its attempts (CASCADE)."""
-        from sqlalchemy.orm import Session
         from felvi_games.db import FeladatRecord, MegoldasRecord
 
         repo = FeladatRepository(db_path=tmp_path / "cascade.db")
@@ -385,6 +428,81 @@ class TestMenet:
         assert m.targy == "matek"
         assert m.feladat_limit == 10
         assert m.lezart is False
+
+
+# ---------------------------------------------------------------------------
+# Flexible user settings / targets
+# ---------------------------------------------------------------------------
+
+
+class TestUserSettings:
+    def test_upsert_and_list_user_setting(self, repo):
+        user = "BeallitasTeszt"
+        repo.get_or_create_felhasznalo(user)
+
+        setting_id = repo.upsert_user_setting(
+            user,
+            "target_record",
+            "weekly_matek",
+            {
+                "targy": "matek",
+                "szint": "6 osztályos",
+                "selected_days": ["hetfo", "szerda"],
+                "target_point": 120,
+            },
+        )
+        assert setting_id > 0
+
+        rows = repo.list_user_settings(user, setting_class="target_record")
+        assert len(rows) == 1
+        assert rows[0]["setting_key"] == "weekly_matek"
+        assert rows[0]["payload"]["target_point"] == 120
+
+    def test_upsert_user_setting_updates_existing_row(self, repo):
+        user = "BeallitasFrissites"
+        repo.get_or_create_felhasznalo(user)
+
+        first_id = repo.upsert_user_setting(user, "target_record", "goal_1", {"target_point": 50})
+        second_id = repo.upsert_user_setting(user, "target_record", "goal_1", {"target_point": 75})
+
+        assert first_id == second_id
+        rows = repo.list_user_settings(user, setting_class="target_record")
+        assert len(rows) == 1
+        assert rows[0]["payload"]["target_point"] == 75
+
+    def test_delete_user_setting(self, repo):
+        user = "BeallitasTorles"
+        repo.get_or_create_felhasznalo(user)
+
+        sid = repo.upsert_user_setting(user, "reward_target", "acc_80", {"value": 0.8})
+        assert repo.delete_user_setting(user, sid) is True
+        assert repo.list_user_settings(user) == []
+
+    def test_get_user_targets_returns_payloads(self, repo):
+        user = "RewardTargetUser"
+        repo.get_or_create_felhasznalo(user)
+
+        repo.upsert_user_setting(
+            user,
+            "target_record",
+            "goal_math",
+            {"targy": "matek", "target_point": 100},
+            enabled=True,
+        )
+        repo.upsert_user_setting(
+            user,
+            "target_record",
+            "goal_hu",
+            {"targy": "magyar", "target_point": 80},
+            enabled=False,
+        )
+
+        enabled_targets = repo.get_user_targets(user)
+        all_targets = repo.get_user_targets(user, only_enabled=False)
+
+        assert len(enabled_targets) == 1
+        assert enabled_targets[0]["targy"] == "matek"
+        assert len(all_targets) == 2
 
 
 class TestMegoldasWithTracking:

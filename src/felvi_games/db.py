@@ -346,6 +346,36 @@ class InterakcioRecord(Base):
     )
 
 
+class UserSettingRecord(Base):
+    """Flexible user-defined settings/targets storage.
+
+    ``setting_class`` allows multiple data classes (including future ones),
+    while ``payload_json`` stores the arbitrary structured payload.
+    """
+
+    __tablename__ = "user_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    felhasznalo_nev: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    felhasznalo_id: Mapped[int | None] = mapped_column(
+        ForeignKey("felhasznalok.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    setting_class: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    setting_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
 class FelhasznaloEremRecord(Base):
     """Earned medal/achievement row per user."""
 
@@ -927,6 +957,53 @@ class FeladatRepository:
                 "accuracy": round(helyes / total * 100, 1) if total else 0.0,
             }
 
+    def get_today_stats(self, felhasznalo_nev: str) -> dict[str, int]:
+        """Return today's persisted user stats (local-day based).
+
+        Values are derived from ``MegoldasRecord`` rows and therefore survive
+        app reloads / new Streamlit sessions.
+        """
+        local_tz = datetime.now().astimezone().tzinfo or timezone.utc
+        today = datetime.now(local_tz).date()
+
+        with Session(self._engine) as session:
+            attempts = list(
+                session.scalars(
+                    select(MegoldasRecord)
+                    .where(MegoldasRecord.felhasznalo_nev == felhasznalo_nev)
+                    .order_by(MegoldasRecord.created_at.asc(), MegoldasRecord.id.asc())
+                )
+            )
+
+        today_attempts: list[MegoldasRecord] = []
+        for a in attempts:
+            created = a.created_at
+            created_local = (
+                created.replace(tzinfo=timezone.utc).astimezone(local_tz)
+                if created.tzinfo is None
+                else created.astimezone(local_tz)
+            )
+            if created_local.date() == today:
+                today_attempts.append(a)
+
+        current_streak = 0
+        max_streak = 0
+        streak = 0
+        for a in today_attempts:
+            if a.helyes:
+                streak += 1
+            elif a.pont == 0:
+                streak = 0
+            max_streak = max(max_streak, streak)
+        current_streak = streak
+
+        return {
+            "pont": sum(a.pont for a in today_attempts),
+            "streak": current_streak,
+            "max_streak": max_streak,
+            "megoldott": len(today_attempts),
+        }
+
     def get_feladat_attempt_counts(
         self, felhasznalo_nev: str, feladat_ids: list[str]
     ) -> dict[str, int]:
@@ -1015,7 +1092,7 @@ class FeladatRepository:
             stmt = (
                 select(MenetRecord)
                 .where(MenetRecord.felhasznalo_nev == felhasznalo_nev)
-                .order_by(MenetRecord.started_at.desc())
+                .order_by(MenetRecord.started_at.desc(), MenetRecord.id.desc())
                 .limit(limit)
             )
             return [r.to_domain() for r in session.scalars(stmt)]
@@ -1392,6 +1469,129 @@ class FeladatRepository:
             jateknapok=[(r.nap, int(r.n)) for r in nap_rows],
             eremek=eremek,
         )
+
+    # --- Flexible user settings / targets ---
+
+    def upsert_user_setting(
+        self,
+        felhasznalo_nev: str,
+        setting_class: str,
+        setting_key: str,
+        payload: dict,
+        *,
+        enabled: bool = True,
+    ) -> int:
+        """Create or update one user setting identified by (class, key)."""
+        import json as _json
+
+        cls = setting_class.strip()
+        key = setting_key.strip()
+        if not cls:
+            raise ValueError("setting_class cannot be empty")
+        if not key:
+            raise ValueError("setting_key cannot be empty")
+
+        user_id = self._get_felhasznalo_id(felhasznalo_nev)
+        with Session(self._engine) as session:
+            rec = session.execute(
+                select(UserSettingRecord)
+                .where(UserSettingRecord.felhasznalo_nev == felhasznalo_nev)
+                .where(UserSettingRecord.setting_class == cls)
+                .where(UserSettingRecord.setting_key == key)
+                .limit(1)
+            ).scalar_one_or_none()
+
+            if rec is None:
+                rec = UserSettingRecord(
+                    felhasznalo_nev=felhasznalo_nev,
+                    felhasznalo_id=user_id,
+                    setting_class=cls,
+                    setting_key=key,
+                    payload_json=_json.dumps(payload, ensure_ascii=False),
+                    enabled=enabled,
+                )
+                session.add(rec)
+            else:
+                rec.payload_json = _json.dumps(payload, ensure_ascii=False)
+                rec.enabled = enabled
+                rec.updated_at = datetime.now(timezone.utc)
+
+            session.commit()
+            session.refresh(rec)
+            return rec.id
+
+    def list_user_settings(
+        self,
+        felhasznalo_nev: str,
+        *,
+        setting_class: str | None = None,
+        include_disabled: bool = True,
+    ) -> list[dict]:
+        """Return user settings as plain dict rows (payload decoded from JSON)."""
+        import json as _json
+
+        with Session(self._engine) as session:
+            stmt = (
+                select(UserSettingRecord)
+                .where(UserSettingRecord.felhasznalo_nev == felhasznalo_nev)
+                .order_by(UserSettingRecord.setting_class, UserSettingRecord.setting_key)
+            )
+            if setting_class:
+                stmt = stmt.where(UserSettingRecord.setting_class == setting_class)
+            if not include_disabled:
+                stmt = stmt.where(UserSettingRecord.enabled.is_(True))
+
+            rows = list(session.scalars(stmt))
+
+        result: list[dict] = []
+        for r in rows:
+            try:
+                payload = _json.loads(r.payload_json) if r.payload_json else {}
+            except Exception:
+                payload = {}
+            result.append(
+                {
+                    "id": r.id,
+                    "felhasznalo": r.felhasznalo_nev,
+                    "setting_class": r.setting_class,
+                    "setting_key": r.setting_key,
+                    "payload": payload,
+                    "enabled": r.enabled,
+                    "created_at": r.created_at,
+                    "updated_at": r.updated_at,
+                }
+            )
+        return result
+
+    def delete_user_setting(self, felhasznalo_nev: str, setting_id: int) -> bool:
+        """Delete one user setting by id; returns True if removed."""
+        with Session(self._engine) as session:
+            rec = session.execute(
+                select(UserSettingRecord)
+                .where(UserSettingRecord.id == setting_id)
+                .where(UserSettingRecord.felhasznalo_nev == felhasznalo_nev)
+                .limit(1)
+            ).scalar_one_or_none()
+            if rec is None:
+                return False
+            session.delete(rec)
+            session.commit()
+            return True
+
+    def get_user_targets(
+        self,
+        felhasznalo_nev: str,
+        *,
+        target_class: str = "target_record",
+        only_enabled: bool = True,
+    ) -> list[dict]:
+        """Convenience helper for reward/progress systems to read user targets."""
+        settings = self.list_user_settings(
+            felhasznalo_nev,
+            setting_class=target_class,
+            include_disabled=not only_enabled,
+        )
+        return [s["payload"] for s in settings]
 
 
 # ---------------------------------------------------------------------------
