@@ -141,7 +141,7 @@ def next_feladat(feladatok: dict[str, list[Feladat]], gs: GameState) -> Feladat 
         return None
 
     # How many questions remain in the current session?
-    hátralevo = max(1, gs.menet_cel - gs.menet_megoldott)
+    hátralevo = max(1, gs.menet_cel - gs.pont)
 
     # Fetch per-feladat attempt counts for the current user (least-seen priority)
     user = gs.felhasznalo
@@ -491,11 +491,11 @@ def _render_valasztas(
 
     if gs.menet_id is None:
         gs.menet_cel = int(st.number_input(
-            "Feladatok száma egy menetben:",
+            "Megszerezhető pontok egy menetben:",
             min_value=5, max_value=50, value=gs.menet_cel, step=5,
         ))
     else:
-        st.caption(f"🎯 Menet: {gs.menet_megoldott} / {gs.menet_cel} feladat")
+        st.caption(f"🎯 Menet: {gs.pont} / {gs.menet_cel} pont")
 
     st.markdown("")
     if st.button("🚀 Következő feladat!", use_container_width=True, type="primary"):
@@ -761,7 +761,7 @@ def _render_kerdes(gs: GameState) -> None:
             # --- session progress + medal checks ---
             if gs.menet_id:
                 get_repo().update_menet_progress(gs.menet_id, gs.menet_megoldott, gs.pont)
-                if gs.menet_megoldott >= gs.menet_cel:
+                if gs.pont >= gs.menet_cel:
                     get_repo().end_menet(gs.menet_id)
                     if gs.felhasznalo:
                         get_repo().log_interakcio(
@@ -903,7 +903,7 @@ def _render_eredmeny(feladatok: dict[str, list[Feladat]], gs: GameState) -> None
     st.divider()
 
     # Session completion banner
-    if gs.menet_id is None and gs.menet_megoldott > 0 and gs.menet_megoldott >= gs.menet_cel:
+    if gs.menet_id is None and gs.menet_megoldott > 0 and gs.pont >= gs.menet_cel:
         st.success(f"🏆 Menet vége! {gs.menet_megoldott} feladatot oldottál meg, {gs.pont} ponttal.")
         st.info("🔄 Kattints az ‚Új menet’ gombra a bal oldali menüben, vagy folytasd tovább!")
 
