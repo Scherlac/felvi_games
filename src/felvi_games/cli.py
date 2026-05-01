@@ -1108,6 +1108,75 @@ def review_cmd(
 
 
 # ---------------------------------------------------------------------------
+# felvi report  – heti használati riport (markdown + matplotlib PNG-k)
+# ---------------------------------------------------------------------------
+
+@app.command("report")
+def report_cmd(
+    days: Annotated[
+        int, typer.Option("--days", help="Hány napra visszamenőleg (alap: 7)")
+    ] = 7,
+    output_dir: Annotated[
+        Optional[Path], typer.Option("--output-dir", help="Kimeneti mappa (alap: ./reports/<dátum>_<napok>d/)")
+    ] = None,
+    user: Annotated[
+        Optional[str], typer.Option("--user", help="Csak egy felhasználó adatai")
+    ] = None,
+    db: Annotated[
+        Optional[Path], typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
+    ] = None,
+    open_report: Annotated[
+        bool, typer.Option("--open", help="Megnyitja a kimeneti mappát fájlkezelőben")
+    ] = False,
+) -> None:
+    """Heti (vagy tetszőleges időtartamú) használati riport generálása.
+
+    Kimenet: markdown összefoglaló + matplotlib PNG grafikonok egy mappában.
+
+    \b
+    felvi report                          # utolsó 7 nap, minden felhasználó
+    felvi report --days 14                # utolsó 14 nap
+    felvi report --user Lóri              # csak Lóri adatai
+    felvi report --output-dir my_reports  # egyedi kimeneti mappa
+    """
+    from felvi_games.config import get_db_path
+    from felvi_games.report import run as _run_report
+
+    db_path = db or get_db_path()
+    if not db_path.exists():
+        typer.echo(f"[!] DB nem található: {db_path}")
+        raise typer.Exit(code=1)
+    if days < 1:
+        typer.echo("[!] A --days értéke legalább 1 legyen.")
+        raise typer.Exit(code=2)
+
+    typer.echo(f"\nRiport generálása  (DB: {db_path}  |  {days} nap  |  user={user or 'mind'})\n")
+
+    out_dir = _run_report(
+        db_path=db_path,
+        days=days,
+        output_dir=output_dir,
+        user_filter=user,
+    )
+
+    files = sorted(out_dir.iterdir())
+    typer.echo(f"✅ Riport kész: {out_dir}")
+    for f in files:
+        typer.echo(f"   {f.name}")
+
+    if open_report:
+        import subprocess, sys
+        if sys.platform == "win32":
+            subprocess.Popen(["explorer", str(out_dir)])
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(out_dir)])
+        else:
+            subprocess.Popen(["xdg-open", str(out_dir)])
+
+    typer.echo()
+
+
+# ---------------------------------------------------------------------------
 # felvi tts-clear  – TTS szöveg törlése (újrageneráláshoz)
 # ---------------------------------------------------------------------------
 
