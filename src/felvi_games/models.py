@@ -380,8 +380,8 @@ class GameState:
         if ertekeles.helyes:
             self.streak += 1
             self.max_streak = max(self.streak, self.max_streak)
-        else:
-            self.streak = 0
+        elif ertekeles.pont == 0:
+            self.streak = 0  # full miss resets streak; partial keeps it
         self.kerdes_kezdete = None
 
     def reset(self) -> None:
