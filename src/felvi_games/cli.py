@@ -816,9 +816,18 @@ def medal_edit_cmd(
     ismetelheto: Annotated[Optional[bool], typer.Option("--ismetelheto/--nem-ismetelheto")] = None,
     privat: Annotated[Optional[bool], typer.Option("--privat/--globalis")] = None,
     cel_felhasznalo: Annotated[Optional[str], typer.Option("--cel-felhasznalo")] = None,
+    condition_json: Annotated[
+        Optional[str],
+        typer.Option("--condition-json", help="Dinamikus feltétel JSON (pl. '{\"type\":\"after_hour\",...}')"),
+    ] = None,
+    clear_condition: Annotated[
+        bool,
+        typer.Option("--clear-condition", help="Dinamikus feltétel törlése"),
+    ] = False,
 ) -> None:
     """Meglévő érem metaadatainak szerkesztése (újraindítás nélkül érvényes)."""
     import dataclasses
+    import json as _json
 
     from felvi_games.db import EremRecord
     from sqlalchemy.orm import Session as _Session
@@ -832,6 +841,24 @@ def medal_edit_cmd(
         raise typer.Exit(code=1)
 
     existing = rec.to_domain()
+    if condition_json is not None and clear_condition:
+        typer.echo("[!] A --condition-json és --clear-condition együtt nem használható.")
+        raise typer.Exit(code=2)
+
+    parsed_condition = existing.condition
+    if clear_condition:
+        parsed_condition = None
+    elif condition_json is not None:
+        try:
+            parsed = _json.loads(condition_json)
+        except _json.JSONDecodeError as exc:
+            typer.echo(f"[!] Érvénytelen JSON a --condition-json paraméterben: {exc}")
+            raise typer.Exit(code=2)
+        if parsed is not None and not isinstance(parsed, dict):
+            typer.echo("[!] A --condition-json csak objektum (dict) vagy null lehet.")
+            raise typer.Exit(code=2)
+        parsed_condition = parsed
+
     updated = dataclasses.replace(
         existing,
         nev=nev if nev is not None else existing.nev,
@@ -843,6 +870,7 @@ def medal_edit_cmd(
         ismetelheto=ismetelheto if ismetelheto is not None else existing.ismetelheto,
         privat=privat if privat is not None else existing.privat,
         cel_felhasznalo=cel_felhasznalo if cel_felhasznalo is not None else existing.cel_felhasznalo,
+        condition=parsed_condition,
     )
     repo.upsert_erem(updated)
     typer.echo(f"✓ Érem frissítve: {updated.ikon} {updated.nev}  (id={id})")

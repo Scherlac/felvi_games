@@ -236,11 +236,15 @@ Feltétel típusok (gépileg kiértékelhető, n = esemény EZUTÁN az érem lé
   session_count  – {"type":"session_count","n":2,"window_hours":6}
   tokeletes_session – {"type":"tokeletes_session","window_hours":18}
   feladat_subject – {"type":"feladat_subject","n":5,"subject":"matek","window_hours":12}
+    before_hour    – {"type":"before_hour","hour":10,"n":5,"window_hours":12}
+    after_hour     – {"type":"after_hour","hour":18,"n":5,"window_hours":12}
 
 Szabályok:
 - n és window_hours legyen reálisan elérhető a közelmúlt alapján.
 - window_hours: 1–18 között (rövid kihívás).
 - leiras: pl. "Oldj meg 5 feladatot 8 órán belül!"
+- Ha a név/leírás reggeli jellegű (pl. "Reggeli"), használj `before_hour` típust.
+- Ha a név/leírás esti jellegű (pl. "Esti"), használj `after_hour` típust.
 - FONTOS: a feltétel az érem LÉTREHOZÁSA UTÁN teljesítendő, nem a múltban."""
 
 _DAILY_INSIGHT_TEMPLATE = """\

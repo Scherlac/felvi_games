@@ -205,3 +205,50 @@ def test_medal_check_policy_fix_makes_temp_one_time_reearnable(tmp_path: Path) -
     assert rec.ismetelheto is True
     assert earned is not None
     assert earned.lejarat_at is None
+
+
+def test_medal_edit_can_update_dynamic_condition_json(tmp_path: Path) -> None:
+    db_file = _empty_db(tmp_path)
+    repo = FeladatRepository(db_path=db_file)
+
+    repo.upsert_erem(
+        Erem(
+            id="dyn_esti_fix",
+            nev="Esti ötös",
+            leiras="Régi leírás",
+            ikon="🎯",
+            kategoria="teljesitmeny",
+            ideiglenes=True,
+            ervenyes_napig=1,
+            ismetelheto=True,
+            privat=True,
+            cel_felhasznalo="Lóri",
+            condition={"type": "feladat_count", "n": 5, "window_hours": 12},
+        )
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "medal-edit",
+            "--db",
+            str(db_file),
+            "--id",
+            "dyn_esti_fix",
+            "--leiras",
+            "Oldj meg 5 feladatot este 18:00 után 12 órán belül!",
+            "--condition-json",
+            '{"type":"after_hour","hour":18,"n":5,"window_hours":12}',
+        ],
+    )
+
+    assert result.exit_code == 0
+
+    updated = repo.get_erem_katalogus("Lóri")["dyn_esti_fix"]
+    assert updated.leiras == "Oldj meg 5 feladatot este 18:00 után 12 órán belül!"
+    assert updated.condition == {
+        "type": "after_hour",
+        "hour": 18,
+        "n": 5,
+        "window_hours": 12,
+    }
