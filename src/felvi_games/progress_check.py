@@ -184,6 +184,26 @@ def _conflicting_dynamic_medals(user: str, repo: "FeladatRepository", candidate:
     return conflicts
 
 
+def _find_cross_user_private_match(user: str, repo: "FeladatRepository", candidate: dict) -> dict | None:
+    """Return one matching private medal from another user, if any."""
+    for erem in repo.get_all_private_dynamic_medals():
+        if not isinstance(erem.condition, dict):
+            continue
+        if erem.cel_felhasznalo == user:
+            continue
+        reason = _dynamic_overlap_reason(candidate, erem.condition)
+        if reason is None:
+            continue
+        return {
+            "source_erem_id": erem.id,
+            "source_user": erem.cel_felhasznalo,
+            "source_nev": erem.nev,
+            "reason": reason,
+            "source_condition": erem.condition,
+        }
+    return None
+
+
 def _screen_dynamic_medal_candidate(
     user: str,
     repo: "FeladatRepository",
@@ -197,6 +217,32 @@ def _screen_dynamic_medal_candidate(
     if not isinstance(medal_data, dict):
         return None
     if not isinstance(medal_data.get("condition"), dict):
+        return None
+
+    cross_user_match = _find_cross_user_private_match(user, repo, medal_data["condition"])
+    if cross_user_match is not None:
+        # Signal for product review: this idea already exists privately for another user
+        # and should be considered for promotion to public instead of cloning privately.
+        repo.log_interakcio(
+            user,
+            "medal_public_candidate_hit",
+            meta={
+                "candidate": {
+                    "nev": medal_data.get("nev"),
+                    "kategoria": medal_data.get("kategoria"),
+                    "condition": medal_data.get("condition"),
+                },
+                "match": cross_user_match,
+            },
+            process_pending_rewards=False,
+        )
+        logger.info(
+            "dynamic_medal_blocked_cross_user_match | user=%s source_erem=%s source_user=%s reason=%s",
+            user,
+            cross_user_match.get("source_erem_id"),
+            cross_user_match.get("source_user"),
+            cross_user_match.get("reason"),
+        )
         return None
 
     conflicts = _conflicting_dynamic_medals(user, repo, medal_data["condition"])
@@ -249,6 +295,78 @@ def _screen_dynamic_medal_candidate(
     if refined_novelty.get("reasonably_different"):
         return refined
     return None
+
+
+# ---------------------------------------------------------------------------
+# Cross-user private medal cluster detection
+# ---------------------------------------------------------------------------
+
+@dataclass
+class DynamicMedalCluster:
+    """A group of structurally similar private dynamic medals from different users."""
+    representative: Erem                  # one representative medal from the cluster
+    members: list[Erem]                   # all medals in the cluster (includes representative)
+    overlap_reason: str                   # e.g. "after_hour structural overlap"
+    user_count: int                       # distinct users covered
+
+
+def find_cross_user_medal_clusters(
+    repo: "FeladatRepository",
+    *,
+    min_users: int = 2,
+) -> list[DynamicMedalCluster]:
+    """Find private dynamic medals with overlapping conditions across multiple users.
+
+    Uses the same deterministic overlap logic as the single-user screening gate.
+    Returns clusters that appeared for at least *min_users* distinct users,
+    sorted by user count descending.
+    """
+    all_medals = repo.get_all_private_dynamic_medals()
+    # Index: erem_id → Erem
+    # Group into clusters using a union-find-like greedy approach:
+    # compare each medal against existing cluster representatives.
+    clusters: list[list[Erem]] = []
+    cluster_reasons: list[str] = []
+
+    for medal in all_medals:
+        if not isinstance(medal.condition, dict):
+            continue
+        placed = False
+        for idx, cluster in enumerate(clusters):
+            rep = cluster[0]
+            if not isinstance(rep.condition, dict):
+                continue
+            reason = _dynamic_overlap_reason(medal.condition, rep.condition)
+            if reason is not None:
+                cluster.append(medal)
+                placed = True
+                break
+        if not placed:
+            clusters.append([medal])
+            cluster_reasons.append("")
+
+    results: list[DynamicMedalCluster] = []
+    for idx, cluster in enumerate(clusters):
+        distinct_users = {m.cel_felhasznalo for m in cluster if m.cel_felhasznalo}
+        if len(distinct_users) < min_users:
+            continue
+        rep = cluster[0]
+        reason = ""
+        for m in cluster[1:]:
+            r = _dynamic_overlap_reason(m.condition, rep.condition) if isinstance(m.condition, dict) and isinstance(rep.condition, dict) else None
+            if r:
+                reason = r
+                break
+        results.append(
+            DynamicMedalCluster(
+                representative=rep,
+                members=list(cluster),
+                overlap_reason=reason,
+                user_count=len(distinct_users),
+            )
+        )
+    results.sort(key=lambda c: c.user_count, reverse=True)
+    return results
 
 
 # ---------------------------------------------------------------------------

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from felvi_games.db import InterakcioRecord, MegoldasRecord, MenetRecord
 from felvi_games.models import Erem, Ertekeles, InterakcioTipus
-from felvi_games.progress_check import daily_check, get_user_stats
+from felvi_games.progress_check import daily_check, find_cross_user_medal_clusters, get_user_stats
 
 
 def test_get_user_stats_includes_trends_patterns_and_events(repo, feladat_matek, feladat_magyar) -> None:
@@ -231,3 +231,108 @@ def test_daily_check_refines_overlapping_dynamic_medal(repo) -> None:
     dynamic_medals = [erem for erem in repo.get_erem_katalogus(user).values() if erem.id.startswith("daily_")]
     assert len(dynamic_medals) == 2
     assert any(erem.nev == "Reggeli rajt" for erem in dynamic_medals)
+
+
+def _make_daily_medal(
+    repo,
+    *,
+    erem_id: str,
+    user: str,
+    condition: dict,
+    nev: str = "Napi kihívás",
+) -> None:
+    repo.upsert_erem(
+        Erem(
+            id=erem_id,
+            nev=nev,
+            leiras="Teszt.",
+            ikon="🌟",
+            kategoria="teljesitmeny",
+            ideiglenes=True,
+            ervenyes_napig=1,
+            ismetelheto=True,
+            privat=True,
+            cel_felhasznalo=user,
+            condition=condition,
+        )
+    )
+
+
+def test_find_cross_user_medal_clusters_detects_overlap(repo) -> None:
+    _make_daily_medal(repo, erem_id="daily_lori_a", user="Lori",
+                      condition={"type": "after_hour", "hour": 22, "n": 5, "window_hours": 12},
+                      nev="Esti ötös")
+    _make_daily_medal(repo, erem_id="daily_peti_a", user="Peti",
+                      condition={"type": "after_hour", "hour": 22, "n": 6, "window_hours": 10},
+                      nev="Késő esti 6")
+    _make_daily_medal(repo, erem_id="daily_lori_b", user="Lori",
+                      condition={"type": "feladat_count", "n": 5, "window_hours": 4},
+                      nev="Ötös sprint")
+
+    clusters = find_cross_user_medal_clusters(repo, min_users=2)
+
+    assert len(clusters) == 1
+    assert clusters[0].user_count == 2
+    assert clusters[0].overlap_reason != ""
+    assert {"daily_lori_a", "daily_peti_a"} == {m.id for m in clusters[0].members}
+
+
+def test_find_cross_user_medal_clusters_no_results_below_threshold(repo) -> None:
+    _make_daily_medal(repo, erem_id="daily_lori_x", user="Lori",
+                      condition={"type": "after_hour", "hour": 22, "n": 5, "window_hours": 12})
+
+    clusters = find_cross_user_medal_clusters(repo, min_users=2)
+    assert clusters == []
+
+
+def test_daily_check_blocks_cross_user_duplicate_and_logs_signal(repo) -> None:
+    # Existing private dynamic medal for one user.
+    _make_daily_medal(
+        repo,
+        erem_id="daily_lori_esti",
+        user="Lori",
+        condition={"type": "after_hour", "hour": 22, "n": 5, "window_hours": 12},
+        nev="Esti ötös",
+    )
+
+    ai_result = {
+        "greeting": "Szia Lackó",
+        "new_medal": {
+            "nev": "Késő esti ötös",
+            "leiras": "Oldj meg 6 feladatot 22 óra után!",
+            "ikon": "🦉",
+            "kategoria": "rendszeresseg",
+            "ervenyes_napig": 1,
+            "condition": {"type": "after_hour", "hour": 22, "n": 6, "window_hours": 10},
+        },
+    }
+    base_stats = {
+        "total_attempts": 0,
+        "correct": 0,
+        "accuracy_pct": 0.0,
+        "completed_sessions": 0,
+        "current_streak_days": 0,
+        "recent_days_7d": 0,
+        "best_correct_streak": 0,
+        "subjects_used": [],
+        "events": {"counts_last_24h": {}},
+    }
+
+    with (
+        patch("felvi_games.progress_check.get_user_stats", return_value=base_stats),
+        patch("felvi_games.progress_check.estimate_close_medals", return_value=[]),
+        patch("felvi_games.progress_check.random.random", return_value=0.0),
+        patch("felvi_games.progress_check.random.choice", return_value=12),
+        patch("felvi_games.ai.generate_daily_insight", return_value=ai_result),
+    ):
+        insight = daily_check("Lacko", repo, force=True)
+
+    assert insight is not None
+    assert insight.new_medal_created is False
+    lacko_dynamic = [erem for erem in repo.get_erem_katalogus("Lacko").values() if erem.id.startswith("daily_")]
+    assert lacko_dynamic == []
+
+    signals = repo.get_interakciok("Lacko", tipus="medal_public_candidate_hit", limit=20)
+    assert len(signals) >= 1
+    assert signals[0].meta is not None
+    assert "daily_lori_esti" in signals[0].meta

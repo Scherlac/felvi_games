@@ -1407,6 +1407,22 @@ class FeladatRepository:
                 stmt = stmt.where(InterakcioRecord.tipus == tipus)
             return list(session.scalars(stmt))
 
+    def list_interakciok_by_tipus(
+        self,
+        tipus: str,
+        *,
+        limit: int = 500,
+    ) -> list[InterakcioRecord]:
+        """Fetch recent interaction events globally for one type (newest first)."""
+        with Session(self._engine) as session:
+            stmt = (
+                select(InterakcioRecord)
+                .where(InterakcioRecord.tipus == tipus)
+                .order_by(InterakcioRecord.created_at.desc(), InterakcioRecord.id.desc())
+                .limit(limit)
+            )
+            return list(session.scalars(stmt))
+
     # --- Medals (earned records) ---
 
     def grant_erem(
@@ -1535,6 +1551,20 @@ class FeladatRepository:
                     new_count += 1
             session.commit()
         return new_count
+
+    def get_all_private_dynamic_medals(self) -> list[Erem]:
+        """Return all private dynamic medals from every user (daily_* ids only)."""
+        with Session(self._engine) as session:
+            stmt = (
+                select(EremRecord)
+                .where(
+                    EremRecord.privat == True,  # noqa: E712
+                    EremRecord.cel_felhasznalo.is_not(None),
+                    EremRecord.condition_json.is_not(None),
+                    EremRecord.id.like("daily_%"),
+                )
+            )
+            return [r.to_domain() for r in session.scalars(stmt)]
 
     def get_erem_katalogus(
         self,

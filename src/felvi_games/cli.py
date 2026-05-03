@@ -2156,6 +2156,199 @@ def review_cmd(
 
 
 # ---------------------------------------------------------------------------
+# felvi medal-promote-candidates  – cross-user private medal review
+# ---------------------------------------------------------------------------
+
+@app.command("medal-promote-candidates")
+def medal_promote_candidates_cmd(
+    db: Annotated[Optional[Path], typer.Option("--db", help="SQLite DB útvonala")] = None,
+    min_users: Annotated[
+        int,
+        typer.Option("--min-users", help="Minimum felhasználók száma, akiknél megjelent (alap: 2)"),
+    ] = 2,
+    promote_id: Annotated[
+        Optional[str],
+        typer.Option("--promote", help="Érem azonosítója, amelyet nyilvánossá tesz"),
+    ] = None,
+    new_id: Annotated[
+        Optional[str],
+        typer.Option("--new-id", help="Új nyilvános azonosító a promóció során (--promote esetén kötelező)"),
+    ] = None,
+    new_nev: Annotated[Optional[str], typer.Option("--new-nev")] = None,
+    new_leiras: Annotated[Optional[str], typer.Option("--new-leiras")] = None,
+    new_ikon: Annotated[Optional[str], typer.Option("--new-ikon")] = None,
+    new_kategoria: Annotated[Optional[str], typer.Option("--new-kategoria")] = None,
+    ismetelheto: Annotated[
+        bool,
+        typer.Option("--ismetelheto/--nem-ismetelheto", help="Ismételhető legyen-e a nyilvános érem"),
+    ] = True,
+    show_signals: Annotated[
+        bool,
+        typer.Option("--signals/--no-signals", help="Mutassa a generálás közben blokkolt cross-user találatokat"),
+    ] = True,
+) -> None:
+    """Listázza a több felhasználónál is megjelent hasonló privát kihívásérmeket.
+
+    Ha ugyanaz a feltételtípus (pl. after_hour, feladat_count) strukturálisan azonos
+    feltétellel két vagy több felhasználónál is felbukkant, az jó jelölt arra, hogy
+    nyilvános rémmé alakítsák.
+
+    \b
+    felvi medal-promote-candidates                     # listázás
+    felvi medal-promote-candidates --min-users 3       # csak 3+ felhasználónál megjelent
+    felvi medal-promote-candidates \\
+        --promote daily_lori_20260503_0830 \\
+        --new-id esti_ottos \\
+        --new-nev "Esti ötös" \\
+        --new-leiras "Oldj meg 5 feladatot 22:00 után!" \\
+        --new-ikon 🌙
+    """
+    import dataclasses
+    import json as _json
+    from felvi_games.progress_check import find_cross_user_medal_clusters
+
+    repo = _get_repo_for_medals(db)
+    clusters = find_cross_user_medal_clusters(repo, min_users=min_users)
+    signal_rows = repo.list_interakciok_by_tipus("medal_public_candidate_hit", limit=500) if show_signals else []
+
+    if promote_id is None:
+        # ── List-only mode ────────────────────────────────────────────────
+        signal_groups: dict[str, dict] = {}
+        for row in signal_rows:
+            if not row.meta:
+                continue
+            try:
+                payload = _json.loads(row.meta)
+            except Exception:
+                continue
+            match = payload.get("match") if isinstance(payload, dict) else None
+            if not isinstance(match, dict):
+                continue
+            src_id = str(match.get("source_erem_id", "")).strip()
+            if not src_id:
+                continue
+            bucket = signal_groups.setdefault(
+                src_id,
+                {
+                    "source_erem_id": src_id,
+                    "source_user": match.get("source_user"),
+                    "source_nev": match.get("source_nev"),
+                    "reason": match.get("reason"),
+                    "users": set(),
+                    "hits": 0,
+                },
+            )
+            bucket["hits"] += 1
+            if row.felhasznalo_nev:
+                bucket["users"].add(row.felhasznalo_nev)
+
+        if not clusters and not signal_groups:
+            typer.echo(
+                f"\n(Nincs {min_users}+ felhasználónál megjelent klaszter és nincs blokkolt cross-user jelzés sem.)\n"
+            )
+            raise typer.Exit()
+
+        typer.echo(
+            f"\n{'='*60}\n"
+            f"Potenciálisan nyilvánossá tehető kihívásérmek "
+            f"({min_users}+ felhasználónál)\n"
+            f"{'='*60}"
+        )
+        for i, cluster in enumerate(clusters, 1):
+            rep = cluster.representative
+            typer.echo(
+                f"\n#{i}  {rep.ikon}  {rep.nev}  "
+                f"[{cluster.user_count} felhasználó — {cluster.overlap_reason}]"
+            )
+            typer.echo(f"     Leírás   : {rep.leiras}")
+            typer.echo(f"     Feltétel : {_json.dumps(rep.condition, ensure_ascii=False)}")
+            typer.echo(f"     Tagok    :")
+            for m in cluster.members:
+                user_label = m.cel_felhasznalo or "?"
+                cond_str = _json.dumps(m.condition, ensure_ascii=False) if m.condition else "—"
+                typer.echo(f"       • {m.id}  ({user_label})  cond={cond_str}")
+
+        if signal_groups:
+            typer.echo(
+                f"\n{'='*60}\n"
+                "Blokkolt cross-user találatok (promóciós jelzések)\n"
+                f"{'='*60}"
+            )
+            sorted_groups = sorted(
+                signal_groups.values(),
+                key=lambda g: (len(g["users"]), g["hits"]),
+                reverse=True,
+            )
+            for item in sorted_groups:
+                users = sorted(item["users"])
+                user_list = ", ".join(users[:6]) + (" ..." if len(users) > 6 else "")
+                typer.echo(
+                    f"\n- source={item['source_erem_id']}  nev={item.get('source_nev') or '—'}\n"
+                    f"  owner={item.get('source_user') or '—'}  reason={item.get('reason') or '—'}\n"
+                    f"  distinct_users={len(users)}  hits={item['hits']}\n"
+                    f"  users={user_list or '—'}"
+                )
+        typer.echo(
+            f"\n{'-'*60}\n"
+            f"Tipp: --promote <érem-id> --new-id <új-id> --new-nev <név> paranccsal tehetsz "
+            f"egyet nyilvánossá.\n"
+        )
+        raise typer.Exit()
+
+    # ── Promote mode ──────────────────────────────────────────────────────
+    if not new_id:
+        typer.echo("[!] A --new-id megadása kötelező --promote esetén.")
+        raise typer.Exit(code=2)
+
+    from felvi_games.db import EremRecord
+    from sqlalchemy.orm import Session as _Session
+
+    repo2 = _get_repo_for_medals(db)
+    with _Session(repo2._engine) as s:
+        source_rec = s.get(EremRecord, promote_id)
+        if source_rec is None:
+            typer.echo(f"[!] Nem található: '{promote_id}'")
+            raise typer.Exit(code=1)
+        if s.get(EremRecord, new_id) is not None:
+            typer.echo(f"[!] A '{new_id}' azonosító már létezik. Válassz más --new-id-t.")
+            raise typer.Exit(code=1)
+        source_erem = source_rec.to_domain()
+
+    from felvi_games.models import Erem
+
+    public_medal = dataclasses.replace(
+        source_erem,
+        id=new_id,
+        nev=new_nev if new_nev is not None else source_erem.nev,
+        leiras=new_leiras if new_leiras is not None else source_erem.leiras,
+        ikon=new_ikon if new_ikon is not None else source_erem.ikon,
+        kategoria=new_kategoria if new_kategoria is not None else source_erem.kategoria,
+        privat=False,
+        cel_felhasznalo=None,
+        ideiglenes=False,
+        ervenyes_napig=None,
+        ismetelheto=ismetelheto,
+        condition_valid_from=None,
+    )
+    repo2.upsert_erem(public_medal)
+    typer.echo(
+        f"\n✅ Nyilvános érem létrehozva:\n"
+        f"   {public_medal.ikon}  {public_medal.nev}  (id: {public_medal.id})\n"
+        f"   Leírás   : {public_medal.leiras}\n"
+        f"   Kategória: {public_medal.kategoria}  |  ismételhető: {public_medal.ismetelheto}\n"
+    )
+    if public_medal.condition:
+        typer.echo(f"   Feltétel : {_json.dumps(public_medal.condition, ensure_ascii=False)}")
+        typer.echo()
+        typer.echo(
+            "[i] FONTOS: a feltételt vagy töröld (--clear-condition via medal-edit) "
+            "hogy statikus érem legyen, vagy adj hozzá SZABALY_REGISTRY bejegyzést achievements.py-ban "
+            "ha saját logikát akarsz."
+        )
+    typer.echo()
+
+
+# ---------------------------------------------------------------------------
 # felvi report  – heti használati riport (markdown + matplotlib PNG-k)
 # ---------------------------------------------------------------------------
 
