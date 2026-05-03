@@ -541,7 +541,7 @@ def _group_feladatok(
     groups: dict[str, list[tuple[int, Feladat]]] = defaultdict(list)
     for i, f in enumerate(feladatok):
         sorszam = f.feladat_sorszam or str(i)
-        num_match = _re.match(r"^(\d+)", sorszam)
+        num_match = re.match(r"^(\d+)", sorszam)
         group_key = num_match.group(1) if num_match else sorszam
         groups[group_key].append((i, f))
 
