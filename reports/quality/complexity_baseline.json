@@ -1,24 +1,24 @@
 {
   "schema_version": 2,
-  "generated_at_utc": "2026-05-03T10:05:26+00:00",
+  "generated_at_utc": "2026-05-03T10:46:31+00:00",
   "paths": [
     "src",
     "tests"
   ],
-  "python_files": 25,
-  "total_loc": 14825,
-  "total_sloc": 11354,
-  "total_blank": 2144,
-  "avg_mi": 40.332,
+  "python_files": 29,
+  "total_loc": 15383,
+  "total_sloc": 11796,
+  "total_blank": 2278,
+  "avg_mi": 40.506,
   "avg_cc": 4.522,
   "p95_cc": 16.0,
   "counts_by_rank": {
-    "A": 459,
-    "B": 52,
-    "C": 29,
-    "D": 9,
+    "A": 492,
+    "B": 59,
+    "C": 31,
+    "D": 11,
     "E": 5,
-    "F": 5
+    "F": 2
   },
   "d_or_worse_blocks": 18,
   "f_blocks": 2,
@@ -306,43 +306,120 @@
     },
     {
       "file": "src/felvi_games/achievements.py",
+      "name": "_dyn_feladat_count",
+      "line": 847,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_dyn_helyes_count",
+      "line": 859,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_dyn_pont_sum",
+      "line": 872,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_dyn_streak",
+      "line": 884,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_dyn_session_count",
+      "line": 904,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_dyn_tokeletes_session",
+      "line": 916,
+      "complexity": 9.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_dyn_feladat_subject",
+      "line": 944,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_dyn_before_hour",
+      "line": 959,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_dyn_after_hour",
+      "line": 975,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_dyn_special_date",
+      "line": 991,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_dyn_interakcio",
+      "line": 1007,
+      "complexity": 14.0,
+      "rank": "C"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
       "name": "_eval_dynamic_condition",
-      "line": 843,
-      "complexity": 51.0,
-      "rank": "F"
+      "line": 1063,
+      "complexity": 5.0,
+      "rank": "A"
     },
     {
       "file": "src/felvi_games/achievements.py",
       "name": "_count_dynamic_condition",
-      "line": 1043,
+      "line": 1095,
       "complexity": 18.0,
       "rank": "C"
     },
     {
       "file": "src/felvi_games/achievements.py",
       "name": "check_new_medals",
-      "line": 1176,
+      "line": 1228,
       "complexity": 28.0,
       "rank": "D"
     },
     {
       "file": "src/felvi_games/achievements.py",
       "name": "get_all_medals_for_user",
-      "line": 1326,
+      "line": 1378,
       "complexity": 3.0,
       "rank": "A"
     },
     {
       "file": "src/felvi_games/achievements.py",
       "name": "simulate_medal_rules",
-      "line": 1361,
+      "line": 1413,
       "complexity": 10.0,
       "rank": "B"
     },
     {
       "file": "src/felvi_games/achievements.py",
       "name": "RuleSimResult",
-      "line": 1351,
+      "line": 1403,
       "complexity": 1.0,
       "rank": "A"
     },
@@ -616,139 +693,181 @@
       "file": "src/felvi_games/cli.py",
       "name": "medals",
       "line": 308,
-      "complexity": 78.0,
-      "rank": "F"
+      "complexity": 10.0,
+      "rank": "B"
     },
     {
       "file": "src/felvi_games/cli.py",
       "name": "medal_assets_cmd",
-      "line": 698,
+      "line": 702,
       "complexity": 20.0,
       "rank": "C"
     },
     {
       "file": "src/felvi_games/cli.py",
       "name": "_get_repo_for_medals",
-      "line": 765,
+      "line": 769,
       "complexity": 1.0,
       "rank": "A"
     },
     {
       "file": "src/felvi_games/cli.py",
       "name": "medal_add_cmd",
-      "line": 771,
+      "line": 775,
       "complexity": 5.0,
       "rank": "A"
     },
     {
       "file": "src/felvi_games/cli.py",
       "name": "medal_edit_cmd",
-      "line": 808,
+      "line": 812,
       "complexity": 18.0,
       "rank": "C"
     },
     {
       "file": "src/felvi_games/cli.py",
       "name": "medal_grant_cmd",
-      "line": 882,
+      "line": 886,
       "complexity": 6.0,
       "rank": "B"
     },
     {
       "file": "src/felvi_games/cli.py",
       "name": "medal_delete_cmd",
-      "line": 919,
+      "line": 923,
       "complexity": 4.0,
       "rank": "A"
     },
     {
       "file": "src/felvi_games/cli.py",
       "name": "stats_cmd",
-      "line": 944,
+      "line": 948,
       "complexity": 13.0,
       "rank": "C"
     },
     {
       "file": "src/felvi_games/cli.py",
       "name": "wrong_cmd",
-      "line": 1011,
+      "line": 1015,
       "complexity": 17.0,
       "rank": "C"
     },
     {
       "file": "src/felvi_games/cli.py",
       "name": "check_answer_cmd",
-      "line": 1101,
+      "line": 1105,
       "complexity": 13.0,
       "rank": "C"
     },
     {
       "file": "src/felvi_games/cli.py",
+      "name": "_medal_check_policy_fix",
+      "line": 1213,
+      "complexity": 7.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "_medal_check_collect_awards",
+      "line": 1268,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "_medal_check_simulate",
+      "line": 1289,
+      "complexity": 26.0,
+      "rank": "D"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "_medal_check_dry_run",
+      "line": 1416,
+      "complexity": 25.0,
+      "rank": "D"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "_medal_check_clear",
+      "line": 1506,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "_medal_check_default",
+      "line": 1533,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
       "name": "medal_check_cmd",
-      "line": 1210,
-      "complexity": 76.0,
-      "rank": "F"
+      "line": 1560,
+      "complexity": 11.0,
+      "rank": "C"
     },
     {
       "file": "src/felvi_games/cli.py",
       "name": "reeval_cmd",
-      "line": 1594,
+      "line": 1635,
       "complexity": 35.0,
       "rank": "E"
     },
     {
       "file": "src/felvi_games/cli.py",
       "name": "user_stats_cmd",
-      "line": 1780,
+      "line": 1821,
       "complexity": 22.0,
       "rank": "D"
     },
     {
       "file": "src/felvi_games/cli.py",
       "name": "medal_clear_cmd",
-      "line": 1875,
+      "line": 1916,
       "complexity": 10.0,
       "rank": "B"
     },
     {
       "file": "src/felvi_games/cli.py",
       "name": "medal_recheck_cmd",
-      "line": 1940,
+      "line": 1981,
       "complexity": 34.0,
       "rank": "E"
     },
     {
       "file": "src/felvi_games/cli.py",
       "name": "review_cmd",
-      "line": 2065,
+      "line": 2106,
       "complexity": 18.0,
       "rank": "C"
     },
     {
       "file": "src/felvi_games/cli.py",
       "name": "medal_promote_candidates_cmd",
-      "line": 2179,
+      "line": 2220,
       "complexity": 31.0,
       "rank": "E"
     },
     {
       "file": "src/felvi_games/cli.py",
       "name": "report_cmd",
-      "line": 2373,
+      "line": 2414,
       "complexity": 9.0,
       "rank": "B"
     },
     {
       "file": "src/felvi_games/cli.py",
       "name": "tts_clear_cmd",
-      "line": 2443,
+      "line": 2484,
       "complexity": 6.0,
       "rank": "B"
     },
     {
       "file": "src/felvi_games/cli.py",
       "name": "run",
-      "line": 2485,
+      "line": 2526,
       "complexity": 1.0,
       "rank": "A"
     },
@@ -2202,6 +2321,48 @@
       "rank": "A"
     },
     {
+      "file": "tests/test_achievements_dynamic_conditions.py",
+      "name": "_make_feladat",
+      "line": 14,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_achievements_dynamic_conditions.py",
+      "name": "_insert_attempt_at",
+      "line": 29,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_achievements_dynamic_conditions.py",
+      "name": "test_eval_dynamic_condition_unknown_type_returns_false",
+      "line": 49,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_achievements_dynamic_conditions.py",
+      "name": "test_eval_dynamic_condition_feladat_count_respects_valid_from",
+      "line": 53,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_achievements_dynamic_conditions.py",
+      "name": "test_eval_dynamic_condition_interakcio_exists_with_enum_and_filters",
+      "line": 76,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_achievements_dynamic_conditions.py",
+      "name": "test_eval_dynamic_condition_respects_simulation_upper_bound",
+      "line": 103,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
       "file": "tests/test_achievements_expiry_policy.py",
       "name": "test_non_repeatable_temporary_medal_does_not_get_expiry",
       "line": 8,
@@ -3140,6 +3301,48 @@
       "rank": "A"
     },
     {
+      "file": "tests/test_medal_assets.py",
+      "name": "_erem",
+      "line": 15,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_medal_assets.py",
+      "name": "test_get_medal_asset_prefers_local_bytes",
+      "line": 28,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_medal_assets.py",
+      "name": "test_get_medal_asset_falls_back_to_url_or_none",
+      "line": 42,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_medal_assets.py",
+      "name": "test_medal_asset_exists_reports_presence",
+      "line": 54,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_medal_assets.py",
+      "name": "test_generate_medal_assets_generates_supported_kinds",
+      "line": 65,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_medal_assets.py",
+      "name": "test_generate_medal_assets_keeps_existing_when_no_overwrite",
+      "line": 88,
+      "complexity": 7.0,
+      "rank": "B"
+    },
+    {
       "file": "tests/test_pdf_parser.py",
       "name": "_make_pdf",
       "line": 36,
@@ -3819,6 +4022,55 @@
       "rank": "B"
     },
     {
+      "file": "tests/test_quality_gate_report.py",
+      "name": "_load_quality_gate_module",
+      "line": 11,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_quality_gate_report.py",
+      "name": "_snapshot",
+      "line": 24,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_quality_gate_report.py",
+      "name": "test_ratchet_no_improvement_returns_none",
+      "line": 52,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_quality_gate_report.py",
+      "name": "test_ratchet_updates_only_improved_complexity_metrics",
+      "line": 62,
+      "complexity": 8.0,
+      "rank": "B"
+    },
+    {
+      "file": "tests/test_quality_gate_report.py",
+      "name": "test_ratchet_updates_coverage_only_when_it_improves",
+      "line": 77,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_quality_gate_report.py",
+      "name": "test_ratchet_does_not_lower_coverage_baseline",
+      "line": 89,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_quality_gate_report.py",
+      "name": "test_main_auto_ratchet_writes_improved_metrics",
+      "line": 99,
+      "complexity": 7.0,
+      "rank": "B"
+    },
+    {
       "file": "tests/test_review.py",
       "name": "feladat",
       "line": 22,
@@ -3936,23 +4188,44 @@
       "line": 208,
       "complexity": 3.0,
       "rank": "A"
+    },
+    {
+      "file": "tests/test_status.py",
+      "name": "test_pdf_summary_empty_dir_prints_hint",
+      "line": 8,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_status.py",
+      "name": "test_pdf_summary_groups_known_files",
+      "line": 14,
+      "complexity": 6.0,
+      "rank": "B"
+    },
+    {
+      "file": "tests/test_status.py",
+      "name": "test_pdf_summary_unrecognized_names_are_reported",
+      "line": 29,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_status.py",
+      "name": "test_run_missing_paths_prints_missing_hints",
+      "line": 38,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_status.py",
+      "name": "test_run_calls_pdf_and_db_summaries_when_paths_exist",
+      "line": 55,
+      "complexity": 2.0,
+      "rank": "A"
     }
   ],
   "top_blocks": [
-    {
-      "file": "src/felvi_games/cli.py",
-      "name": "medals",
-      "line": 308,
-      "complexity": 78.0,
-      "rank": "F"
-    },
-    {
-      "file": "src/felvi_games/cli.py",
-      "name": "medal_check_cmd",
-      "line": 1210,
-      "complexity": 76.0,
-      "rank": "F"
-    },
     {
       "file": "src/felvi_games/report.py",
       "name": "generate_charts",
@@ -3968,13 +4241,6 @@
       "rank": "F"
     },
     {
-      "file": "src/felvi_games/achievements.py",
-      "name": "_eval_dynamic_condition",
-      "line": 843,
-      "complexity": 51.0,
-      "rank": "F"
-    },
-    {
       "file": "src/felvi_games/app.py",
       "name": "next_feladat",
       "line": 123,
@@ -3984,7 +4250,7 @@
     {
       "file": "src/felvi_games/cli.py",
       "name": "reeval_cmd",
-      "line": 1594,
+      "line": 1635,
       "complexity": 35.0,
       "rank": "E"
     },
@@ -3998,14 +4264,14 @@
     {
       "file": "src/felvi_games/cli.py",
       "name": "medal_recheck_cmd",
-      "line": 1940,
+      "line": 1981,
       "complexity": 34.0,
       "rank": "E"
     },
     {
       "file": "src/felvi_games/cli.py",
       "name": "medal_promote_candidates_cmd",
-      "line": 2179,
+      "line": 2220,
       "complexity": 31.0,
       "rank": "E"
     },
@@ -4019,7 +4285,7 @@
     {
       "file": "src/felvi_games/achievements.py",
       "name": "check_new_medals",
-      "line": 1176,
+      "line": 1228,
       "complexity": 28.0,
       "rank": "D"
     },
@@ -4032,8 +4298,22 @@
     },
     {
       "file": "src/felvi_games/cli.py",
+      "name": "_medal_check_simulate",
+      "line": 1289,
+      "complexity": 26.0,
+      "rank": "D"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
       "name": "usage",
       "line": 164,
+      "complexity": 25.0,
+      "rank": "D"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "_medal_check_dry_run",
+      "line": 1416,
       "complexity": 25.0,
       "rank": "D"
     },
@@ -4042,6 +4322,13 @@
       "name": "_render_eredmeny",
       "line": 849,
       "complexity": 23.0,
+      "rank": "D"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "_render_settings_page",
+      "line": 370,
+      "complexity": 22.0,
       "rank": "D"
     }
   ],
@@ -4109,6 +4396,346 @@
       "num_statements": 275
     }
   ],
-  "coverage_error": null,
-  "coverage_source": "fresh test run via --coverage-command"
+  "coverage_error": "Coverage command failed (exit=1).                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ | E   AttributeError: 'Namespace' object has no attribute 'max_ruff_violations_increase' | =============================== tests coverage ================================ | ______________ coverage: platform win32, python 3.12.13-final-0 _______________ | Coverage JSON written to file reports/quality/coverage_current.json | =========================== short test summary info =========================== | FAILED tests/test_quality_gate_report.py::test_main_auto_ratchet_writes_improved_metrics | ======================= 1 failed, 217 passed in 25.12s ========================",
+  "coverage_source": "coverage json import",
+  "ruff_violations": 46,
+  "ruff_by_category": {
+    "E": 22,
+    "U": 22,
+    "F": 2
+  },
+  "ruff_error": null,
+  "duplicate_block_pairs": 20,
+  "duplicate_blocks": [
+    {
+      "file_a": "src/felvi_games/achievements.py",
+      "name_a": "_rule_szaz_feladat",
+      "line_a": 464,
+      "file_b": "src/felvi_games/achievements.py",
+      "name_b": "_rule_otszaz_feladat",
+      "line_b": 476,
+      "clone_count": 6,
+      "body_size": 103
+    },
+    {
+      "file_a": "src/felvi_games/achievements.py",
+      "name_a": "_rule_het_egymas_utan",
+      "line_a": 614,
+      "file_b": "src/felvi_games/achievements.py",
+      "name_b": "_rule_harom_het_egymas_utan",
+      "line_b": 620,
+      "clone_count": 4,
+      "body_size": 44
+    },
+    {
+      "file_a": "tests/conftest.py",
+      "name_a": "feladat_matek",
+      "line_a": 28,
+      "file_b": "tests/test_cli_review.py",
+      "name_b": "feladat",
+      "line_b": 30,
+      "clone_count": 3,
+      "body_size": 31
+    },
+    {
+      "file_a": "src/felvi_games/report.py",
+      "name_a": "accuracy_pct",
+      "line_a": 40,
+      "file_b": "src/felvi_games/report.py",
+      "name_b": "accuracy_pct",
+      "line_b": 54,
+      "clone_count": 3,
+      "body_size": 30
+    },
+    {
+      "file_a": "src/felvi_games/achievements.py",
+      "name_a": "_rule_sorozat_5",
+      "line_a": 521,
+      "file_b": "src/felvi_games/achievements.py",
+      "name_b": "_rule_sorozat_10",
+      "line_b": 525,
+      "clone_count": 3,
+      "body_size": 27
+    },
+    {
+      "file_a": "tests/test_pdf_parser.py",
+      "name_a": "test_matek_feladatlap",
+      "line_a": 122,
+      "file_b": "tests/test_pdf_parser.py",
+      "name_b": "test_magyar_utmutato",
+      "line_b": 126,
+      "clone_count": 3,
+      "body_size": 26
+    },
+    {
+      "file_a": "tests/test_medal_assets.py",
+      "name_a": "_asset_path",
+      "line_a": 31,
+      "file_b": "tests/test_medal_assets.py",
+      "name_b": "_asset_path",
+      "line_b": 45,
+      "clone_count": 3,
+      "body_size": 24
+    },
+    {
+      "file_a": "src/felvi_games/achievements.py",
+      "name_a": "_rule_szaz_pont",
+      "line_a": 771,
+      "file_b": "src/felvi_games/achievements.py",
+      "name_b": "_rule_otszaz_pont",
+      "line_b": 783,
+      "clone_count": 2,
+      "body_size": 102
+    },
+    {
+      "file_a": "src/felvi_games/achievements.py",
+      "name_a": "_dyn_feladat_count",
+      "line_a": 847,
+      "file_b": "src/felvi_games/achievements.py",
+      "name_b": "_dyn_session_count",
+      "line_b": 904,
+      "clone_count": 2,
+      "body_size": 94
+    },
+    {
+      "file_a": "tests/test_db.py",
+      "name_a": "test_save_megoldas_helyes",
+      "line_a": 225,
+      "file_b": "tests/test_db.py",
+      "name_b": "test_save_megoldas_helytelen",
+      "line_b": 232,
+      "clone_count": 2,
+      "body_size": 51
+    },
+    {
+      "file_a": "tests/test_pdf_parser.py",
+      "name_a": "test_single_task_detected",
+      "line_a": 520,
+      "file_b": "tests/test_pdf_parser.py",
+      "name_b": "test_multiple_tasks_split_correctly",
+      "line_b": 527,
+      "clone_count": 2,
+      "body_size": 46
+    },
+    {
+      "file_a": "src/felvi_games/db.py",
+      "name_a": "get",
+      "line_a": 684,
+      "file_b": "src/felvi_games/db.py",
+      "name_b": "get_csoport",
+      "line_b": 756,
+      "clone_count": 2,
+      "body_size": 44
+    },
+    {
+      "file_a": "tests/test_pdf_parser.py",
+      "name_a": "test_missing_ut_skipped",
+      "line_a": 301,
+      "file_b": "tests/test_pdf_parser.py",
+      "name_b": "test_ut_only_not_yielded",
+      "line_b": 306,
+      "clone_count": 2,
+      "body_size": 35
+    },
+    {
+      "file_a": "src/felvi_games/models.py",
+      "name_a": "pdf_source",
+      "line_a": 194,
+      "file_b": "src/felvi_games/models.py",
+      "name_b": "ut_source",
+      "line_b": 199,
+      "clone_count": 2,
+      "body_size": 28
+    },
+    {
+      "file_a": "src/felvi_games/db.py",
+      "name_a": "rontas_pct",
+      "line_a": 1939,
+      "file_b": "src/felvi_games/db.py",
+      "name_b": "accuracy_pct",
+      "line_b": 1969,
+      "clone_count": 2,
+      "body_size": 27
+    },
+    {
+      "file_a": "src/felvi_games/progress_check.py",
+      "name_a": "_safe_int",
+      "line_a": 82,
+      "file_b": "src/felvi_games/progress_check.py",
+      "name_b": "_safe_float",
+      "line_b": 89,
+      "clone_count": 2,
+      "body_size": 27
+    },
+    {
+      "file_a": "tests/test_achievements_dynamic_conditions.py",
+      "name_a": "_make_feladat",
+      "line_a": 14,
+      "file_b": "tests/test_achievements_repeatable_gating.py",
+      "name_b": "_make_feladat",
+      "line_b": 14,
+      "clone_count": 2,
+      "body_size": 27
+    },
+    {
+      "file_a": "tests/test_pdf_parser.py",
+      "name_a": "test_feladat_tipus_parsed",
+      "line_a": 489,
+      "file_b": "tests/test_pdf_parser.py",
+      "name_b": "test_reszpontozas_parsed",
+      "line_b": 503,
+      "clone_count": 2,
+      "body_size": 27
+    },
+    {
+      "file_a": "tests/test_medal_assets.py",
+      "name_a": "_asset_path",
+      "line_a": 68,
+      "file_b": "tests/test_medal_assets.py",
+      "name_b": "_asset_path",
+      "line_b": 91,
+      "clone_count": 2,
+      "body_size": 24
+    },
+    {
+      "file_a": "tests/test_db.py",
+      "name_a": "test_get_menetek_empty_for_unknown_user",
+      "line_a": 481,
+      "file_b": "tests/test_db.py",
+      "name_b": "test_get_feladatok_by_csoport_empty",
+      "line_b": 692,
+      "clone_count": 2,
+      "body_size": 15
+    }
+  ],
+  "classes_analyzed": 34,
+  "avg_lcom": 0.833,
+  "low_cohesion_classes": [
+    {
+      "file": "src/felvi_games/models.py",
+      "class": "Ertekeles",
+      "line": 311,
+      "lcom": 1.0
+    },
+    {
+      "file": "tests/test_db.py",
+      "class": "TestInit",
+      "line": 41,
+      "lcom": 1.0
+    },
+    {
+      "file": "tests/test_db.py",
+      "class": "TestUpsert",
+      "line": 58,
+      "lcom": 1.0
+    },
+    {
+      "file": "tests/test_db.py",
+      "class": "TestGet",
+      "line": 84,
+      "lcom": 1.0
+    },
+    {
+      "file": "tests/test_db.py",
+      "class": "TestAll",
+      "line": 106,
+      "lcom": 1.0
+    },
+    {
+      "file": "tests/test_db.py",
+      "class": "TestTtsAssets",
+      "line": 153,
+      "lcom": 1.0
+    },
+    {
+      "file": "tests/test_db.py",
+      "class": "TestMegoldas",
+      "line": 224,
+      "lcom": 1.0
+    },
+    {
+      "file": "tests/test_db.py",
+      "class": "TestDynamicEventConditions",
+      "line": 263,
+      "lcom": 1.0
+    },
+    {
+      "file": "tests/test_db.py",
+      "class": "TestFeladatWithAssets",
+      "line": 391,
+      "lcom": 1.0
+    },
+    {
+      "file": "tests/test_db.py",
+      "class": "TestFelhasznalo",
+      "line": 414,
+      "lcom": 1.0
+    }
+  ],
+  "public_functions_analyzed": 397,
+  "avg_params": 1.622,
+  "high_param_count": 17,
+  "untyped_public_functions": 179,
+  "high_param_functions": [
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "medal_edit_cmd",
+      "line": 812,
+      "params": 13
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "medals",
+      "line": 308,
+      "params": 12
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "medal_add_cmd",
+      "line": 775,
+      "params": 11
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "medal_promote_candidates_cmd",
+      "line": 2220,
+      "params": 10
+    },
+    {
+      "file": "src/felvi_games/ai.py",
+      "name": "check_answer",
+      "line": 124,
+      "params": 8
+    },
+    {
+      "file": "src/felvi_games/ai.py",
+      "name": "refine_daily_medal",
+      "line": 468,
+      "params": 8
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "parse",
+      "line": 118,
+      "params": 8
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "wrong_cmd",
+      "line": 1015,
+      "params": 8
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "reeval_cmd",
+      "line": 1635,
+      "params": 8
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "save_megoldas",
+      "line": 867,
+      "params": 8
+    }
+  ]
 }

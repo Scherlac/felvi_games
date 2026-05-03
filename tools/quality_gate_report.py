@@ -16,6 +16,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Iterable
 
+import ast as _ast_mod
+import hashlib
+import re
+import sys
+
 from radon.complexity import cc_visit
 from radon.metrics import mi_visit
 from radon.raw import analyze
@@ -52,6 +57,9 @@ class GateThresholds:
     max_significant_block_regressions: int = 1
     min_coverage_pct: float = 0.0
     max_coverage_drop: float = 1.0
+    max_ruff_violations_increase: int = 5
+    max_duplicate_pairs_increase: int = 2
+    max_high_param_increase: int = 2
 
 
 @dataclass
@@ -86,6 +94,19 @@ class Snapshot:
     low_coverage_files: list[dict[str, object]] = field(default_factory=list)
     coverage_error: str | None = None
     coverage_source: str | None = None
+    ruff_violations: int | None = None
+    ruff_by_category: dict[str, int] = field(default_factory=dict)
+    ruff_error: str | None = None
+    duplicate_block_pairs: int = 0
+    duplicate_blocks: list[dict[str, object]] = field(default_factory=list)
+    classes_analyzed: int = 0
+    avg_lcom: float = 0.0
+    low_cohesion_classes: list[dict[str, object]] = field(default_factory=list)
+    public_functions_analyzed: int = 0
+    avg_params: float = 0.0
+    high_param_count: int = 0
+    untyped_public_functions: int = 0
+    high_param_functions: list[dict[str, object]] = field(default_factory=list)
 
 
 @dataclass
@@ -134,6 +155,223 @@ def _percentile(values: list[float], q: float) -> float:
     return float(ordered[idx])
 
 
+# ---------------------------------------------------------------------------
+# Ruff lint metrics
+# ---------------------------------------------------------------------------
+
+
+def _run_ruff_check(
+    repo_root: Path, scan_paths: list[Path]
+) -> tuple[int, dict[str, int], str | None]:
+    """Run ruff check and return (total_violations, by_category, error)."""
+    try:
+        result = subprocess.run(  # noqa: S603
+            [sys.executable, "-m", "ruff", "check", "--output-format=json", "--exit-zero"]
+            + [str(p) for p in scan_paths],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+        )
+        findings: list[dict[str, object]] = json.loads(result.stdout or "[]")
+        by_category: dict[str, int] = {}
+        for item in findings:
+            code = str(item.get("code") or "?")
+            cat = code[0] if code and code[0].isalpha() else "?"
+            by_category[cat] = by_category.get(cat, 0) + 1
+        return len(findings), by_category, None
+    except Exception as exc:
+        return 0, {}, str(exc)
+
+
+# ---------------------------------------------------------------------------
+# Structural duplication metrics
+# ---------------------------------------------------------------------------
+
+
+def _normalized_ast_dump(node: _ast_mod.AST) -> str:
+    """Return a normalized, hash-stable dump of an AST node for similarity detection."""
+    raw = _ast_mod.dump(node)
+    raw = re.sub(r"id='[^']*'", "id='v'", raw)
+    raw = re.sub(r"arg='[^']*'", "arg='a'", raw)
+    raw = re.sub(r"attr='[^']*'", "attr='m'", raw)
+    raw = re.sub(r"name='[^']*'", "name='n'", raw)
+    raw = re.sub(r"value=[0-9]+\.[0-9]+", "value=0", raw)
+    raw = re.sub(r"value=[0-9]+", "value=0", raw)
+    raw = re.sub(r"value='[^']*'", "value='s'", raw)
+    return raw
+
+
+def _collect_function_hashes(
+    py_files: list[Path], repo_root: Path, min_nodes: int = 15
+) -> list[dict[str, object]]:
+    records: list[dict[str, object]] = []
+    for py_file in py_files:
+        try:
+            code = py_file.read_text(encoding="utf-8", errors="replace")
+            tree = _ast_mod.parse(code)
+            rel = _rel(py_file, repo_root)
+            for node in _ast_mod.walk(tree):
+                if not isinstance(node, (_ast_mod.FunctionDef, _ast_mod.AsyncFunctionDef)):
+                    continue
+                body_nodes = list(_ast_mod.walk(node))
+                if len(body_nodes) < min_nodes:
+                    continue
+                dump = _normalized_ast_dump(node)
+                h = hashlib.sha1(dump.encode(), usedforsecurity=False).hexdigest()  # noqa: S324
+                records.append(
+                    {
+                        "file": rel,
+                        "name": node.name,
+                        "line": node.lineno,
+                        "hash": h,
+                        "size": len(body_nodes),
+                    }
+                )
+        except Exception:
+            pass
+    return records
+
+
+def _detect_duplicates(records: list[dict[str, object]]) -> list[dict[str, object]]:
+    by_hash: dict[str, list[dict[str, object]]] = {}
+    for r in records:
+        by_hash.setdefault(str(r["hash"]), []).append(r)
+    pairs: list[dict[str, object]] = []
+    for group in by_hash.values():
+        if len(group) < 2:
+            continue
+        a, b = group[0], group[1]
+        pairs.append(
+            {
+                "file_a": a["file"], "name_a": a["name"], "line_a": a["line"],
+                "file_b": b["file"], "name_b": b["name"], "line_b": b["line"],
+                "clone_count": len(group),
+                "body_size": a["size"],
+            }
+        )
+    return sorted(pairs, key=lambda x: (int(x["clone_count"]), int(x["body_size"])), reverse=True)
+
+
+# ---------------------------------------------------------------------------
+# Cohesion metrics (LCOM1)
+# ---------------------------------------------------------------------------
+
+
+def _lcom1(class_node: _ast_mod.ClassDef) -> float | None:
+    """Compute LCOM1: fraction of method pairs sharing no instance attribute (0=cohesive, 1=none)."""
+    method_attrs: list[set[str]] = []
+    for item in class_node.body:
+        if not isinstance(item, (_ast_mod.FunctionDef, _ast_mod.AsyncFunctionDef)):
+            continue
+        attrs: set[str] = set()
+        for n in _ast_mod.walk(item):
+            if (
+                isinstance(n, _ast_mod.Attribute)
+                and isinstance(n.value, _ast_mod.Name)
+                and n.value.id == "self"
+            ):
+                attrs.add(n.attr)
+        method_attrs.append(attrs)
+    if len(method_attrs) < 2:
+        return None
+    shared = not_shared = 0
+    for i in range(len(method_attrs)):
+        for j in range(i + 1, len(method_attrs)):
+            if method_attrs[i] & method_attrs[j]:
+                shared += 1
+            else:
+                not_shared += 1
+    total = shared + not_shared
+    return round(not_shared / total, 3) if total else None
+
+
+def _cohesion_metrics(
+    py_files: list[Path], repo_root: Path, lcom_threshold: float = 0.7
+) -> tuple[int, float, list[dict[str, object]], str | None]:
+    lcom_values: list[float] = []
+    low_cohesion: list[dict[str, object]] = []
+    analyzed = 0
+    try:
+        for py_file in py_files:
+            try:
+                code = py_file.read_text(encoding="utf-8", errors="replace")
+                tree = _ast_mod.parse(code)
+            except Exception:
+                continue
+            rel = _rel(py_file, repo_root)
+            for node in _ast_mod.walk(tree):
+                if not isinstance(node, _ast_mod.ClassDef):
+                    continue
+                lcom = _lcom1(node)
+                if lcom is None:
+                    continue
+                analyzed += 1
+                lcom_values.append(lcom)
+                if lcom > lcom_threshold:
+                    low_cohesion.append(
+                        {"file": rel, "class": node.name, "line": node.lineno, "lcom": lcom}
+                    )
+        avg = round(statistics.mean(lcom_values), 3) if lcom_values else 0.0
+        return (
+            analyzed,
+            avg,
+            sorted(low_cohesion, key=lambda x: float(x["lcom"]), reverse=True)[:10],
+            None,
+        )
+    except Exception as exc:
+        return 0, 0.0, [], str(exc)
+
+
+# ---------------------------------------------------------------------------
+# Interface complexity metrics
+# ---------------------------------------------------------------------------
+
+
+def _interface_metrics(
+    py_files: list[Path], repo_root: Path, max_params: int = 5
+) -> tuple[int, float, int, int, list[dict[str, object]], str | None]:
+    param_counts: list[int] = []
+    high_param: list[dict[str, object]] = []
+    untyped = 0
+    analyzed = 0
+    try:
+        for py_file in py_files:
+            try:
+                code = py_file.read_text(encoding="utf-8", errors="replace")
+                tree = _ast_mod.parse(code)
+            except Exception:
+                continue
+            rel = _rel(py_file, repo_root)
+            for node in _ast_mod.walk(tree):
+                if not isinstance(node, (_ast_mod.FunctionDef, _ast_mod.AsyncFunctionDef)):
+                    continue
+                if node.name.startswith("_"):
+                    continue  # skip private/dunder
+                analyzed += 1
+                all_args = node.args.posonlyargs + node.args.args + node.args.kwonlyargs
+                n_params = len(all_args)
+                if all_args and all_args[0].arg in ("self", "cls"):
+                    n_params = max(0, n_params - 1)
+                param_counts.append(n_params)
+                if n_params > max_params:
+                    high_param.append(
+                        {"file": rel, "name": node.name, "line": node.lineno, "params": n_params}
+                    )
+                if node.returns is None:
+                    untyped += 1
+        avg = round(statistics.mean(param_counts), 3) if param_counts else 0.0
+        return (
+            analyzed,
+            avg,
+            len(high_param),
+            untyped,
+            sorted(high_param, key=lambda x: int(x["params"]), reverse=True)[:10],
+            None,
+        )
+    except Exception as exc:
+        return 0, 0.0, 0, 0, [], str(exc)
+
+
 def build_snapshot(repo_root: Path, scan_paths: list[Path], top_n: int = 15) -> Snapshot:
     blocks: list[BlockStat] = []
     mi_values: list[float] = []
@@ -176,7 +414,7 @@ def build_snapshot(repo_root: Path, scan_paths: list[Path], top_n: int = 15) -> 
 
     top_blocks = sorted(blocks, key=lambda b: b.complexity, reverse=True)[:top_n]
 
-    return Snapshot(
+    snap = Snapshot(
         schema_version=2,
         generated_at_utc=datetime.now(UTC).isoformat(timespec="seconds"),
         paths=[_rel(p, repo_root) for p in scan_paths],
@@ -199,6 +437,30 @@ def build_snapshot(repo_root: Path, scan_paths: list[Path], top_n: int = 15) -> 
         coverage_error=None,
         coverage_source=None,
     )
+
+    ruff_total, ruff_by_cat, ruff_err = _run_ruff_check(repo_root, scan_paths)
+    snap.ruff_violations = ruff_total
+    snap.ruff_by_category = ruff_by_cat
+    snap.ruff_error = ruff_err
+
+    func_records = _collect_function_hashes(py_files, repo_root)
+    dup_pairs = _detect_duplicates(func_records)
+    snap.duplicate_block_pairs = len(dup_pairs)
+    snap.duplicate_blocks = dup_pairs[:20]
+
+    cls_analyzed, avg_lcom, low_coh, _coh_err = _cohesion_metrics(py_files, repo_root)
+    snap.classes_analyzed = cls_analyzed
+    snap.avg_lcom = avg_lcom
+    snap.low_cohesion_classes = low_coh
+
+    pub_analyzed, avg_params, high_param_ct, untyped_ct, high_param_fns, _iface_err = _interface_metrics(py_files, repo_root)
+    snap.public_functions_analyzed = pub_analyzed
+    snap.avg_params = avg_params
+    snap.high_param_count = high_param_ct
+    snap.untyped_public_functions = untyped_ct
+    snap.high_param_functions = high_param_fns
+
+    return snap
 
 
 def _run_coverage_command(repo_root: Path, coverage_command: str) -> str | None:
@@ -304,6 +566,9 @@ def decide_gate(
         "d_or_worse_blocks": current.d_or_worse_blocks - baseline.d_or_worse_blocks,
         "f_blocks": current.f_blocks - baseline.f_blocks,
         "parse_error_files": len(current.parse_error_files) - len(baseline.parse_error_files),
+        "ruff_violations": (current.ruff_violations or 0) - (baseline.ruff_violations or 0),
+        "duplicate_block_pairs": current.duplicate_block_pairs - baseline.duplicate_block_pairs,
+        "high_param_count": current.high_param_count - baseline.high_param_count,
     }
     if current.coverage_pct is not None and baseline.coverage_pct is not None:
         deltas["coverage_pct"] = round(current.coverage_pct - baseline.coverage_pct, 3)
@@ -409,6 +674,27 @@ def decide_gate(
         elif drop > 0:
             warnings.append(f"Coverage -0{drop}% (within tolerance {thresholds.max_coverage_drop}%).")
 
+    if deltas["ruff_violations"] > thresholds.max_ruff_violations_increase:
+        reasons.append(
+            f"Ruff violations increased by {deltas['ruff_violations']} (> {thresholds.max_ruff_violations_increase})."
+        )
+    elif deltas["ruff_violations"] > 0:
+        warnings.append(f"Ruff +{deltas['ruff_violations']} violations (within tolerance {thresholds.max_ruff_violations_increase}).")
+
+    if deltas["duplicate_block_pairs"] > thresholds.max_duplicate_pairs_increase:
+        reasons.append(
+            f"Duplicate code pairs increased by {deltas['duplicate_block_pairs']} (> {thresholds.max_duplicate_pairs_increase})."
+        )
+    elif deltas["duplicate_block_pairs"] > 0:
+        warnings.append(f"Duplicate pairs +{deltas['duplicate_block_pairs']} (within tolerance {thresholds.max_duplicate_pairs_increase}).")
+
+    if deltas["high_param_count"] > thresholds.max_high_param_increase:
+        reasons.append(
+            f"High-parameter functions increased by {deltas['high_param_count']} (> {thresholds.max_high_param_increase})."
+        )
+    elif deltas["high_param_count"] > 0:
+        warnings.append(f"High-param functions +{deltas['high_param_count']} (within tolerance {thresholds.max_high_param_increase}).")
+
     notes.extend(f"⚠️ WARNING: {w}" for w in warnings)
 
     return GateDecision(
@@ -447,6 +733,19 @@ def _snapshot_from_json(payload: dict[str, object]) -> Snapshot:
         low_coverage_files=[dict(x) for x in list(payload.get("low_coverage_files", []))],
         coverage_error=str(payload["coverage_error"]) if payload.get("coverage_error") else None,
         coverage_source=str(payload["coverage_source"]) if payload.get("coverage_source") else None,
+        ruff_violations=int(payload["ruff_violations"]) if payload.get("ruff_violations") is not None else None,
+        ruff_by_category={k: int(v) for k, v in dict(payload.get("ruff_by_category", {})).items()},
+        ruff_error=str(payload["ruff_error"]) if payload.get("ruff_error") else None,
+        duplicate_block_pairs=int(payload.get("duplicate_block_pairs", 0)),
+        duplicate_blocks=[dict(x) for x in list(payload.get("duplicate_blocks", []))],
+        classes_analyzed=int(payload.get("classes_analyzed", 0)),
+        avg_lcom=float(payload.get("avg_lcom", 0.0)),
+        low_cohesion_classes=[dict(x) for x in list(payload.get("low_cohesion_classes", []))],
+        public_functions_analyzed=int(payload.get("public_functions_analyzed", 0)),
+        avg_params=float(payload.get("avg_params", 0.0)),
+        high_param_count=int(payload.get("high_param_count", 0)),
+        untyped_public_functions=int(payload.get("untyped_public_functions", 0)),
+        high_param_functions=[dict(x) for x in list(payload.get("high_param_functions", []))],
     )
 
 
@@ -521,6 +820,65 @@ def render_report(current: Snapshot, baseline: Snapshot | None, gate: GateDecisi
             )
         lines.append("")
 
+    lines.append("## Code Repetition")
+    lines.append("")
+    lines.append(f"- Structural duplicate function pairs: {current.duplicate_block_pairs}")
+    if current.duplicate_blocks:
+        lines.append("")
+        lines.append("| Clones | Body Size | Location A | Location B |")
+        lines.append("|---:|---:|---|---|")
+        for row in current.duplicate_blocks[:10]:
+            lines.append(
+                f"| {row['clone_count']} | {row['body_size']} | "
+                f"{row['file_a']}:{row['line_a']} {row['name_a']} | "
+                f"{row['file_b']}:{row['line_b']} {row['name_b']} |"
+            )
+        lines.append("")
+    lines.append("")
+
+    lines.append("## Cohesion")
+    lines.append("")
+    lines.append(f"- Classes analyzed: {current.classes_analyzed}")
+    lines.append(f"- Avg LCOM1: {current.avg_lcom} (0=cohesive, 1=disconnected)")
+    if current.low_cohesion_classes:
+        lines.append("")
+        lines.append("### Low-Cohesion Classes (LCOM1 > 0.7)")
+        lines.append("")
+        lines.append("| LCOM1 | Class | File |")
+        lines.append("|---:|---|---|")
+        for row in current.low_cohesion_classes:
+            lines.append(f"| {row['lcom']} | {row['class']} | {row['file']}:{row['line']} |")
+        lines.append("")
+    lines.append("")
+
+    lines.append("## Interface Complexity")
+    lines.append("")
+    lines.append(f"- Public functions analyzed: {current.public_functions_analyzed}")
+    lines.append(f"- Avg parameters: {current.avg_params}")
+    lines.append(f"- High-parameter functions (> 5 params): {current.high_param_count}")
+    lines.append(f"- Untyped public functions (no return annotation): {current.untyped_public_functions}")
+    if current.high_param_functions:
+        lines.append("")
+        lines.append("### High-Parameter Functions")
+        lines.append("")
+        lines.append("| Params | Function | File |")
+        lines.append("|---:|---|---|")
+        for row in current.high_param_functions:
+            lines.append(f"| {row['params']} | {row['name']} | {row['file']}:{row['line']} |")
+        lines.append("")
+    lines.append("")
+
+    lines.append("## Ruff Lint")
+    lines.append("")
+    lines.append(f"- Total violations: {current.ruff_violations if current.ruff_violations is not None else 'N/A'}")
+    if current.ruff_by_category:
+        lines.append("- By category: " + ", ".join(f"{k}={v}" for k, v in sorted(current.ruff_by_category.items())))
+    if current.ruff_error:
+        lines.append(f"- Ruff status: ERROR ({current.ruff_error})")
+    else:
+        lines.append("- Ruff status: OK")
+    lines.append("")
+
     if current.parse_error_files:
         lines.append("## Parse Errors")
         lines.append("")
@@ -541,6 +899,9 @@ def render_report(current: Snapshot, baseline: Snapshot | None, gate: GateDecisi
         lines.append(f"- Delta parse-error files: {gate.deltas['parse_error_files']}")
         if "coverage_pct" in gate.deltas:
             lines.append(f"- Delta coverage_pct: {gate.deltas['coverage_pct']}")
+        lines.append(f"- Delta ruff_violations: {gate.deltas['ruff_violations']}")
+        lines.append(f"- Delta duplicate_block_pairs: {gate.deltas['duplicate_block_pairs']}")
+        lines.append(f"- Delta high_param_count: {gate.deltas['high_param_count']}")
         lines.append("")
 
         if gate.notes:
@@ -562,6 +923,9 @@ def render_report(current: Snapshot, baseline: Snapshot | None, gate: GateDecisi
     )
     lines.append(f"- min-coverage-pct: {thresholds.min_coverage_pct}")
     lines.append(f"- max-coverage-drop: {thresholds.max_coverage_drop}")
+    lines.append(f"- max_ruff_violations_increase: {thresholds.max_ruff_violations_increase}")
+    lines.append(f"- max_duplicate_pairs_increase: {thresholds.max_duplicate_pairs_increase}")
+    lines.append(f"- max_high_param_increase: {thresholds.max_high_param_increase}")
     lines.append("")
 
     if gate and gate.significant_regressions:
@@ -636,6 +1000,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-significant-block-regressions", type=int, default=_d.max_significant_block_regressions)
     parser.add_argument("--min-coverage-pct", type=float, default=_d.min_coverage_pct)
     parser.add_argument("--max-coverage-drop", type=float, default=_d.max_coverage_drop)
+    parser.add_argument("--max-ruff-violations-increase", type=int, default=_d.max_ruff_violations_increase)
+    parser.add_argument("--max-duplicate-pairs-increase", type=int, default=_d.max_duplicate_pairs_increase)
+    parser.add_argument("--max-high-param-increase", type=int, default=_d.max_high_param_increase)
     parser.add_argument(
         "--coverage-command",
         default="pytest --cov=src/felvi_games --cov-report=json:reports/quality/coverage_current.json -q",
@@ -724,6 +1091,24 @@ def _ratchet_baseline_individual_metrics(
         payload["coverage_source"] = current.coverage_source
         changed.append("coverage_pct")
 
+    if current.ruff_violations is not None and (
+        baseline.ruff_violations is None or current.ruff_violations < baseline.ruff_violations
+    ):
+        payload["ruff_violations"] = current.ruff_violations
+        payload["ruff_by_category"] = dict(current.ruff_by_category)
+        payload["ruff_error"] = current.ruff_error
+        changed.append("ruff_violations")
+
+    if current.duplicate_block_pairs < baseline.duplicate_block_pairs:
+        payload["duplicate_block_pairs"] = current.duplicate_block_pairs
+        payload["duplicate_blocks"] = list(current.duplicate_blocks)
+        changed.append("duplicate_block_pairs")
+
+    if current.high_param_count < baseline.high_param_count:
+        payload["high_param_count"] = current.high_param_count
+        payload["high_param_functions"] = list(current.high_param_functions)
+        changed.append("high_param_count")
+
     if not changed:
         return None, []
 
@@ -749,6 +1134,9 @@ def main() -> int:
         max_significant_block_regressions=int(args.max_significant_block_regressions),
         min_coverage_pct=float(args.min_coverage_pct),
         max_coverage_drop=float(args.max_coverage_drop),
+        max_ruff_violations_increase=int(args.max_ruff_violations_increase),
+        max_duplicate_pairs_increase=int(args.max_duplicate_pairs_increase),
+        max_high_param_increase=int(args.max_high_param_increase),
     )
 
     current = build_snapshot(repo_root, scan_paths)
@@ -856,6 +1244,19 @@ def main() -> int:
                 f"  coverage  {current.coverage_pct:.2f}%"
                 f"  (Δ {_fmt_delta(current.coverage_pct - baseline.coverage_pct, invert=True)})"
             )
+        if current.ruff_violations is not None and baseline.ruff_violations is not None:
+            print(
+                f"  ruff      {current.ruff_violations} violations"
+                f"  (Δ {_fmt_delta(current.ruff_violations - baseline.ruff_violations)})"
+            )
+        print(
+            f"  dup pairs {current.duplicate_block_pairs}"
+            f"  (Δ {_fmt_delta(current.duplicate_block_pairs - baseline.duplicate_block_pairs)})"
+        )
+        print(
+            f"  hi-param  {current.high_param_count}"
+            f"  (Δ {_fmt_delta(current.high_param_count - baseline.high_param_count)})"
+        )
     print(f"Report written: {report_path}")
 
     # Auto-ratchet (per metric): on PASS, lock in any individual metric

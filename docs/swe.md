@@ -72,3 +72,21 @@ The project follows an iterative, research-driven cycle with heavy documentation
 - Organize code into clear modules and packages.
 - Keep generated artifacts gitignored.
 - Ensure reproducibility with fixed seeds and documented dependencies.
+
+---
+
+## Principle → Metric Traceability
+
+Automated gate: `python tools/quality_gate_report.py` (reports in `reports/quality/`).
+
+| Principle | Metric | Tool | Refactor signal |
+|---|---|---|---|
+| High cohesion | LCOM1 per class (0=cohesive, 1=disconnected) | `ast` stdlib | LCOM1 > 0.7 → split class along method clusters that share the same instance attributes |
+| Low coupling | High-parameter public functions; untyped public functions | `ast` stdlib | > 5 params → extract a config/context object or push integration to a higher layer |
+| Low coupling (planned) | Efferent coupling Ce, Afferent Ca, Instability I = Ce/(Ca+Ce) | `ast` stdlib | High I in inner modules → module is pulling in too many concerns |
+| DRY | Structural duplicate function pairs (AST hash) | `ast` stdlib | Clone detected → extract shared body into a parameterised helper |
+| KISS | Cyclomatic Complexity (CC rank A–F); Maintainability Index (MI) | `radon` | CC > 10 (rank C) → early returns, helpers, dispatch table; F-rank: zero tolerance |
+| YAGNI | Line coverage % | `pytest-cov` | Uncovered production paths → dead/speculative code, remove or implement |
+| All | Ruff lint violations (E/F/I/B/UP) | `ruff` | Violation increase → fix before merge; style debt compounds |
+
+**Gate merge criterion**: `QUALITY_GATE: PASS` with no new metric regressions. Improvements auto-ratchet the baseline.
