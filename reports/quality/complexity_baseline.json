@@ -1,0 +1,4048 @@
+{
+  "schema_version": 2,
+  "generated_at_utc": "2026-05-03T07:28:26+00:00",
+  "paths": [
+    "src",
+    "tests"
+  ],
+  "python_files": 25,
+  "total_loc": 14825,
+  "total_sloc": 11354,
+  "total_blank": 2144,
+  "avg_mi": 40.332,
+  "avg_cc": 4.819,
+  "p95_cc": 17.0,
+  "counts_by_rank": {
+    "A": 459,
+    "B": 52,
+    "C": 29,
+    "D": 9,
+    "E": 5,
+    "F": 5
+  },
+  "d_or_worse_blocks": 19,
+  "f_blocks": 5,
+  "parse_error_files": [],
+  "blocks": [
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_nap",
+      "line": 306,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_sim_now",
+      "line": 312,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_as_utc",
+      "line": 318,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_cooldown_elapsed",
+      "line": 322,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_has_new_attempt_after",
+      "line": 327,
+      "complexity": 8.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_has_new_activity_after",
+      "line": 358,
+      "complexity": 7.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_repeatable_has_fresh_signal",
+      "line": 383,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_distinct_play_days",
+      "line": 393,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_consecutive_days",
+      "line": 416,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_current_streak",
+      "line": 430,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_elso_menet",
+      "line": 451,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_szaz_feladat",
+      "line": 464,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_otszaz_feladat",
+      "line": 476,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_ezer_feladat",
+      "line": 488,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_tokeletes_menet",
+      "line": 500,
+      "complexity": 8.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_sorozat_5",
+      "line": 521,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_sorozat_10",
+      "line": 525,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_sorozat_20",
+      "line": 529,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_max_helyes_sorozat",
+      "line": 533,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_villam",
+      "line": 555,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_hint_nelkul_20",
+      "line": 571,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_magas_pontossag",
+      "line": 590,
+      "complexity": 7.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_het_egymas_utan",
+      "line": 614,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_harom_het_egymas_utan",
+      "line": 620,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_pentek_matek_honap",
+      "line": 626,
+      "complexity": 6.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_heti_haromszor",
+      "line": 661,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_reggeli_tanulas",
+      "line": 669,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_mindket_targy",
+      "line": 683,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_minden_szint",
+      "line": 694,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_minden_feladattipus",
+      "line": 705,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_visszatero",
+      "line": 718,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_maraton",
+      "line": 724,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_tiz_feladat",
+      "line": 735,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_huszonot_feladat",
+      "line": 747,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_otven_feladat",
+      "line": 759,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_szaz_pont",
+      "line": 771,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_otszaz_pont",
+      "line": 783,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_esti_tanulas",
+      "line": 795,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_visszatero_tiz",
+      "line": 809,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_rule_heti_bajnok",
+      "line": 815,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_eval_dynamic_condition",
+      "line": 843,
+      "complexity": 51.0,
+      "rank": "F"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_count_dynamic_condition",
+      "line": 1043,
+      "complexity": 18.0,
+      "rank": "C"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "check_new_medals",
+      "line": 1176,
+      "complexity": 28.0,
+      "rank": "D"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "get_all_medals_for_user",
+      "line": 1326,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "simulate_medal_rules",
+      "line": 1361,
+      "complexity": 10.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "RuleSimResult",
+      "line": 1351,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/ai.py",
+      "name": "text_to_speech",
+      "line": 71,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/ai.py",
+      "name": "speech_to_text",
+      "line": 81,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/ai.py",
+      "name": "kerdes_to_tts_szoveg",
+      "line": 98,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/ai.py",
+      "name": "check_answer",
+      "line": 124,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/ai.py",
+      "name": "generate_medal_image",
+      "line": 188,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/ai.py",
+      "name": "generate_medal_hang",
+      "line": 208,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/ai.py",
+      "name": "generate_daily_insight",
+      "line": 355,
+      "complexity": 10.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/ai.py",
+      "name": "judge_medal_novelty",
+      "line": 438,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/ai.py",
+      "name": "refine_daily_medal",
+      "line": 468,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "get_repo",
+      "line": 60,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "_seed_from_json",
+      "line": 66,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "load_feladatok",
+      "line": 88,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "get_state",
+      "line": 101,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "_group_members",
+      "line": 107,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "_least_seen_choice",
+      "line": 116,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "next_feladat",
+      "line": 123,
+      "complexity": 35.0,
+      "rank": "E"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "start_kerdes",
+      "line": 201,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "_render_header",
+      "line": 223,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "_render_sidebar",
+      "line": 254,
+      "complexity": 28.0,
+      "rank": "D"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "_render_settings_page",
+      "line": 370,
+      "complexity": 22.0,
+      "rank": "D"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "_render_valasztas",
+      "line": 490,
+      "complexity": 16.0,
+      "rank": "C"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "_render_csoport_context",
+      "line": 566,
+      "complexity": 9.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "_render_valasz_input",
+      "line": 592,
+      "complexity": 10.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "_render_kerdes",
+      "line": 647,
+      "complexity": 34.0,
+      "rank": "E"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "_render_score_bar",
+      "line": 822,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "_render_eredmeny",
+      "line": 849,
+      "complexity": 23.0,
+      "rank": "D"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "_run_ai_review",
+      "line": 963,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "_render_pdf_button",
+      "line": 988,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "_render_source_expanders",
+      "line": 1005,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "_render_login",
+      "line": 1026,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "_load_active_challenges",
+      "line": 1046,
+      "complexity": 11.0,
+      "rank": "C"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "_show_daily_insight_dialog",
+      "line": 1100,
+      "complexity": 17.0,
+      "rank": "C"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "_show_medal_dialog",
+      "line": 1168,
+      "complexity": 11.0,
+      "rank": "C"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "main",
+      "line": 1209,
+      "complexity": 17.0,
+      "rank": "C"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "info",
+      "line": 68,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "scrape",
+      "line": 84,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "parse",
+      "line": 118,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "usage",
+      "line": 164,
+      "complexity": 25.0,
+      "rank": "D"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "medals",
+      "line": 308,
+      "complexity": 78.0,
+      "rank": "F"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "medal_assets_cmd",
+      "line": 698,
+      "complexity": 20.0,
+      "rank": "C"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "_get_repo_for_medals",
+      "line": 765,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "medal_add_cmd",
+      "line": 771,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "medal_edit_cmd",
+      "line": 808,
+      "complexity": 18.0,
+      "rank": "C"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "medal_grant_cmd",
+      "line": 882,
+      "complexity": 6.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "medal_delete_cmd",
+      "line": 919,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "stats_cmd",
+      "line": 944,
+      "complexity": 13.0,
+      "rank": "C"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "wrong_cmd",
+      "line": 1011,
+      "complexity": 17.0,
+      "rank": "C"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "check_answer_cmd",
+      "line": 1101,
+      "complexity": 13.0,
+      "rank": "C"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "medal_check_cmd",
+      "line": 1210,
+      "complexity": 76.0,
+      "rank": "F"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "reeval_cmd",
+      "line": 1594,
+      "complexity": 35.0,
+      "rank": "E"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "user_stats_cmd",
+      "line": 1780,
+      "complexity": 22.0,
+      "rank": "D"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "medal_clear_cmd",
+      "line": 1875,
+      "complexity": 10.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "medal_recheck_cmd",
+      "line": 1940,
+      "complexity": 34.0,
+      "rank": "E"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "review_cmd",
+      "line": 2065,
+      "complexity": 18.0,
+      "rank": "C"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "medal_promote_candidates_cmd",
+      "line": 2179,
+      "complexity": 31.0,
+      "rank": "E"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "report_cmd",
+      "line": 2373,
+      "complexity": 9.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "tts_clear_cmd",
+      "line": 2443,
+      "complexity": 6.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "run",
+      "line": 2485,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "EvfolyamKulcs",
+      "line": 52,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "Targy",
+      "line": 58,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/config.py",
+      "name": "get_db_path",
+      "line": 39,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/config.py",
+      "name": "get_assets_dir",
+      "line": 46,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/config.py",
+      "name": "get_exams_dir",
+      "line": 56,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/config.py",
+      "name": "get_log_dir",
+      "line": 65,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/config.py",
+      "name": "setup_logging",
+      "line": 76,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/config.py",
+      "name": "asset_subfolder",
+      "line": 136,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/config.py",
+      "name": "asset_path",
+      "line": 148,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/config.py",
+      "name": "relative_asset_path",
+      "line": 160,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/config.py",
+      "name": "resolve_asset",
+      "line": 175,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/config.py",
+      "name": "text_cache_path",
+      "line": 184,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/config.py",
+      "name": "relative_text_path",
+      "line": 192,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/config.py",
+      "name": "medal_asset_dir",
+      "line": 204,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/config.py",
+      "name": "medal_asset_path",
+      "line": 220,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "get_engine",
+      "line": 56,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "_ensure_feladat_columns",
+      "line": 440,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "_ensure_erem_columns",
+      "line": 456,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "_ensure_megoldas_columns",
+      "line": 470,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "init_db",
+      "line": 487,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "Base",
+      "line": 67,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FelhasznaloRecord",
+      "line": 71,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "MenetRecord",
+      "line": 93,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "MenetRecord.to_domain",
+      "line": 122,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatCsoportRecord",
+      "line": 136,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatCsoportRecord.to_domain",
+      "line": 165,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRecord",
+      "line": 169,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRecord.to_domain",
+      "line": 239,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "MegoldasRecord",
+      "line": 243,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "EremRecord",
+      "line": 280,
+      "complexity": 7.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "EremRecord.to_domain",
+      "line": 304,
+      "complexity": 6.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "InterakcioRecord",
+      "line": 335,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "UserSettingRecord",
+      "line": 358,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FelhasznaloEremRecord",
+      "line": 388,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FelhasznaloEremRecord.to_domain",
+      "line": 411,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FelhasznaloEremSzerzesRecord",
+      "line": 422,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository",
+      "line": 501,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.__init__",
+      "line": 504,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.upsert",
+      "line": 511,
+      "complexity": 10.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.upsert_many",
+      "line": 594,
+      "complexity": 6.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.get",
+      "line": 684,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.all",
+      "line": 689,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.count",
+      "line": 705,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.upsert_csoport",
+      "line": 711,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.upsert_many_csoportok",
+      "line": 751,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.get_csoport",
+      "line": 756,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.get_feladatok_by_csoport",
+      "line": 761,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.save_tts_assets",
+      "line": 777,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.load_tts_bytes",
+      "line": 828,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.missing_tts",
+      "line": 832,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.clear_tts_szoveg",
+      "line": 840,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.save_megoldas",
+      "line": 867,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.get_latest_megoldas_id",
+      "line": 896,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.reevaluate_megoldas",
+      "line": 916,
+      "complexity": 7.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.process_pending_ujraertekeles_jutalom",
+      "line": 984,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.save_review",
+      "line": 1032,
+      "complexity": 6.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.stats",
+      "line": 1130,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.count_user_solved_feladatok",
+      "line": 1141,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.get_today_stats",
+      "line": 1167,
+      "complexity": 12.0,
+      "rank": "C"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.get_feladat_attempt_counts",
+      "line": 1224,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.normalize_username",
+      "line": 1249,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository._get_felhasznalo_id",
+      "line": 1261,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.get_or_create_felhasznalo",
+      "line": 1269,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.start_menet",
+      "line": 1297,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.end_menet",
+      "line": 1318,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.update_menet_progress",
+      "line": 1326,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.get_menetek",
+      "line": 1335,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.log_interakcio",
+      "line": 1348,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.get_interakciok",
+      "line": 1390,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.list_interakciok_by_tipus",
+      "line": 1408,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.grant_erem",
+      "line": 1426,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.get_eremek",
+      "line": 1477,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.has_erem",
+      "line": 1494,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.get_erem_szerzesek_map",
+      "line": 1498,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.seed_erem_katalogus",
+      "line": 1520,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.get_all_private_dynamic_medals",
+      "line": 1553,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.get_erem_katalogus",
+      "line": 1567,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.upsert_erem",
+      "line": 1590,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.delete_erem",
+      "line": 1631,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.get_wrong_feladatok",
+      "line": 1641,
+      "complexity": 15.0,
+      "rank": "C"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.get_user_stats",
+      "line": 1727,
+      "complexity": 14.0,
+      "rank": "C"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.upsert_user_setting",
+      "line": 1799,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.list_user_settings",
+      "line": 1847,
+      "complexity": 6.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.delete_user_setting",
+      "line": 1890,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "FeladatRepository.get_user_targets",
+      "line": 1905,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "WrongFeladatRow",
+      "line": 1926,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "WrongFeladatRow.rontas_pct",
+      "line": 1939,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "UserStats",
+      "line": 1948,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/db.py",
+      "name": "UserStats.accuracy_pct",
+      "line": 1969,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/medal_assets.py",
+      "name": "get_medal_asset",
+      "line": 37,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/medal_assets.py",
+      "name": "medal_asset_exists",
+      "line": 57,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/medal_assets.py",
+      "name": "generate_medal_assets",
+      "line": 66,
+      "complexity": 7.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "_parse_str_list",
+      "line": 60,
+      "complexity": 11.0,
+      "rank": "C"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "_json_to_list",
+      "line": 87,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "_list_to_json",
+      "line": 98,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "Fazis",
+      "line": 17,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "InterakcioTipus",
+      "line": 23,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "FeladatTipus",
+      "line": 40,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "FeladatStatusz",
+      "line": 50,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "FeladatCsoport",
+      "line": 106,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "FeladatCsoport.from_record",
+      "line": 129,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "Feladat",
+      "line": 150,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "Feladat.pdf_source",
+      "line": 194,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "Feladat.ut_source",
+      "line": 199,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "Feladat.from_dict",
+      "line": 204,
+      "complexity": 7.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "Feladat.from_record",
+      "line": 234,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "Feladat.with_assets",
+      "line": 273,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "Feladat.elfogadott_valaszok_vagy_helyes",
+      "line": 289,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "Feladat.neh_csillag",
+      "line": 295,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "Feladat.tts_szoveg",
+      "line": 298,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "Feladat.eredmeny_tts_szoveg",
+      "line": 302,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "Ertekeles",
+      "line": 311,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "Ertekeles.from_dict",
+      "line": 317,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "Ertekeles.hiba",
+      "line": 325,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "Menet",
+      "line": 330,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "Menet.lezart",
+      "line": 343,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "Menet.idotartam_perc",
+      "line": 347,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "GameState",
+      "line": 358,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "GameState.record_answer",
+      "line": 381,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "GameState.reset",
+      "line": 394,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "GameState.uj_menet",
+      "line": 400,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "Erem",
+      "line": 418,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "FelhasznaloErem",
+      "line": 441,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "FelhasznaloErem.aktiv",
+      "line": 451,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "KategoriaKulcs",
+      "line": 464,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "name": "KategoriaNevezektan",
+      "line": 472,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/pdf_parser.py",
+      "name": "pdf_to_text",
+      "line": 82,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/pdf_parser.py",
+      "name": "split_into_task_blocks",
+      "line": 95,
+      "complexity": 6.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/pdf_parser.py",
+      "name": "annotate_block",
+      "line": 151,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/pdf_parser.py",
+      "name": "match_fl_ut_blocks",
+      "line": 163,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/pdf_parser.py",
+      "name": "_make_openai_client",
+      "line": 264,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/pdf_parser.py",
+      "name": "extract_feladatok",
+      "line": 271,
+      "complexity": 9.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/pdf_parser.py",
+      "name": "extract_feladatok_batched",
+      "line": 333,
+      "complexity": 16.0,
+      "rank": "C"
+    },
+    {
+      "file": "src/felvi_games/pdf_parser.py",
+      "name": "_id_prefix_from_source",
+      "line": 434,
+      "complexity": 6.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/pdf_parser.py",
+      "name": "parse_filename_meta",
+      "line": 445,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/pdf_parser.py",
+      "name": "_dict_to_feladat",
+      "line": 469,
+      "complexity": 15.0,
+      "rank": "C"
+    },
+    {
+      "file": "src/felvi_games/pdf_parser.py",
+      "name": "_group_feladatok",
+      "line": 518,
+      "complexity": 11.0,
+      "rank": "C"
+    },
+    {
+      "file": "src/felvi_games/pdf_parser.py",
+      "name": "find_exam_pairs",
+      "line": 593,
+      "complexity": 7.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/pdf_parser.py",
+      "name": "parse_exam",
+      "line": 626,
+      "complexity": 6.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/pdf_parser.py",
+      "name": "_save_text_cache",
+      "line": 698,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/pdf_parser.py",
+      "name": "run",
+      "line": 711,
+      "complexity": 29.0,
+      "rank": "D"
+    },
+    {
+      "file": "src/felvi_games/pdf_parser.py",
+      "name": "TaskBlock",
+      "line": 68,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/progress_check.py",
+      "name": "_safe_int",
+      "line": 82,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/progress_check.py",
+      "name": "_safe_float",
+      "line": 89,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/progress_check.py",
+      "name": "_normalize_condition_value",
+      "line": 96,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/progress_check.py",
+      "name": "_normalize_dynamic_condition",
+      "line": 104,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/progress_check.py",
+      "name": "_window_ratio",
+      "line": 111,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/progress_check.py",
+      "name": "_target_ratio",
+      "line": 117,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/progress_check.py",
+      "name": "_dynamic_overlap_reason",
+      "line": 127,
+      "complexity": 8.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/progress_check.py",
+      "name": "_dynamic_medal_expiry",
+      "line": 150,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/progress_check.py",
+      "name": "_conflicting_dynamic_medals",
+      "line": 158,
+      "complexity": 10.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/progress_check.py",
+      "name": "_find_cross_user_private_match",
+      "line": 187,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/progress_check.py",
+      "name": "_screen_dynamic_medal_candidate",
+      "line": 207,
+      "complexity": 15.0,
+      "rank": "C"
+    },
+    {
+      "file": "src/felvi_games/progress_check.py",
+      "name": "find_cross_user_medal_clusters",
+      "line": 313,
+      "complexity": 15.0,
+      "rank": "C"
+    },
+    {
+      "file": "src/felvi_games/progress_check.py",
+      "name": "is_first_login_today",
+      "line": 376,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/progress_check.py",
+      "name": "get_user_stats",
+      "line": 397,
+      "complexity": 55.0,
+      "rank": "F"
+    },
+    {
+      "file": "src/felvi_games/progress_check.py",
+      "name": "_as_utc",
+      "line": 684,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/progress_check.py",
+      "name": "_is_real_dimension_value",
+      "line": 690,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/progress_check.py",
+      "name": "_trend_label",
+      "line": 697,
+      "complexity": 7.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/progress_check.py",
+      "name": "_trailing_streak",
+      "line": 709,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/progress_check.py",
+      "name": "_max_streak",
+      "line": 727,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/progress_check.py",
+      "name": "_current_correct_streak",
+      "line": 738,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/progress_check.py",
+      "name": "estimate_close_medals",
+      "line": 752,
+      "complexity": 6.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/progress_check.py",
+      "name": "daily_check",
+      "line": 831,
+      "complexity": 18.0,
+      "rank": "C"
+    },
+    {
+      "file": "src/felvi_games/progress_check.py",
+      "name": "CloseMedal",
+      "line": 48,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/progress_check.py",
+      "name": "DailyInsight",
+      "line": 55,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/progress_check.py",
+      "name": "DynamicMedalCluster",
+      "line": 305,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/report.py",
+      "name": "gather_data",
+      "line": 105,
+      "complexity": 22.0,
+      "rank": "D"
+    },
+    {
+      "file": "src/felvi_games/report.py",
+      "name": "_user_colors",
+      "line": 263,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/report.py",
+      "name": "generate_charts",
+      "line": 271,
+      "complexity": 60.0,
+      "rank": "F"
+    },
+    {
+      "file": "src/felvi_games/report.py",
+      "name": "generate_markdown",
+      "line": 599,
+      "complexity": 13.0,
+      "rank": "C"
+    },
+    {
+      "file": "src/felvi_games/report.py",
+      "name": "run",
+      "line": 678,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/report.py",
+      "name": "UserSummary",
+      "line": 30,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/report.py",
+      "name": "UserSummary.accuracy_pct",
+      "line": 40,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/report.py",
+      "name": "UserTargySzintRow",
+      "line": 45,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/report.py",
+      "name": "UserTargySzintRow.accuracy_pct",
+      "line": 54,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/report.py",
+      "name": "AchievementRow",
+      "line": 59,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/report.py",
+      "name": "DailyActivity",
+      "line": 68,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/report.py",
+      "name": "DailyDetail",
+      "line": 75,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/report.py",
+      "name": "DailyDetail.accuracy_pct",
+      "line": 85,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/report.py",
+      "name": "ReportData",
+      "line": 90,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/review.py",
+      "name": "review_feladatok",
+      "line": 39,
+      "complexity": 8.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/review.py",
+      "name": "print_feladat",
+      "line": 76,
+      "complexity": 19.0,
+      "rank": "C"
+    },
+    {
+      "file": "src/felvi_games/review.py",
+      "name": "print_csoport",
+      "line": 112,
+      "complexity": 7.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/review.py",
+      "name": "edit_feladat_cli",
+      "line": 127,
+      "complexity": 8.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/review.py",
+      "name": "_make_openai_client",
+      "line": 219,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/review.py",
+      "name": "_extract_page",
+      "line": 227,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/review.py",
+      "name": "review_feladat_ai",
+      "line": 240,
+      "complexity": 22.0,
+      "rank": "D"
+    },
+    {
+      "file": "src/felvi_games/review.py",
+      "name": "run_feladat_review",
+      "line": 368,
+      "complexity": 6.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/review.py",
+      "name": "ReviewResult",
+      "line": 360,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/scraper.py",
+      "name": "download_and_extract_zip",
+      "line": 105,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/scraper.py",
+      "name": "get_soup",
+      "line": 149,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/scraper.py",
+      "name": "safe_filename",
+      "line": 156,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/scraper.py",
+      "name": "kategoria_mappa",
+      "line": 162,
+      "complexity": 7.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/scraper.py",
+      "name": "ev_szam",
+      "line": 172,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/scraper.py",
+      "name": "scrape_year_links",
+      "line": 187,
+      "complexity": 9.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/scraper.py",
+      "name": "scrape_pdf_links",
+      "line": 236,
+      "complexity": 11.0,
+      "rank": "C"
+    },
+    {
+      "file": "src/felvi_games/scraper.py",
+      "name": "download_file",
+      "line": 292,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "src/felvi_games/scraper.py",
+      "name": "run",
+      "line": 317,
+      "complexity": 19.0,
+      "rank": "C"
+    },
+    {
+      "file": "src/felvi_games/status.py",
+      "name": "_pdf_summary",
+      "line": 16,
+      "complexity": 15.0,
+      "rank": "C"
+    },
+    {
+      "file": "src/felvi_games/status.py",
+      "name": "_db_summary",
+      "line": 61,
+      "complexity": 9.0,
+      "rank": "B"
+    },
+    {
+      "file": "src/felvi_games/status.py",
+      "name": "run",
+      "line": 91,
+      "complexity": 6.0,
+      "rank": "B"
+    },
+    {
+      "file": "tests/conftest.py",
+      "name": "repo",
+      "line": 16,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/conftest.py",
+      "name": "feladat_matek",
+      "line": 28,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/conftest.py",
+      "name": "feladat_magyar",
+      "line": 44,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/conftest.py",
+      "name": "ertekeles_helyes",
+      "line": 60,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/conftest.py",
+      "name": "ertekeles_helytelen",
+      "line": 65,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_achievements_expiry_policy.py",
+      "name": "test_non_repeatable_temporary_medal_does_not_get_expiry",
+      "line": 8,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_achievements_expiry_policy.py",
+      "name": "test_repeatable_temporary_medal_gets_expiry",
+      "line": 38,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_achievements_repeatable_gating.py",
+      "name": "_make_feladat",
+      "line": 14,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_achievements_repeatable_gating.py",
+      "name": "_insert_attempt_at",
+      "line": 29,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_achievements_repeatable_gating.py",
+      "name": "test_esti_tanulas_requires_new_night_signal",
+      "line": 49,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_achievements_repeatable_gating.py",
+      "name": "test_villam_repeatable_respects_cooldown",
+      "line": 75,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_ai_daily_insight.py",
+      "name": "test_generate_daily_insight_prompt_includes_trends_patterns_and_events",
+      "line": 11,
+      "complexity": 7.0,
+      "rank": "B"
+    },
+    {
+      "file": "tests/test_cli_medals.py",
+      "name": "_empty_db",
+      "line": 26,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_cli_medals.py",
+      "name": "test_medals_generator_inputs_shows_payload",
+      "line": 34,
+      "complexity": 9.0,
+      "rank": "B"
+    },
+    {
+      "file": "tests/test_cli_medals.py",
+      "name": "test_medals_generator_inputs_requires_user",
+      "line": 93,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_cli_medals.py",
+      "name": "test_medals_shows_all_earned_dates_for_repeated_medal",
+      "line": 102,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_cli_medals.py",
+      "name": "test_medal_check_policy_fix_makes_temp_one_time_reearnable",
+      "line": 139,
+      "complexity": 13.0,
+      "rank": "C"
+    },
+    {
+      "file": "tests/test_cli_medals.py",
+      "name": "test_medal_edit_can_update_dynamic_condition_json",
+      "line": 215,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_cli_review.py",
+      "name": "feladat",
+      "line": 30,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_cli_review.py",
+      "name": "inplace_result",
+      "line": 46,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_cli_review.py",
+      "name": "db_file",
+      "line": 58,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_cli_review.py",
+      "name": "test_review_no_id_and_no_wrong_flag_exits_nonzero",
+      "line": 71,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_cli_review.py",
+      "name": "test_review_nonexistent_db_exits_nonzero",
+      "line": 76,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_cli_review.py",
+      "name": "test_review_unknown_feladat_id_exits_nonzero",
+      "line": 81,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_cli_review.py",
+      "name": "test_review_wrong_no_attempts_prints_message",
+      "line": 87,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_cli_review.py",
+      "name": "test_review_dry_run_does_not_persist",
+      "line": 98,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_cli_review.py",
+      "name": "test_review_dry_run_shows_feladat_id",
+      "line": 111,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_cli_review.py",
+      "name": "test_review_inplace_calls_service",
+      "line": 126,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_cli_review.py",
+      "name": "test_review_versioned_reports_new_id",
+      "line": 141,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_cli_review.py",
+      "name": "test_review_diff_shown_for_changed_field",
+      "line": 157,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_cli_review.py",
+      "name": "test_review_megjegyzes_forwarded_to_service",
+      "line": 178,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "_make_feladat",
+      "line": 21,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "_make_csoport",
+      "line": 615,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestInit",
+      "line": 41,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestInit.test_empty_repo_count_is_zero",
+      "line": 42,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestInit.test_second_repo_instance_reuses_db",
+      "line": 45,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestUpsert",
+      "line": 58,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestUpsert.test_upsert_inserts_new_record",
+      "line": 59,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestUpsert.test_upsert_updates_existing_record",
+      "line": 63,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestUpsert.test_upsert_many_inserts_all",
+      "line": 72,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestUpsert.test_upsert_many_partial_update",
+      "line": 77,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestGet",
+      "line": 84,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestGet.test_get_returns_correct_feladat",
+      "line": 85,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestGet.test_get_returns_none_for_missing_id",
+      "line": 93,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestGet.test_get_preserves_all_fields",
+      "line": 96,
+      "complexity": 6.0,
+      "rank": "B"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestAll",
+      "line": 106,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestAll.test_all_returns_every_record",
+      "line": 107,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestAll.test_all_filters_by_targy",
+      "line": 111,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestAll.test_all_filters_by_szint",
+      "line": 118,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestAll.test_all_combined_targy_szint_filter",
+      "line": 137,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestAll.test_all_empty_db_returns_empty_list",
+      "line": 144,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestTtsAssets",
+      "line": 153,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestTtsAssets.test_save_and_retrieve_tts_kerdes",
+      "line": 154,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestTtsAssets.test_save_and_retrieve_tts_magyarazat",
+      "line": 161,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestTtsAssets.test_save_both_assets_at_once",
+      "line": 168,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestTtsAssets.test_save_tts_does_not_overwrite_other_asset_with_none",
+      "line": 175,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestTtsAssets.test_save_tts_raises_for_unknown_id",
+      "line": 186,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestTtsAssets.test_missing_tts_returns_feladatok_without_audio",
+      "line": 191,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestTtsAssets.test_missing_tts_empty_when_all_have_audio",
+      "line": 200,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestTtsAssets.test_missing_tts_filters_by_targy",
+      "line": 205,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestTtsAssets.test_upsert_with_assets_persists_them",
+      "line": 212,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestMegoldas",
+      "line": 224,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestMegoldas.test_save_megoldas_helyes",
+      "line": 225,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestMegoldas.test_save_megoldas_helytelen",
+      "line": 232,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestMegoldas.test_multiple_attempts_tracked",
+      "line": 239,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestMegoldas.test_stats_accuracy_calculation",
+      "line": 248,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestMegoldas.test_stats_empty_db",
+      "line": 257,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestDynamicEventConditions",
+      "line": 263,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestDynamicEventConditions.test_interakcio_count_matches_event_type",
+      "line": 264,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestDynamicEventConditions.test_interakcio_count_respects_scope_filters",
+      "line": 277,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestDynamicEventConditions.test_interakcio_exists_can_filter_by_meta_contains",
+      "line": 290,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestDynamicEventConditions.test_get_today_stats_counts_only_today",
+      "line": 305,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestDynamicEventConditions.test_get_today_stats_streak_keeps_partial_points",
+      "line": 331,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestDynamicEventConditions.test_cascade_delete_removes_megoldasok",
+      "line": 345,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestMedalAwardHistory",
+      "line": 364,
+      "complexity": 7.0,
+      "rank": "B"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestMedalAwardHistory.test_grant_erem_records_every_award_event",
+      "line": 365,
+      "complexity": 6.0,
+      "rank": "B"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestFeladatWithAssets",
+      "line": 391,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestFeladatWithAssets.test_with_assets_returns_new_instance",
+      "line": 392,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestFeladatWithAssets.test_with_assets_sets_tts_kerdes",
+      "line": 396,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestFeladatWithAssets.test_with_assets_preserves_unset_field",
+      "line": 400,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestFeladatWithAssets.test_with_assets_does_not_mutate_original",
+      "line": 404,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestFelhasznalo",
+      "line": 414,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestFelhasznalo.test_get_or_create_creates_new",
+      "line": 415,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestFelhasznalo.test_get_or_create_idempotent",
+      "line": 425,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestMenet",
+      "line": 436,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestMenet.test_start_menet_returns_positive_id",
+      "line": 437,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestMenet.test_end_menet_sets_ended_at",
+      "line": 443,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestMenet.test_end_menet_idempotent",
+      "line": 454,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestMenet.test_update_menet_progress",
+      "line": 460,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestMenet.test_get_menetek_returns_newest_first",
+      "line": 472,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestMenet.test_get_menetek_empty_for_unknown_user",
+      "line": 481,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestMenet.test_get_menetek_respects_limit",
+      "line": 484,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestMenet.test_menet_domain_fields",
+      "line": 490,
+      "complexity": 7.0,
+      "rank": "B"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestUserSettings",
+      "line": 508,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestUserSettings.test_upsert_and_list_user_setting",
+      "line": 509,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestUserSettings.test_upsert_user_setting_updates_existing_row",
+      "line": 531,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestUserSettings.test_delete_user_setting",
+      "line": 543,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestUserSettings.test_get_user_targets_returns_payloads",
+      "line": 551,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestMegoldasWithTracking",
+      "line": 578,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestMegoldasWithTracking.test_save_megoldas_with_all_tracking_fields",
+      "line": 579,
+      "complexity": 6.0,
+      "rank": "B"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestMegoldasWithTracking.test_save_megoldas_defaults_backward_compatible",
+      "line": 602,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestFeladatCsoport",
+      "line": 640,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestFeladatCsoport.test_upsert_csoport_and_get",
+      "line": 641,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestFeladatCsoport.test_upsert_csoport_update",
+      "line": 650,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestFeladatCsoport.test_get_csoport_missing_returns_none",
+      "line": 659,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestFeladatCsoport.test_upsert_many_csoportok",
+      "line": 662,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestFeladatCsoport.test_get_feladatok_by_csoport_order",
+      "line": 668,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestFeladatCsoport.test_get_feladatok_by_csoport_empty",
+      "line": 692,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestNewFeladatFields",
+      "line": 701,
+      "complexity": 6.0,
+      "rank": "B"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestNewFeladatFields.test_elfogadott_valaszok_roundtrip",
+      "line": 702,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestNewFeladatFields.test_null_list_fields_roundtrip",
+      "line": 724,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestGetWrongFeladatok",
+      "line": 739,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestGetWrongFeladatok._save",
+      "line": 740,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestGetWrongFeladatok.test_empty_returns_empty",
+      "line": 743,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestGetWrongFeladatok.test_only_correct_answers_not_returned",
+      "line": 747,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestGetWrongFeladatok.test_wrong_answer_appears",
+      "line": 752,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestGetWrongFeladatok.test_rontas_pct_correct",
+      "line": 761,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestGetWrongFeladatok.test_ordered_by_hibas_desc",
+      "line": 769,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestGetWrongFeladatok.test_min_hibas_filter",
+      "line": 780,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestGetWrongFeladatok.test_targy_filter",
+      "line": 791,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestGetWrongFeladatok.test_user_filter",
+      "line": 800,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestGetWrongFeladatok.test_limit",
+      "line": 812,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestGetWrongFeladatok.test_include_wrong_answers",
+      "line": 820,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestGetWrongFeladatok.test_without_include_wrong_answers_list_is_empty",
+      "line": 827,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestSaveReview",
+      "line": 839,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestSaveReview._reviewed",
+      "line": 842,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestSaveReview.test_no_content_change_returns_same_id",
+      "line": 846,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestSaveReview.test_no_content_change_sets_review_flag",
+      "line": 852,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestSaveReview.test_no_content_change_record_stays_aktiv",
+      "line": 858,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestSaveReview.test_content_change_creates_new_id",
+      "line": 864,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestSaveReview.test_content_change_archives_old_record",
+      "line": 871,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestSaveReview.test_content_change_new_record_is_aktiv",
+      "line": 878,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestSaveReview.test_content_change_sets_elozmeny_feladat_id",
+      "line": 884,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestSaveReview.test_content_change_increments_verzio",
+      "line": 889,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestSaveReview.test_second_version_creates_v3",
+      "line": 894,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestSaveReview.test_elfogadott_valaszok_change_creates_new_version",
+      "line": 902,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestSaveReview.test_all_returns_only_aktiv_after_review",
+      "line": 908,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestSaveReview.test_save_review_unknown_id_raises",
+      "line": 916,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_db.py",
+      "name": "TestSaveReview.test_megjegyzes_persisted",
+      "line": 920,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "_make_pdf",
+      "line": 36,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "_gpt_response",
+      "line": 47,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "_make_flat_feladat",
+      "line": 402,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestPdfToText",
+      "line": 74,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestPdfToText.test_returns_string",
+      "line": 75,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestPdfToText.test_pages_joined_with_double_newline",
+      "line": 85,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestPdfToText.test_empty_pdf_returns_empty_string",
+      "line": 93,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestIdPrefix",
+      "line": 106,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestIdPrefix.test_matek_prefix",
+      "line": 107,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestIdPrefix.test_magyar_prefix",
+      "line": 110,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestIdPrefix.test_4osztaly_prefix",
+      "line": 113,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestIdPrefix.test_handles_missing_parts_gracefully",
+      "line": 116,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestParseFilenameMeta",
+      "line": 121,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestParseFilenameMeta.test_matek_feladatlap",
+      "line": 122,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestParseFilenameMeta.test_magyar_utmutato",
+      "line": 126,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestParseFilenameMeta.test_4osztaly_feladatlap",
+      "line": 130,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestParseFilenameMeta.test_unknown_filename_returns_nones",
+      "line": 134,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestParseFilenameMeta.test_lowercase_prefix_accepted",
+      "line": 138,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestDictToFeladat",
+      "line": 149,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestDictToFeladat.test_valid_dict_returns_feladat",
+      "line": 150,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestDictToFeladat.test_missing_field_raises_key_error",
+      "line": 156,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestDictToFeladat.test_invalid_neh_raises_value_error",
+      "line": 161,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestDictToFeladat.test_neh_coerced_from_string",
+      "line": 166,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestDictToFeladat.test_optional_fields_default_to_empty",
+      "line": 170,
+      "complexity": 7.0,
+      "rank": "B"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestExtractFeladatok",
+      "line": 186,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestExtractFeladatok._run",
+      "line": 187,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestExtractFeladatok.test_single_valid_item",
+      "line": 198,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestExtractFeladatok.test_multiple_valid_items",
+      "line": 203,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestExtractFeladatok.test_targy_injected_into_feladat",
+      "line": 211,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestExtractFeladatok.test_pdf_source_none_without_parse_exam",
+      "line": 215,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestExtractFeladatok.test_invalid_item_skipped_not_raised",
+      "line": 220,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestExtractFeladatok.test_empty_gpt_response_returns_empty_list",
+      "line": 225,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestExtractFeladatok.test_gpt_called_with_correct_model",
+      "line": 229,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestExtractFeladatok.test_ev_valtozat_injected_from_filename",
+      "line": 237,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestExtractFeladatok.test_ut_source_none_without_parse_exam",
+      "line": 242,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestExtractFeladatok.test_feladat_sorszam_from_gpt",
+      "line": 252,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestExtractFeladatok.test_feladat_sorszam_derived_from_id_when_missing",
+      "line": 257,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestFindExamPairs",
+      "line": 278,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestFindExamPairs._setup_exams",
+      "line": 279,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestFindExamPairs.test_matched_pair_yielded",
+      "line": 286,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestFindExamPairs.test_magyar_pair_recognized",
+      "line": 295,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestFindExamPairs.test_missing_ut_skipped",
+      "line": 301,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestFindExamPairs.test_ut_only_not_yielded",
+      "line": 306,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestFindExamPairs.test_multiple_pairs_all_found",
+      "line": 311,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestFindExamPairs.test_unknown_prefix_ignored",
+      "line": 322,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestFindExamPairs.test_empty_directory_returns_empty",
+      "line": 327,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestParseExam",
+      "line": 338,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestParseExam.test_returns_feladatok",
+      "line": 339,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestParseExam.test_pdf_source_set_to_fl_filename",
+      "line": 358,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestParseExam.test_ut_pdf_path_set_by_parse_exam",
+      "line": 377,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestGroupFeladatok",
+      "line": 424,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestGroupFeladatok.test_single_feladat_creates_one_group",
+      "line": 425,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestGroupFeladatok.test_sub_tasks_merged_into_same_group",
+      "line": 432,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestGroupFeladatok.test_csoport_sorrend_assigned_correctly",
+      "line": 444,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestGroupFeladatok.test_two_distinct_groups",
+      "line": 453,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestGroupFeladatok.test_all_feladatok_have_csoport_id",
+      "line": 463,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestDictToFeladatNewFields",
+      "line": 479,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestDictToFeladatNewFields.test_elfogadott_valaszok_list_parsed",
+      "line": 480,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestDictToFeladatNewFields.test_elfogadott_valaszok_null_stays_none",
+      "line": 485,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestDictToFeladatNewFields.test_feladat_tipus_parsed",
+      "line": 489,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestDictToFeladatNewFields.test_max_pont_default_is_1",
+      "line": 494,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestDictToFeladatNewFields.test_max_pont_from_dict",
+      "line": 498,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestDictToFeladatNewFields.test_reszpontozas_parsed",
+      "line": 503,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestDictToFeladatNewFields.test_valaszlehetosegek_list_parsed",
+      "line": 508,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestSplitIntoTaskBlocks",
+      "line": 519,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestSplitIntoTaskBlocks.test_single_task_detected",
+      "line": 520,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestSplitIntoTaskBlocks.test_multiple_tasks_split_correctly",
+      "line": 527,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestSplitIntoTaskBlocks.test_subtasks_belong_to_parent_block",
+      "line": 540,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestSplitIntoTaskBlocks.test_page_tracking_across_blocks",
+      "line": 558,
+      "complexity": 7.0,
+      "rank": "B"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestSplitIntoTaskBlocks.test_no_tasks_returns_empty_list",
+      "line": 571,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestSplitIntoTaskBlocks.test_page_header_not_treated_as_task",
+      "line": 575,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestSplitIntoTaskBlocks.test_sorted_by_sorszam",
+      "line": 586,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestSplitIntoTaskBlocks.test_sor_start_is_global_line_number",
+      "line": 591,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestSplitIntoTaskBlocks.test_ten_feladatok_from_a8_fl_like_text",
+      "line": 596,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestAnnotateBlock",
+      "line": 612,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestAnnotateBlock.test_header_format",
+      "line": 613,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestAnnotateBlock.test_raw_text_preserved",
+      "line": 618,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestMatchFlUtBlocks",
+      "line": 629,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestMatchFlUtBlocks._block",
+      "line": 630,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestMatchFlUtBlocks.test_matching_blocks_paired",
+      "line": 633,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestMatchFlUtBlocks.test_missing_ut_block_gives_none",
+      "line": 642,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestMatchFlUtBlocks.test_empty_fl_returns_empty",
+      "line": 650,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestMatchFlUtBlocks.test_order_follows_fl_blocks",
+      "line": 653,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestExtractFeladatokBatched",
+      "line": 666,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestExtractFeladatokBatched._make_blocks",
+      "line": 667,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestExtractFeladatokBatched.test_single_batch_single_item",
+      "line": 672,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestExtractFeladatokBatched.test_batching_creates_correct_number_of_calls",
+      "line": 681,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestExtractFeladatokBatched.test_empty_matched_blocks_returns_empty",
+      "line": 690,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestExtractFeladatokBatched.test_failed_batch_skipped_gracefully",
+      "line": 695,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_pdf_parser.py",
+      "name": "TestExtractFeladatokBatched.test_annotated_metadata_in_prompt",
+      "line": 703,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_progress_check.py",
+      "name": "test_get_user_stats_includes_trends_patterns_and_events",
+      "line": 15,
+      "complexity": 17.0,
+      "rank": "C"
+    },
+    {
+      "file": "tests/test_progress_check.py",
+      "name": "test_daily_check_rejects_overlapping_dynamic_medal",
+      "line": 110,
+      "complexity": 7.0,
+      "rank": "B"
+    },
+    {
+      "file": "tests/test_progress_check.py",
+      "name": "test_daily_check_refines_overlapping_dynamic_medal",
+      "line": 169,
+      "complexity": 7.0,
+      "rank": "B"
+    },
+    {
+      "file": "tests/test_progress_check.py",
+      "name": "_make_daily_medal",
+      "line": 236,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_progress_check.py",
+      "name": "test_find_cross_user_medal_clusters_detects_overlap",
+      "line": 261,
+      "complexity": 5.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_progress_check.py",
+      "name": "test_find_cross_user_medal_clusters_no_results_below_threshold",
+      "line": 280,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_progress_check.py",
+      "name": "test_daily_check_blocks_cross_user_duplicate_and_logs_signal",
+      "line": 288,
+      "complexity": 9.0,
+      "rank": "B"
+    },
+    {
+      "file": "tests/test_review.py",
+      "name": "feladat",
+      "line": 22,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_review.py",
+      "name": "test_extract_page_no_markers_returns_truncated",
+      "line": 42,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_review.py",
+      "name": "test_extract_page_known_page",
+      "line": 48,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_review.py",
+      "name": "test_extract_page_last_page_no_trailing_marker",
+      "line": 55,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_review.py",
+      "name": "test_extract_page_missing_page_returns_fallback",
+      "line": 61,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_review.py",
+      "name": "test_extract_page_none_page_no",
+      "line": 67,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_review.py",
+      "name": "test_review_feladatok_accept",
+      "line": 79,
+      "complexity": 4.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_review.py",
+      "name": "test_review_feladatok_skip",
+      "line": 89,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_review.py",
+      "name": "test_review_feladatok_quit_early",
+      "line": 96,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_review.py",
+      "name": "test_review_feladatok_empty",
+      "line": 111,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_review.py",
+      "name": "test_edit_feladat_cli_no_changes",
+      "line": 121,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_review.py",
+      "name": "test_edit_feladat_cli_changes_kerdes",
+      "line": 129,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_review.py",
+      "name": "test_edit_feladat_cli_invalid_neh_keeps_original",
+      "line": 156,
+      "complexity": 2.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_review.py",
+      "name": "test_save_review_sets_review_elvegezve",
+      "line": 173,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_review.py",
+      "name": "test_save_review_clears_megoldas_hibajelezes",
+      "line": 180,
+      "complexity": 3.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_review.py",
+      "name": "test_save_review_unknown_feladat_raises",
+      "line": 203,
+      "complexity": 1.0,
+      "rank": "A"
+    },
+    {
+      "file": "tests/test_review.py",
+      "name": "test_review_elvegezve_roundtrips_via_upsert",
+      "line": 208,
+      "complexity": 3.0,
+      "rank": "A"
+    }
+  ],
+  "top_blocks": [
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "medals",
+      "line": 308,
+      "complexity": 78.0,
+      "rank": "F"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "medal_check_cmd",
+      "line": 1210,
+      "complexity": 76.0,
+      "rank": "F"
+    },
+    {
+      "file": "src/felvi_games/report.py",
+      "name": "generate_charts",
+      "line": 271,
+      "complexity": 60.0,
+      "rank": "F"
+    },
+    {
+      "file": "src/felvi_games/progress_check.py",
+      "name": "get_user_stats",
+      "line": 397,
+      "complexity": 55.0,
+      "rank": "F"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "_eval_dynamic_condition",
+      "line": 843,
+      "complexity": 51.0,
+      "rank": "F"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "next_feladat",
+      "line": 123,
+      "complexity": 35.0,
+      "rank": "E"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "reeval_cmd",
+      "line": 1594,
+      "complexity": 35.0,
+      "rank": "E"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "_render_kerdes",
+      "line": 647,
+      "complexity": 34.0,
+      "rank": "E"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "medal_recheck_cmd",
+      "line": 1940,
+      "complexity": 34.0,
+      "rank": "E"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "medal_promote_candidates_cmd",
+      "line": 2179,
+      "complexity": 31.0,
+      "rank": "E"
+    },
+    {
+      "file": "src/felvi_games/pdf_parser.py",
+      "name": "run",
+      "line": 711,
+      "complexity": 29.0,
+      "rank": "D"
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "name": "check_new_medals",
+      "line": 1176,
+      "complexity": 28.0,
+      "rank": "D"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "_render_sidebar",
+      "line": 254,
+      "complexity": 28.0,
+      "rank": "D"
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "name": "usage",
+      "line": 164,
+      "complexity": 25.0,
+      "rank": "D"
+    },
+    {
+      "file": "src/felvi_games/app.py",
+      "name": "_render_eredmeny",
+      "line": 849,
+      "complexity": 23.0,
+      "rank": "D"
+    }
+  ]
+}

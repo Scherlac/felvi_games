@@ -239,6 +239,45 @@ felvi medal-delete --id kivalosag_2026
 
 ---
 
+## Fejlesztői kódmetrikák
+
+A kódmetrikák fejlesztői toolingként futnak (nem alkalmazás feature):
+
+```bash
+# Telepítés (egyszer)
+pip install -e ".[dev]"
+
+# Nyers metrikák: fájl/sor/stb.
+radon raw src tests
+
+# Cyclomatic Complexity (A-F osztályozás + átlag)
+radon cc src tests -s -a
+
+# Maintainability Index
+radon mi src tests -s
+
+# Baseline létrehozása (egyszer, amikor a csapat elfogadja az aktuális állapotot)
+C:/Users/scher/.conda/envs/felvi/python.exe tools/quality_gate_report.py --refresh-baseline
+
+# Regresszió-alapú gate (javulás mindig OK, jelentős romlás bukik)
+C:/Users/scher/.conda/envs/felvi/python.exe tools/quality_gate_report.py --strict
+
+# (opcionális) Küszöbök finomhangolása
+C:/Users/scher/.conda/envs/felvi/python.exe tools/quality_gate_report.py --strict \
+    --max-avg-cc-increase 0.25 --max-p95-cc-increase 1.0 --max-d-or-worse-increase 2
+
+# Teszt lefedettség mint további minőségi metrika
+pytest --cov=src/felvi_games --cov-report=term-missing --cov-report=html
+```
+
+Ajánlott CI gate:
+- A `tools/quality_gate_report.py --strict` parancs bukjon, ha a baseline-hoz képest jelentős komplexitás-romlás történik.
+- A report itt készül: `reports/quality/complexity_report.md`.
+- A baseline itt van: `reports/quality/complexity_baseline.json`.
+- `pytest-cov` mellett állíts be minimális coverage küszöböt (`--cov-fail-under`).
+
+---
+
 ## Fájlnév konvenció
 
 A PDF-ek neve: `{T}{G}_{YYYY}_{N}_{tipus}.pdf`
