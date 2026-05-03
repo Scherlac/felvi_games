@@ -56,9 +56,10 @@ The project follows an iterative, research-driven cycle with heavy documentation
 - Keep dependencies minimal (stdlib-first).
 - Write pure functions with clear interfaces.
 
-### 4) Testing & Validation
+### 4) Code quality checks, tests and validation
 - Run unit tests and targeted integration scenarios.
 - Verify output formats and edge cases.
+- Run code quality checks and improve modified code related metrics.
 - Document results.
 
 ### 5) Documentation & Planning

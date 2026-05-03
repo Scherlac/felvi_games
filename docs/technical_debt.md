@@ -9,11 +9,11 @@ Source: `reports/quality/complexity_report.md` (quality gate baseline, CC = Cycl
 
 | Severity | Count | Threshold |
 |---|---|---|
-| **F** (critical, CC ≥ 50) | 5 | Must not grow |
+| **F** (critical, CC ≥ 50) | 2 | Must not grow |
 | **E** (high, CC 26–49) | 5 | Must not grow |
-| **D** (medium, CC 16–25) | 9 | Track only |
-| Avg CC (all blocks) | 4.819 | Baseline |
-| P95 CC | 17.0 | Baseline |
+| **D** (medium, CC 16–25) | 11 | Track only |
+| Avg CC (all blocks) | 4.522 | Baseline |
+| P95 CC | 16.0 | Baseline |
 
 The quality gate enforces **no regression**; items below are candidates for active refactoring.
 
@@ -21,19 +21,13 @@ The quality gate enforces **no regression**; items below are candidates for acti
 
 ## Critical (Rank F)
 
-### TD-001 · `cli.py` — `medals` (CC 78)
-**File:** [src/felvi_games/cli.py](../src/felvi_games/cli.py#L308)  
-**Root cause:** Single Typer command handler doing eight different sub-operations (dry-run, delete, generator-inputs, generate, list, conditions, user stats, display). Every mode is an `if` branch inside the same function body.  
-**Impact:** Untestable via unit tests; adding any new medal sub-feature raises CC further.  
-**Fix:** Extract each sub-operation into a dedicated private helper (`_medals_delete`, `_medals_generate`, `_medals_list`, …), with `medals()` acting as a thin dispatcher.
+### ~~TD-001 · `cli.py` — `medals` (CC 78)~~
+Resolved on 2026-05-03 by extracting command-mode branches into helper dispatch functions. No longer F-rank.
 
 ---
 
-### TD-002 · `cli.py` — `medal_check_cmd` (CC 76)
-**File:** [src/felvi_games/cli.py](../src/felvi_games/cli.py#L1210)  
-**Root cause:** Same God-function pattern: `--dry-run`, `--clear`, `--simulate`, `--simulate --apply`, `--policy-fix` all live in one body with deep nesting and shared mutable state (SQLAlchemy session).  
-**Impact:** Difficult to test; mutual-exclusion guards scattered throughout.  
-**Fix:** Split into `_medal_check_policy_fix`, `_medal_check_simulate`, `_medal_check_clear`, etc. Keep CLI handler as a dispatcher only.
+### ~~TD-002 · `cli.py` — `medal_check_cmd` (CC 76)~~
+Resolved on 2026-05-03 by splitting policy-fix/simulate/dry-run/clear/default flows into dedicated helper functions. No longer F-rank.
 
 ---
 
@@ -53,11 +47,8 @@ The quality gate enforces **no regression**; items below are candidates for acti
 
 ---
 
-### TD-005 · `achievements.py` — `_eval_dynamic_condition` (CC 51)
-**File:** [src/felvi_games/achievements.py](../src/felvi_games/achievements.py#L843)  
-**Root cause:** Large `if/elif` dispatch on `condition_type` string, each branch running its own DB query inline. Currently handles 12 condition types.  
-**Impact:** Adding a new LLM-generated condition type means touching this one function; branch CC grows linearly with condition count.  
-**Fix:** Introduce a `_CONDITION_EVALUATORS: dict[str, Callable]` registry (matching the `SZABALY_REGISTRY` pattern already used for static medals). Each condition type is a small function; dispatcher becomes a single lookup + call.
+### ~~TD-005 · `achievements.py` — `_eval_dynamic_condition` (CC 51)~~
+Resolved on 2026-05-03 by introducing condition evaluator registry dispatch. No longer F-rank.
 
 ---
 
@@ -72,7 +63,7 @@ The quality gate enforces **no regression**; items below are candidates for acti
 ---
 
 ### TD-007 · `cli.py` — `reeval_cmd` (CC 35)
-**File:** [src/felvi_games/cli.py](../src/felvi_games/cli.py#L1594)  
+**File:** [src/felvi_games/cli.py](../src/felvi_games/cli.py#L1635)  
 **Root cause:** Combines `--pending` early-return path, `--list` path, single-ID GPT call path, and bulk-evaluation path in one handler. GPT call, DB writes, and display formatting are co-located.  
 **Fix:** Extract `_reeval_pending`, `_reeval_list`, `_reeval_single`, `_reeval_bulk` helpers; separate I/O from evaluation logic.
 
@@ -87,14 +78,14 @@ The quality gate enforces **no regression**; items below are candidates for acti
 ---
 
 ### TD-009 · `cli.py` — `medal_recheck_cmd` (CC 34)
-**File:** [src/felvi_games/cli.py](../src/felvi_games/cli.py#L1940)  
+**File:** [src/felvi_games/cli.py](../src/felvi_games/cli.py#L1981)  
 **Root cause:** Similar God-command pattern to TD-002; handles multiple re-check modes with nested session management.  
 **Fix:** Same approach as TD-002 — sub-function dispatch.
 
 ---
 
 ### TD-010 · `cli.py` — `medal_promote_candidates_cmd` (CC 31)
-**File:** [src/felvi_games/cli.py](../src/felvi_games/cli.py#L2179)  
+**File:** [src/felvi_games/cli.py](../src/felvi_games/cli.py#L2220)  
 **Root cause:** Candidate collection, filtering, scoring, and display all in one body.  
 **Fix:** Extract query + scoring into a reusable service function in `achievements.py` or `progress_check.py`; CLI handler formats and prints only.
 
@@ -145,6 +136,6 @@ Every CLI command does `from felvi_games.X import Y` inside the function body. T
 
 ## Maintenance Notes
 
-- The quality gate (`tools/quality_gate_report.py`) tracks CC regressions automatically. TD items here are **pre-existing** debt; the gate prevents them from getting worse.
+- The quality gate (`tools/quality_gate_report.py`) tracks CC regressions automatically. TD items here are pre-existing debt; the gate prevents them from getting worse.
 - Refresh the **Avg CC / P95 CC / D/E/F counts** row in this document whenever `--refresh-baseline` is run intentionally.
 - When a TD item is resolved, mark it ~~strikethrough~~ and note the commit.

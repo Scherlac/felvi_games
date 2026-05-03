@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generated_at_utc": "2026-05-03T08:51:53+00:00",
+  "generated_at_utc": "2026-05-03T10:05:26+00:00",
   "paths": [
     "src",
     "tests"
@@ -10,7 +10,7 @@
   "total_sloc": 11354,
   "total_blank": 2144,
   "avg_mi": 40.332,
-  "avg_cc": 4.672,
+  "avg_cc": 4.522,
   "p95_cc": 16.0,
   "counts_by_rank": {
     "A": 459,
@@ -21,7 +21,7 @@
     "F": 5
   },
   "d_or_worse_blocks": 18,
-  "f_blocks": 4,
+  "f_blocks": 2,
   "parse_error_files": [],
   "blocks": [
     {
@@ -4045,7 +4045,7 @@
       "rank": "D"
     }
   ],
-  "coverage_pct": 52.317,
+  "coverage_pct": 52.605,
   "coverage_files": 14,
   "low_coverage_files": [
     {
@@ -4062,9 +4062,9 @@
     },
     {
       "file": "src/felvi_games/cli.py",
-      "coverage_pct": 23.471,
-      "covered_lines": 284,
-      "num_statements": 1210
+      "coverage_pct": 25.162,
+      "covered_lines": 311,
+      "num_statements": 1236
     },
     {
       "file": "src/felvi_games/ai.py",
