@@ -24,6 +24,7 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
+    "ruff>=0.11.0",
 ]
 
 [tool.pytest.ini_options]
@@ -33,6 +34,17 @@ addopts = "-v --tb=short"
 [tool.coverage.run]
 source = ["src/felvi_games"]
 omit = ["*/app.py"]  # Streamlit UI – skip in unit tests
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
 
 [project.scripts]
 felvi = "felvi_games.cli:run"
