@@ -518,8 +518,6 @@ def _dict_to_feladat(d: dict) -> Feladat:
 # Post-processing: grouping
 # ---------------------------------------------------------------------------
 
-import re as _re
-
 
 def _group_feladatok(
     feladatok: list[Feladat],

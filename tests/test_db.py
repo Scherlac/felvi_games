@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -10,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from felvi_games.achievements import _eval_dynamic_condition
 from felvi_games.db import FeladatRepository, FelhasznaloEremSzerzesRecord, MegoldasRecord
-from felvi_games.models import Ertekeles, Feladat, InterakcioTipus
+from felvi_games.models import Ertekeles, Feladat, FeladatCsoport, InterakcioTipus
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -611,9 +612,6 @@ class TestMegoldasWithTracking:
 # ---------------------------------------------------------------------------
 
 
-from felvi_games.models import FeladatCsoport
-
-
 def _make_csoport(
     id: str = "cg_01",
     targy: str = "matek",
@@ -836,9 +834,6 @@ class TestGetWrongFeladatok:
 # ---------------------------------------------------------------------------
 # save_review – versioning
 # ---------------------------------------------------------------------------
-
-
-import dataclasses
 
 
 class TestSaveReview:

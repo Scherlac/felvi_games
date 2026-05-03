@@ -21,6 +21,7 @@ Adding a new medal:
 """
 from __future__ import annotations
 
+from dataclasses import dataclass as _dataclass
 import logging
 from collections.abc import Callable
 from contextvars import ContextVar
@@ -1344,8 +1345,6 @@ def get_all_medals_for_user(
 # ---------------------------------------------------------------------------
 # Rule simulation (dry-run, no DB writes)
 # ---------------------------------------------------------------------------
-
-from dataclasses import dataclass as _dataclass
 
 
 @_dataclass

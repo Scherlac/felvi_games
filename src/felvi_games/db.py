@@ -939,7 +939,6 @@ class FeladatRepository:
             new_pont = max(0, min(int(ertekeles.pont), max_pont))
             new_helyes = bool(ertekeles.helyes)
 
-            old_ratio = (old_pont / max_pont) if max_pont > 0 else 0.0
             new_ratio = (new_pont / max_pont) if max_pont > 0 else 0.0
             should_defer_reward = (new_ratio > 0.5) and (new_pont > old_pont)
 

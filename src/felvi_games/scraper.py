@@ -118,7 +118,6 @@ def download_and_extract_zip(url: str, dest_dir: Path, dry_run: bool = False) ->
     try:
         resp = session.get(url, timeout=120, stream=True)
         resp.raise_for_status()
-        total = int(resp.headers.get("content-length", 0))
         downloaded = 0
         with open(zip_path, "wb") as f:
             for chunk in resp.iter_content(chunk_size=65536):
@@ -348,14 +347,14 @@ def run(
     # Szűrés kategóriára
     if only:
         kat_filter = _CLI_TO_MAPPA[only]
-        year_links = [l for l in year_links if l["kategoria"] == kat_filter]
+        year_links = [link for link in year_links if link["kategoria"] == kat_filter]
 
     # Szűrés évre
     if years > 0:
         all_years = sorted(
-            {l["year"] for l in year_links}, reverse=True
+            {link["year"] for link in year_links}, reverse=True
         )[:years]
-        year_links = [l for l in year_links if l["year"] in all_years]
+        year_links = [link for link in year_links if link["year"] in all_years]
 
     year_links.sort(key=lambda x: (x["year"], x["kategoria"]), reverse=True)
 

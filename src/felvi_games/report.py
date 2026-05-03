@@ -303,14 +303,14 @@ def generate_charts(data: ReportData, output_dir: Path) -> list[str]:
     ]
     colors = [cmap[u] for u in user_names]
 
-    for ax, (title, values) in zip(axes, metrics):
+    for ax, (title, values) in zip(axes, metrics, strict=False):
         bars = ax.bar(user_names, values, color=colors, edgecolor="white", linewidth=0.6)
         ax.set_title(title, fontsize=11)
         ax.set_xlabel("Felhasználó", fontsize=9)
         ax.yaxis.set_major_locator(mticker.MaxNLocator(integer=(title != "Pontosság (%)")))
         top = max(values) if values else 1
         ax.set_ylim(0, top * 1.25 + 0.5)
-        for bar, val in zip(bars, values):
+        for bar, val in zip(bars, values, strict=False):
             ax.text(
                 bar.get_x() + bar.get_width() / 2,
                 bar.get_height() + top * 0.02,
@@ -361,7 +361,7 @@ def generate_charts(data: ReportData, output_dir: Path) -> list[str]:
                 color=_TARGY_COLORS.get(targy, _USER_PALETTE[i]),
                 edgecolor="white",
             )
-            for bar, val, n in zip(bars, vals, cnts):
+            for bar, val, n in zip(bars, vals, cnts, strict=False):
                 if n > 0:
                     ax.text(
                         bar.get_x() + bar.get_width() / 2,
@@ -410,7 +410,7 @@ def generate_charts(data: ReportData, output_dir: Path) -> list[str]:
         for u in user_names:
             vals = [daily_by_user[u][d] for d in all_dates]
             ax.plot(all_dates, vals, marker="o", label=u, color=cmap[u], linewidth=2.2, markersize=6)
-            for d, v in zip(all_dates, vals):
+            for d, v in zip(all_dates, vals, strict=False):
                 if v > 0:
                     ax.annotate(str(v), (d, v), textcoords="offset points", xytext=(0, 7),
                                 ha="center", fontsize=8, color=cmap[u])
@@ -472,7 +472,7 @@ def generate_charts(data: ReportData, output_dir: Path) -> list[str]:
                 vals = points_series[(u, t)]
                 ax.plot(all_dates, vals, marker="o", label=f"{u} – {t}",
                         color=cmap[u], linestyle=ls_map[t], linewidth=2, markersize=5)
-                for d, v in zip(all_dates, vals):
+                for d, v in zip(all_dates, vals, strict=False):
                     if v > 0:
                         ax.annotate(str(v), (d, v), textcoords="offset points", xytext=(0, 7),
                                     ha="center", fontsize=7.5, color=cmap[u])
@@ -509,7 +509,7 @@ def generate_charts(data: ReportData, output_dir: Path) -> list[str]:
                 ys = [vals[i] for i in xs_idx]
                 ax.plot(xs_idx, ys, marker="o", label=f"{u} – {t}",
                         color=cmap[u], linestyle=ls_map[t], linewidth=2, markersize=5)
-                for xi, v in zip(xs_idx, ys):
+                for xi, v in zip(xs_idx, ys, strict=False):
                     ax.annotate(f"{v:.0f}%", (xi, v), textcoords="offset points", xytext=(0, 7),
                                 ha="center", fontsize=7.5, color=cmap[u])
             ax.axhline(80, color="#555", linestyle=":", linewidth=1.2, label="80% cél")
@@ -548,7 +548,7 @@ def generate_charts(data: ReportData, output_dir: Path) -> list[str]:
             vals = np.array([szint_mat[u].get(sz, 0) for u in user_names], dtype=float)
             color = _SZINT_COLORS.get(sz, "#8C8C8C")
             ax.bar(x, vals, bottom=bottoms, label=sz, color=color, edgecolor="white", linewidth=0.6)
-            for xi, (v, b) in enumerate(zip(vals, bottoms)):
+            for xi, (v, b) in enumerate(zip(vals, bottoms, strict=False)):
                 if v > 0:
                     ax.text(xi, b + v / 2, str(int(v)),
                             ha="center", va="center", fontsize=9,

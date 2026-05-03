@@ -14,11 +14,14 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import typer
 
 from felvi_games.config import setup_logging
+
+if TYPE_CHECKING:
+    from felvi_games.db import FeladatRepository
 
 # Ensure stdout/stderr can handle all Unicode characters when redirected on Windows.
 # Set the console output code page to UTF-8 first so PowerShell interprets the pipe correctly.
@@ -667,9 +670,6 @@ def medals(
                 szamlalo = f" ×{fe.szamlalo}" if fe.szamlalo > 1 else ""
                 lejarat = ""
                 if fe.lejarat:
-                    from datetime import datetime as _dt
-                    from datetime import timezone as _tz
-                    days_left = (_dt.now(_tz.utc) - fe.lejarat.replace(tzinfo=_tz.utc) if fe.lejarat.tzinfo is None else fe.lejarat).days
                     lejarat = f"  [lejár: {fe.lejarat.strftime('%Y-%m-%d')}]"
                 typer.echo(
                     f"  {erem.ikon}  {erem.nev}{szamlalo}"
@@ -855,7 +855,7 @@ def medal_edit_cmd(
             parsed = _json.loads(condition_json)
         except _json.JSONDecodeError as exc:
             typer.echo(f"[!] Érvénytelen JSON a --condition-json paraméterben: {exc}")
-            raise typer.Exit(code=2)
+            raise typer.Exit(code=2) from exc
         if parsed is not None and not isinstance(parsed, dict):
             typer.echo("[!] A --condition-json csak objektum (dict) vagy null lehet.")
             raise typer.Exit(code=2)
@@ -1524,7 +1524,7 @@ def medal_check_cmd(
 
         if would_grant:
             typer.echo(f"  ✅ MEGMARADNA ({len(would_grant)} érem):")
-            for eid, erem, orig, _ in would_grant:
+            for _eid, erem, orig, _ in would_grant:
                 orig_str = f"  ← eredeti: {orig}" if orig else ""
                 typer.echo(f"    • {erem.ikon}  {erem.nev:30s}  [{erem.kategoria}]{orig_str}")
 
@@ -2044,7 +2044,6 @@ def medal_recheck_cmd(
             if not new_pending and not would_repeat:
                 typer.echo("  (nincs új érem)")
         else:
-            before = {fe.erem_id for fe in repo.get_eremek(nev, include_expired=True)}
             newly = check_new_medals(nev, None, repo)
             if newly:
                 for e in newly:

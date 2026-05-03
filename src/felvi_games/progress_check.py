@@ -332,7 +332,7 @@ def find_cross_user_medal_clusters(
         if not isinstance(medal.condition, dict):
             continue
         placed = False
-        for idx, cluster in enumerate(clusters):
+        for _idx, cluster in enumerate(clusters):
             rep = cluster[0]
             if not isinstance(rep.condition, dict):
                 continue
@@ -346,7 +346,7 @@ def find_cross_user_medal_clusters(
             cluster_reasons.append("")
 
     results: list[DynamicMedalCluster] = []
-    for idx, cluster in enumerate(clusters):
+    for _idx, cluster in enumerate(clusters):
         distinct_users = {m.cel_felhasznalo for m in cluster if m.cel_felhasznalo}
         if len(distinct_users) < min_users:
             continue
@@ -815,9 +815,6 @@ def estimate_close_medals(
     _add("minden_szint", covered_lvl / 3, f"szintek: {covered_lvl} / 3")
 
     # visited at least 3 different days
-    days_total = len({
-        # we approximate from total_sessions days here
-    })
     # use a simpler proxy: completed_sessions / 3 as days approximation
     approx_days = min(stats["completed_sessions"], stats["total_sessions"])
     _add("visszatero", min(approx_days, 3) / 3, f"visszatérések: {approx_days} nap (cél: 3)")
