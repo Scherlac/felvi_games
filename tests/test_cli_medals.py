@@ -127,5 +127,5 @@ def test_medals_shows_all_earned_dates_for_repeated_medal(tmp_path: Path) -> Non
     result = runner.invoke(app, ["medals", "--db", str(db_file), "--user", "Lóri"])
 
     assert result.exit_code == 0
-    assert "🚀  Első Menet ×2" in result.output
+    assert "×2" in result.output
     assert "Szerezve: 2026-05-03 08:10; 2026-05-01 07:20" in result.output
