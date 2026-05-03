@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generated_at_utc": "2026-05-03T10:46:31+00:00",
+  "generated_at_utc": "2026-05-03T11:12:03+00:00",
   "paths": [
     "src",
     "tests"
@@ -10,8 +10,8 @@
   "total_sloc": 11796,
   "total_blank": 2278,
   "avg_mi": 40.506,
-  "avg_cc": 4.522,
-  "p95_cc": 16.0,
+  "avg_cc": 4.487,
+  "p95_cc": 15.0,
   "counts_by_rank": {
     "A": 492,
     "B": 59,
@@ -20,8 +20,8 @@
     "E": 5,
     "F": 2
   },
-  "d_or_worse_blocks": 18,
-  "f_blocks": 2,
+  "d_or_worse_blocks": 17,
+  "f_blocks": 1,
   "parse_error_files": [],
   "blocks": [
     {

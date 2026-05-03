@@ -31,11 +31,12 @@ Resolved on 2026-05-03 by splitting policy-fix/simulate/dry-run/clear/default fl
 
 ---
 
-### TD-003 · `report.py` — `generate_charts` (CC 60)
-**File:** [src/felvi_games/report.py](../src/felvi_games/report.py#L271)  
-**Root cause:** All five chart types (overall summary, accuracy-by-subject, daily activity, daily points, subject distribution) generated sequentially inside one function. Each chart adds multiple nested loops, conditionals, and matplotlib config.  
-**Impact:** Adding a new chart type or adjusting an existing one risks breaking adjacent ones; function is ~300 LOC.  
-**Fix:** Extract each chart into its own `_chart_<name>(data, output_dir, …) → str` function. `generate_charts` becomes a list-builder that calls them all.
+### ~~TD-003 · `report.py` — `generate_charts` (CC 60)~~
+~~**File:** [src/felvi_games/report.py](../src/felvi_games/report.py#L271)~~  
+~~**Root cause:** All five chart types (overall summary, accuracy-by-subject, daily activity, daily points, subject distribution) generated sequentially inside one function. Each chart adds multiple nested loops, conditionals, and matplotlib config.~~  
+~~**Impact:** Adding a new chart type or adjusting an existing one risks breaking adjacent ones; function is ~300 LOC.~~  
+~~**Fix:** Extract each chart into its own `_chart_<name>(data, output_dir, …) → str` function. `generate_charts` becomes a list-builder that calls them all.~~  
+**Resolved:** Extracted `_build_date_range`, `_build_daily_detail_context`, and six `_chart_*` helpers. `generate_charts` is now a 20-line list-builder. Gate PASS: F blocks 2→1, D/E/F 18→17.
 
 ---
 

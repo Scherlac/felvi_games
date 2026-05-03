@@ -26,7 +26,6 @@ Thumbs.db
 data/felvi.db
 # Ignore generated reports but track the quality gate baseline
 reports/quality/complexity_current.json
-reports/quality/complexity_report.md
 reports/[0-9]*/
 .coverage
 reports/quality/coverage_current.json
