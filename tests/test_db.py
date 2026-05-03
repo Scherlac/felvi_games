@@ -12,7 +12,6 @@ from felvi_games.achievements import _eval_dynamic_condition
 from felvi_games.db import FeladatRepository, FelhasznaloEremSzerzesRecord, MegoldasRecord
 from felvi_games.models import Ertekeles, Feladat, InterakcioTipus
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -415,6 +414,7 @@ class TestFelhasznalo:
     def test_get_or_create_creates_new(self, repo):
         repo.get_or_create_felhasznalo("Bence")
         from sqlalchemy.orm import Session
+
         from felvi_games.db import FelhasznaloRecord
         with Session(repo._engine) as session:
             record = session.get(FelhasznaloRecord, "Bence")
@@ -425,6 +425,7 @@ class TestFelhasznalo:
         repo.get_or_create_felhasznalo("Anna")
         repo.get_or_create_felhasznalo("Anna")  # second call must not raise
         from sqlalchemy.orm import Session
+
         from felvi_games.db import FelhasznaloRecord
         with Session(repo._engine) as session:
             count = session.query(FelhasznaloRecord).filter_by(nev="Anna").count()
@@ -440,6 +441,7 @@ class TestMenet:
 
     def test_end_menet_sets_ended_at(self, repo):
         from sqlalchemy.orm import Session
+
         from felvi_games.db import MenetRecord
         repo.get_or_create_felhasznalo("Eva")
         mid = repo.start_menet("Eva", "matek", "mind", 10)
@@ -456,6 +458,7 @@ class TestMenet:
 
     def test_update_menet_progress(self, repo):
         from sqlalchemy.orm import Session
+
         from felvi_games.db import MenetRecord
         repo.get_or_create_felhasznalo("Sara")
         mid = repo.start_menet("Sara", "matek", "6 osztályos", 10)
@@ -574,6 +577,7 @@ class TestUserSettings:
 class TestMegoldasWithTracking:
     def test_save_megoldas_with_all_tracking_fields(self, repo, feladat_matek):
         from sqlalchemy.orm import Session
+
         from felvi_games.db import MegoldasRecord
         repo.upsert(feladat_matek)
         repo.get_or_create_felhasznalo("Zoli")
@@ -840,7 +844,7 @@ import dataclasses
 class TestSaveReview:
     """Tests for FeladatRepository.save_review() versioning logic."""
 
-    def _reviewed(self, feladat: "Feladat", **changes) -> "Feladat":
+    def _reviewed(self, feladat: Feladat, **changes) -> Feladat:
         """Return a copy of feladat with review_elvegezve=True and optional field changes."""
         return dataclasses.replace(feladat, review_elvegezve=True, **changes)
 

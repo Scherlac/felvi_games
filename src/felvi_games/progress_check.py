@@ -21,12 +21,12 @@ Public API
 """
 from __future__ import annotations
 
+import logging
+import random
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-import logging
 from typing import TYPE_CHECKING
-import random
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -95,7 +95,7 @@ def _safe_float(value: object, default: float) -> float:
 
 def _normalize_condition_value(value: object) -> object:
     if hasattr(value, "value"):
-        value = getattr(value, "value")
+        value = value.value
     if isinstance(value, str):
         return value.strip().lower()
     return value
@@ -155,7 +155,7 @@ def _dynamic_medal_expiry(erem: Erem) -> datetime | None:
     return anchor_utc + timedelta(days=erem.ervenyes_napig)
 
 
-def _conflicting_dynamic_medals(user: str, repo: "FeladatRepository", candidate: dict) -> list[dict]:
+def _conflicting_dynamic_medals(user: str, repo: FeladatRepository, candidate: dict) -> list[dict]:
     now = datetime.now(timezone.utc)
     conflicts: list[dict] = []
     for erem in repo.get_erem_katalogus(user).values():
@@ -184,7 +184,7 @@ def _conflicting_dynamic_medals(user: str, repo: "FeladatRepository", candidate:
     return conflicts
 
 
-def _find_cross_user_private_match(user: str, repo: "FeladatRepository", candidate: dict) -> dict | None:
+def _find_cross_user_private_match(user: str, repo: FeladatRepository, candidate: dict) -> dict | None:
     """Return one matching private medal from another user, if any."""
     for erem in repo.get_all_private_dynamic_medals():
         if not isinstance(erem.condition, dict):
@@ -206,7 +206,7 @@ def _find_cross_user_private_match(user: str, repo: "FeladatRepository", candida
 
 def _screen_dynamic_medal_candidate(
     user: str,
-    repo: "FeladatRepository",
+    repo: FeladatRepository,
     stats: dict,
     close_medals: list[CloseMedal],
     earned_count: int,
@@ -311,7 +311,7 @@ class DynamicMedalCluster:
 
 
 def find_cross_user_medal_clusters(
-    repo: "FeladatRepository",
+    repo: FeladatRepository,
     *,
     min_users: int = 2,
 ) -> list[DynamicMedalCluster]:
@@ -373,9 +373,9 @@ def find_cross_user_medal_clusters(
 # First-login-today detection
 # ---------------------------------------------------------------------------
 
-def is_first_login_today(user: str, repo: "FeladatRepository") -> bool:
+def is_first_login_today(user: str, repo: FeladatRepository) -> bool:
     """True if the user has NOT started a session yet today (UTC)."""
-    from felvi_games.db import InterakcioRecord, MenetRecord
+    from felvi_games.db import InterakcioRecord
     today_start = datetime.now(timezone.utc).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
@@ -394,7 +394,7 @@ def is_first_login_today(user: str, repo: "FeladatRepository") -> bool:
 # Aggregate stats collector
 # ---------------------------------------------------------------------------
 
-def get_user_stats(user: str, repo: "FeladatRepository") -> dict:
+def get_user_stats(user: str, repo: FeladatRepository) -> dict:
     """Return a dict of aggregate player statistics for AI / closeness checks."""
     from felvi_games.db import FeladatRecord, InterakcioRecord, MegoldasRecord, MenetRecord
 
@@ -710,7 +710,6 @@ def _trailing_streak(dates: list) -> int:
     """How many consecutive days ending today-or-yesterday."""
     if not dates:
         return 0
-    from datetime import date
     today = datetime.now(timezone.utc).date()
     streak = 0
     prev = today
@@ -752,7 +751,7 @@ def _current_correct_streak(seq: list[bool]) -> int:
 
 def estimate_close_medals(
     user: str,
-    repo: "FeladatRepository",
+    repo: FeladatRepository,
     stats: dict,
     threshold: float = 0.50,
 ) -> list[CloseModal]:
@@ -834,10 +833,10 @@ def estimate_close_medals(
 
 def daily_check(
     user: str,
-    repo: "FeladatRepository",
+    repo: FeladatRepository,
     *,
     force: bool = False,
-) -> "DailyInsight | None":
+) -> DailyInsight | None:
     """Run the daily insight check.
 
     Returns ``None`` if it's not the first login today (unless *force=True*).

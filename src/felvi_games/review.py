@@ -253,8 +253,9 @@ def review_feladat_ai(
     Returns a (possibly corrected) Feladat with review_elvegezve=True and
     review_megjegyzes set.
     """
-    from dotenv import load_dotenv
     from pathlib import Path
+
+    from dotenv import load_dotenv
     load_dotenv(Path(__file__).parent.parent.parent / ".env", override=True)
 
     client = _make_openai_client()

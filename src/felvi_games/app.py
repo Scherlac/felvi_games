@@ -12,7 +12,7 @@ from pathlib import Path
 import streamlit as st
 
 from felvi_games.ai import check_answer, kerdes_to_tts_szoveg, speech_to_text, text_to_speech
-from felvi_games.config import get_exams_dir, resolve_asset, setup_logging, text_cache_path
+from felvi_games.config import get_exams_dir, resolve_asset, setup_logging
 from felvi_games.db import FeladatRepository
 from felvi_games.models import KATEGORIA_INFO, Ertekeles, Fazis, Feladat, GameState, InterakcioTipus
 
@@ -1048,11 +1048,13 @@ def _load_active_challenges(user: str) -> list[dict]:
 
     Each item: {id, ikon, nev, leiras, created_at_str, teljesul: bool}
     """
+    import json as _json
     from datetime import datetime, timezone
-    from felvi_games.achievements import _eval_dynamic_condition, _count_dynamic_condition
+
     from sqlalchemy import text
     from sqlalchemy.orm import Session as _S
-    import json as _json
+
+    from felvi_games.achievements import _count_dynamic_condition, _eval_dynamic_condition
 
     engine = get_repo()._engine
     earned_ids = {fe.erem_id for fe in get_repo().get_eremek(user)}
@@ -1141,9 +1143,9 @@ def _show_daily_insight_dialog(insight_data: dict) -> None:
         st.caption(teaser["leiras"])
         # Show image if available — but we need the Erem object; use id from dict
         if teaser.get("id"):
-            from felvi_games.db import EremRecord
-            from felvi_games.models import Erem
             from sqlalchemy.orm import Session as _S
+
+            from felvi_games.db import EremRecord
             with _S(get_repo()._engine) as _sess:
                 rec = _sess.get(EremRecord, teaser["id"])
             if rec:

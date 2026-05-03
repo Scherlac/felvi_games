@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from felvi_games.db import FeladatRepository
 from felvi_games.models import Ertekeles, Feladat
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

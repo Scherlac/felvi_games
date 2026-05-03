@@ -17,14 +17,13 @@ Filename convention
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import os
 import re
-import sys
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
-import dataclasses
 
 import pdftotext
 from dotenv import load_dotenv
@@ -33,7 +32,7 @@ from openai import OpenAI
 from felvi_games.config import get_db_path, get_exams_dir, relative_text_path, text_cache_path
 from felvi_games.db import FeladatRepository
 from felvi_games.models import Feladat, FeladatCsoport, _parse_str_list
-from felvi_games.review import print_csoport, print_feladat, review_feladatok
+from felvi_games.review import print_csoport, review_feladatok
 
 load_dotenv(Path(__file__).parent.parent.parent / ".env", override=True)
 

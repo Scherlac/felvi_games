@@ -105,14 +105,15 @@ class ReportData:
 def gather_data(engine, days: int, user_filter: str | None = None) -> ReportData:
     from collections import defaultdict
 
+    from sqlalchemy import select
+    from sqlalchemy.orm import Session
+
     from felvi_games.db import (
         EremRecord,
         FelhasznaloEremRecord,
         MegoldasRecord,
         MenetRecord,
     )
-    from sqlalchemy import select
-    from sqlalchemy.orm import Session
 
     date_to = datetime.now(timezone.utc)
     date_from = date_to - timedelta(days=days)

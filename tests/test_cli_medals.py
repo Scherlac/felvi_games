@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import patch
 
-from typer.testing import CliRunner
 from sqlalchemy import update
 from sqlalchemy.orm import Session
+from typer.testing import CliRunner
 
 from felvi_games.cli import app
-from felvi_games.db import EremRecord, FeladatRepository, FelhasznaloEremRecord, FelhasznaloEremSzerzesRecord
+from felvi_games.db import (
+    EremRecord,
+    FeladatRepository,
+    FelhasznaloEremRecord,
+    FelhasznaloEremSzerzesRecord,
+)
 from felvi_games.models import Erem
 from felvi_games.progress_check import CloseMedal
 

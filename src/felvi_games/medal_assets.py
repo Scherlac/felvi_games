@@ -30,7 +30,6 @@ from pathlib import Path
 from felvi_games.config import medal_asset_path
 from felvi_games.models import Erem
 
-
 # ---------------------------------------------------------------------------
 # Read
 # ---------------------------------------------------------------------------

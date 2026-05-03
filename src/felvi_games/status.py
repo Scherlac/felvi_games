@@ -11,7 +11,6 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from pathlib import Path
-from typing import Optional
 
 
 def _pdf_summary(exams_dir: Path, szint_filter: str | None) -> None:

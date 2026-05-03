@@ -21,13 +21,11 @@ Adding a new medal:
 """
 from __future__ import annotations
 
-import json
 import logging
-from collections import Counter, defaultdict
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from collections.abc import Callable
 from contextvars import ContextVar
-from typing import TYPE_CHECKING, Callable
+from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -44,7 +42,7 @@ logger = logging.getLogger(__name__)
 # Context variable used by --simulate to replay history as of a given timestamp.
 # Set this to a datetime before calling rule functions to make them behave as if
 # that moment is "now" (i.e. only events up to that timestamp are visible).
-_simulation_as_of: ContextVar["datetime | None"] = ContextVar("_simulation_as_of", default=None)
+_simulation_as_of: ContextVar[datetime | None] = ContextVar("_simulation_as_of", default=None)
 
 # Repeatable medals should not trigger back-to-back from historical data.
 # Cooldown is in hours, per medal id. Unlisted repeatables use the default.
@@ -325,7 +323,7 @@ def _cooldown_elapsed(erem_id: str, last_award_at: datetime, now: datetime) -> b
     return now >= (_as_utc(last_award_at) + timedelta(hours=hours))
 
 
-def _has_new_attempt_after(user: str, engine: "Engine", since: datetime, *, hour_cmp: str | None = None, hour_val: int | None = None, require_fast_correct: bool = False) -> bool:
+def _has_new_attempt_after(user: str, engine: Engine, since: datetime, *, hour_cmp: str | None = None, hour_val: int | None = None, require_fast_correct: bool = False) -> bool:
     from felvi_games.db import MegoldasRecord
 
     since_utc = _as_utc(since)
@@ -356,7 +354,7 @@ def _has_new_attempt_after(user: str, engine: "Engine", since: datetime, *, hour
         return (s.scalar(stmt) or 0) > 0
 
 
-def _has_new_activity_after(user: str, engine: "Engine", since: datetime) -> bool:
+def _has_new_activity_after(user: str, engine: Engine, since: datetime) -> bool:
     from felvi_games.db import InterakcioRecord, MegoldasRecord, MenetRecord
 
     since_utc = _as_utc(since)
@@ -381,7 +379,7 @@ def _has_new_activity_after(user: str, engine: "Engine", since: datetime) -> boo
         return (s.scalar(m_stmt) or 0) > 0 or (s.scalar(n_stmt) or 0) > 0 or (s.scalar(i_stmt) or 0) > 0
 
 
-def _repeatable_has_fresh_signal(erem_id: str, user: str, engine: "Engine", last_award_at: datetime) -> bool:
+def _repeatable_has_fresh_signal(erem_id: str, user: str, engine: Engine, last_award_at: datetime) -> bool:
     if erem_id == "villam":
         return _has_new_attempt_after(user, engine, last_award_at, require_fast_correct=True)
     if erem_id == "reggeli_tanulas":
@@ -449,7 +447,7 @@ def _current_streak(days: list[datetime]) -> int:
 # (Each rule is: rule_fn(user, session_id, engine) → bool)
 # ---------------------------------------------------------------------------
 
-def _rule_elso_menet(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_elso_menet(user: str, session_id: int | None, engine: Engine) -> bool:
     from felvi_games.db import MenetRecord
     _as_of = _simulation_as_of.get()
     with Session(engine) as s:
@@ -462,7 +460,7 @@ def _rule_elso_menet(user: str, session_id: int | None, engine: "Engine") -> boo
     return cnt >= 1
 
 
-def _rule_szaz_feladat(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_szaz_feladat(user: str, session_id: int | None, engine: Engine) -> bool:
     from felvi_games.db import MegoldasRecord
     _as_of = _simulation_as_of.get()
     with Session(engine) as s:
@@ -474,7 +472,7 @@ def _rule_szaz_feladat(user: str, session_id: int | None, engine: "Engine") -> b
     return cnt >= 100
 
 
-def _rule_otszaz_feladat(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_otszaz_feladat(user: str, session_id: int | None, engine: Engine) -> bool:
     from felvi_games.db import MegoldasRecord
     _as_of = _simulation_as_of.get()
     with Session(engine) as s:
@@ -486,7 +484,7 @@ def _rule_otszaz_feladat(user: str, session_id: int | None, engine: "Engine") ->
     return cnt >= 500
 
 
-def _rule_ezer_feladat(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_ezer_feladat(user: str, session_id: int | None, engine: Engine) -> bool:
     from felvi_games.db import MegoldasRecord
     _as_of = _simulation_as_of.get()
     with Session(engine) as s:
@@ -498,7 +496,7 @@ def _rule_ezer_feladat(user: str, session_id: int | None, engine: "Engine") -> b
     return cnt >= 1000
 
 
-def _rule_tokeletes_menet(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_tokeletes_menet(user: str, session_id: int | None, engine: Engine) -> bool:
     """True when the current session completed all tasks fully correctly."""
     from felvi_games.db import MegoldasRecord, MenetRecord
     if session_id is None:
@@ -519,19 +517,19 @@ def _rule_tokeletes_menet(user: str, session_id: int | None, engine: "Engine") -
     return total > 0 and total == helyes_cnt == rec.feladat_limit
 
 
-def _rule_sorozat_5(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_sorozat_5(user: str, session_id: int | None, engine: Engine) -> bool:
     return _max_helyes_sorozat(user, engine) >= 5
 
 
-def _rule_sorozat_10(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_sorozat_10(user: str, session_id: int | None, engine: Engine) -> bool:
     return _max_helyes_sorozat(user, engine) >= 10
 
 
-def _rule_sorozat_20(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_sorozat_20(user: str, session_id: int | None, engine: Engine) -> bool:
     return _max_helyes_sorozat(user, engine) >= 20
 
 
-def _max_helyes_sorozat(user: str, engine: "Engine") -> int:
+def _max_helyes_sorozat(user: str, engine: Engine) -> int:
     from felvi_games.db import MegoldasRecord
     _as_of = _simulation_as_of.get()
     with Session(engine) as s:
@@ -553,7 +551,7 @@ def _max_helyes_sorozat(user: str, engine: "Engine") -> int:
     return best
 
 
-def _rule_villam(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_villam(user: str, session_id: int | None, engine: Engine) -> bool:
     """Any answer that scored points (including partial) within 10 seconds."""
     from felvi_games.db import MegoldasRecord
     _as_of = _simulation_as_of.get()
@@ -569,7 +567,7 @@ def _rule_villam(user: str, session_id: int | None, engine: "Engine") -> bool:
     return cnt >= 1
 
 
-def _rule_hint_nelkul_20(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_hint_nelkul_20(user: str, session_id: int | None, engine: Engine) -> bool:
     """Last 20 answers (any outcome) without asking for a hint."""
     from felvi_games.db import MegoldasRecord
     _as_of = _simulation_as_of.get()
@@ -588,7 +586,7 @@ def _rule_hint_nelkul_20(user: str, session_id: int | None, engine: "Engine") ->
     return len(rows) == 20 and not any(rows)
 
 
-def _rule_magas_pontossag(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_magas_pontossag(user: str, session_id: int | None, engine: Engine) -> bool:
     """At least 80% of total possible points earned across 50+ attempts."""
     from felvi_games.db import FeladatRecord, MegoldasRecord
     _as_of = _simulation_as_of.get()
@@ -612,19 +610,19 @@ def _rule_magas_pontossag(user: str, session_id: int | None, engine: "Engine") -
     return max_possible > 0 and (earned / max_possible) >= 0.80
 
 
-def _rule_het_egymas_utan(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_het_egymas_utan(user: str, session_id: int | None, engine: Engine) -> bool:
     with Session(engine) as s:
         days = _distinct_play_days(s, user)  # _simulation_as_of applied inside
     return _current_streak(days) >= 7
 
 
-def _rule_harom_het_egymas_utan(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_harom_het_egymas_utan(user: str, session_id: int | None, engine: Engine) -> bool:
     with Session(engine) as s:
         days = _distinct_play_days(s, user)  # _simulation_as_of applied inside
     return _consecutive_days(days) >= 21
 
 
-def _rule_pentek_matek_honap(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_pentek_matek_honap(user: str, session_id: int | None, engine: Engine) -> bool:
     """All Fridays of the *previous* calendar month were covered with matek sessions."""
     from felvi_games.db import MenetRecord
     now = datetime.now(timezone.utc)
@@ -659,7 +657,7 @@ def _rule_pentek_matek_honap(user: str, session_id: int | None, engine: "Engine"
     return fridays.issubset(played_fridays)
 
 
-def _rule_heti_haromszor(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_heti_haromszor(user: str, session_id: int | None, engine: Engine) -> bool:
     """At least 3 distinct days in the most recent 7-day window."""
     with Session(engine) as s:
         cutoff = _sim_now() - timedelta(days=7)
@@ -667,7 +665,7 @@ def _rule_heti_haromszor(user: str, session_id: int | None, engine: "Engine") ->
     return len(days) >= 3
 
 
-def _rule_reggeli_tanulas(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_reggeli_tanulas(user: str, session_id: int | None, engine: Engine) -> bool:
     """Any answer submitted before 08:00 local time (timestamps stored as UTC)."""
     from felvi_games.db import MegoldasRecord
     _as_of = _simulation_as_of.get()
@@ -681,7 +679,7 @@ def _rule_reggeli_tanulas(user: str, session_id: int | None, engine: "Engine") -
     return len(rows) > 0
 
 
-def _rule_mindket_targy(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_mindket_targy(user: str, session_id: int | None, engine: Engine) -> bool:
     from felvi_games.db import MenetRecord
     _as_of = _simulation_as_of.get()
     with Session(engine) as s:
@@ -692,7 +690,7 @@ def _rule_mindket_targy(user: str, session_id: int | None, engine: "Engine") -> 
     return {"matek", "magyar"}.issubset(targyek)
 
 
-def _rule_minden_szint(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_minden_szint(user: str, session_id: int | None, engine: Engine) -> bool:
     from felvi_games.db import MenetRecord
     _as_of = _simulation_as_of.get()
     with Session(engine) as s:
@@ -703,7 +701,7 @@ def _rule_minden_szint(user: str, session_id: int | None, engine: "Engine") -> b
     return _SZINTEK_OSSZ.issubset(szintek)
 
 
-def _rule_minden_feladattipus(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_minden_feladattipus(user: str, session_id: int | None, engine: Engine) -> bool:
     from felvi_games.db import FeladatRecord, MegoldasRecord
     _as_of = _simulation_as_of.get()
     with Session(engine) as s:
@@ -716,13 +714,13 @@ def _rule_minden_feladattipus(user: str, session_id: int | None, engine: "Engine
     return _FELADAT_TIPUSOK_OSSZ.issubset({r for r in rows if r})
 
 
-def _rule_visszatero(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_visszatero(user: str, session_id: int | None, engine: Engine) -> bool:
     with Session(engine) as s:
         days = _distinct_play_days(s, user)  # _simulation_as_of applied inside
     return len(days) >= 3
 
 
-def _rule_maraton(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_maraton(user: str, session_id: int | None, engine: Engine) -> bool:
     from felvi_games.db import MenetRecord
     if session_id is None:
         return False
@@ -733,7 +731,7 @@ def _rule_maraton(user: str, session_id: int | None, engine: "Engine") -> bool:
         return rec.feladat_limit >= 30 and rec.megoldott >= 30
 
 
-def _rule_tiz_feladat(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_tiz_feladat(user: str, session_id: int | None, engine: Engine) -> bool:
     from felvi_games.db import MegoldasRecord
     _as_of = _simulation_as_of.get()
     with Session(engine) as s:
@@ -745,7 +743,7 @@ def _rule_tiz_feladat(user: str, session_id: int | None, engine: "Engine") -> bo
     return cnt >= 10
 
 
-def _rule_huszonot_feladat(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_huszonot_feladat(user: str, session_id: int | None, engine: Engine) -> bool:
     from felvi_games.db import MegoldasRecord
     _as_of = _simulation_as_of.get()
     with Session(engine) as s:
@@ -757,7 +755,7 @@ def _rule_huszonot_feladat(user: str, session_id: int | None, engine: "Engine") 
     return cnt >= 25
 
 
-def _rule_otven_feladat(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_otven_feladat(user: str, session_id: int | None, engine: Engine) -> bool:
     from felvi_games.db import MegoldasRecord
     _as_of = _simulation_as_of.get()
     with Session(engine) as s:
@@ -769,7 +767,7 @@ def _rule_otven_feladat(user: str, session_id: int | None, engine: "Engine") -> 
     return cnt >= 50
 
 
-def _rule_szaz_pont(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_szaz_pont(user: str, session_id: int | None, engine: Engine) -> bool:
     from felvi_games.db import MegoldasRecord
     _as_of = _simulation_as_of.get()
     with Session(engine) as s:
@@ -781,7 +779,7 @@ def _rule_szaz_pont(user: str, session_id: int | None, engine: "Engine") -> bool
     return total >= 100
 
 
-def _rule_otszaz_pont(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_otszaz_pont(user: str, session_id: int | None, engine: Engine) -> bool:
     from felvi_games.db import MegoldasRecord
     _as_of = _simulation_as_of.get()
     with Session(engine) as s:
@@ -793,7 +791,7 @@ def _rule_otszaz_pont(user: str, session_id: int | None, engine: "Engine") -> bo
     return total >= 500
 
 
-def _rule_esti_tanulas(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_esti_tanulas(user: str, session_id: int | None, engine: Engine) -> bool:
     """Any answer submitted at or after 22:00 local time (timestamps stored as UTC)."""
     from felvi_games.db import MegoldasRecord
     _as_of = _simulation_as_of.get()
@@ -807,13 +805,13 @@ def _rule_esti_tanulas(user: str, session_id: int | None, engine: "Engine") -> b
     return len(rows) > 0
 
 
-def _rule_visszatero_tiz(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_visszatero_tiz(user: str, session_id: int | None, engine: Engine) -> bool:
     with Session(engine) as s:
         days = _distinct_play_days(s, user)  # _simulation_as_of applied inside
     return len(days) >= 10
 
 
-def _rule_heti_bajnok(user: str, session_id: int | None, engine: "Engine") -> bool:
+def _rule_heti_bajnok(user: str, session_id: int | None, engine: Engine) -> bool:
     """5+ distinct play days in the current week (Mon–Sun)."""
     now = _sim_now()
     start_of_week = _nap(now) - timedelta(days=now.weekday())
@@ -844,7 +842,7 @@ def _rule_heti_bajnok(user: str, session_id: int | None, engine: "Engine") -> bo
 def _eval_dynamic_condition(
     user: str,
     condition: dict,
-    engine: "Engine",
+    engine: Engine,
     valid_from: datetime | None = None,
 ) -> bool:
     """Evaluate a dynamic (LLM-generated) medal condition. Returns bool.
@@ -1044,7 +1042,7 @@ def _eval_dynamic_condition(
 def _count_dynamic_condition(
     user: str,
     condition: dict,
-    engine: "Engine",
+    engine: Engine,
     valid_from: datetime | None = None,
 ) -> tuple[int | None, int | None]:
     """Return (current_value, target_n) for progress display.
@@ -1177,7 +1175,7 @@ SZABALY_REGISTRY: dict[str, RuleFn] = {
 def check_new_medals(
     user: str,
     session_id: int | None,
-    repo: "FeladatRepository",
+    repo: FeladatRepository,
 ) -> list[Erem]:
     """Evaluate all rules and grant any newly earned medals.
 
@@ -1326,7 +1324,7 @@ def check_new_medals(
 
 def get_all_medals_for_user(
     user: str,
-    repo: "FeladatRepository",
+    repo: FeladatRepository,
     include_expired: bool = False,
 ) -> list[tuple[Erem, FelhasznaloErem]]:
     """Return (catalog_entry, earned_record) pairs for a user.
@@ -1348,7 +1346,6 @@ def get_all_medals_for_user(
 # ---------------------------------------------------------------------------
 
 from dataclasses import dataclass as _dataclass
-from typing import Optional as _Optional
 
 
 @_dataclass
@@ -1359,12 +1356,12 @@ class RuleSimResult:
     result: bool
     already_earned: bool
     ismetelheto: bool
-    error: _Optional[str] = None
+    error: str | None = None
 
 
 def simulate_medal_rules(
     user: str,
-    engine: "Engine",
+    engine: Engine,
     earned_erem_ids: set[str],
 ) -> list[RuleSimResult]:
     """Evaluate every registered rule for *user* without awarding anything.

@@ -13,7 +13,6 @@ from felvi_games.review import (
     review_feladatok,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -179,9 +178,10 @@ def test_save_review_sets_review_elvegezve(repo, feladat):
 
 
 def test_save_review_clears_megoldas_hibajelezes(repo, feladat):
-    from felvi_games.models import Ertekeles
-    from felvi_games.db import MegoldasRecord
     from sqlalchemy.orm import Session
+
+    from felvi_games.db import MegoldasRecord
+    from felvi_games.models import Ertekeles
 
     repo.upsert(feladat)
     ert = Ertekeles(helyes=False, pont=0, visszajelzes="Nem helyes.")

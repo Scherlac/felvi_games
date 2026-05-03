@@ -12,10 +12,9 @@ Belépési pont:
 """
 from __future__ import annotations
 
-import sys
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
@@ -65,7 +64,7 @@ class Targy(str, Enum):
 @app.command()
 def info(
     szint: Annotated[
-        Optional[EvfolyamKulcs], typer.Option("--szint", help="Csak egy évfolyam: 4, 6 vagy 8")
+        EvfolyamKulcs | None, typer.Option("--szint", help="Csak egy évfolyam: 4, 6 vagy 8")
     ] = None,
 ) -> None:
     """Konfiguráció, letöltött PDF-ek és DB állapot áttekintése."""
@@ -87,13 +86,13 @@ def scrape(
         int, typer.Option("--years", help="Csak az utolsó N év (0 = mind)")
     ] = 0,
     only: Annotated[
-        Optional[EvfolyamKulcs], typer.Option("--only", help="Csak egy évfolyam: 4, 6 vagy 8")
+        EvfolyamKulcs | None, typer.Option("--only", help="Csak egy évfolyam: 4, 6 vagy 8")
     ] = None,
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Csak listáz, nem tölt le semmit")
     ] = False,
     output: Annotated[
-        Optional[Path], typer.Option("--output", help="Kimeneti mappa (alap: FELVI_EXAMS env)")
+        Path | None, typer.Option("--output", help="Kimeneti mappa (alap: FELVI_EXAMS env)")
     ] = None,
 ) -> None:
     """Letölti a feladatsorokat az oktatas.hu-ról."""
@@ -115,13 +114,13 @@ def scrape(
 @app.command()
 def parse(
     year: Annotated[
-        Optional[int], typer.Option("--year", help="Csak ebből az évből")
+        int | None, typer.Option("--year", help="Csak ebből az évből")
     ] = None,
     targy: Annotated[
-        Optional[Targy], typer.Option("--targy", help="Tantárgy szűrő")
+        Targy | None, typer.Option("--targy", help="Tantárgy szűrő")
     ] = None,
     szint: Annotated[
-        Optional[EvfolyamKulcs], typer.Option("--szint", help="Évfolyam szűrő (4/6/8)")
+        EvfolyamKulcs | None, typer.Option("--szint", help="Évfolyam szűrő (4/6/8)")
     ] = None,
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Ne mentse DB-be")
@@ -130,10 +129,10 @@ def parse(
         bool, typer.Option("--review", help="CLI review futtatása kinyerés után")
     ] = False,
     model: Annotated[
-        Optional[str], typer.Option("--model", help="LLM modell neve")
+        str | None, typer.Option("--model", help="LLM modell neve")
     ] = None,
     exams_dir: Annotated[
-        Optional[Path], typer.Option("--exams-dir", help="PDF mappa (alap: FELVI_EXAMS env)")
+        Path | None, typer.Option("--exams-dir", help="PDF mappa (alap: FELVI_EXAMS env)")
     ] = None,
     limit: Annotated[
         int, typer.Option("--limit", help="Max feldolgozandó pár (0 = mind)")
@@ -161,10 +160,10 @@ def parse(
 @app.command("usage")
 def usage(
     db: Annotated[
-        Optional[Path], typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
+        Path | None, typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
     ] = None,
     user: Annotated[
-        Optional[str], typer.Option("--user", help="Csak egy felhasználó adatai")
+        str | None, typer.Option("--user", help="Csak egy felhasználó adatai")
     ] = None,
     limit: Annotated[
         int, typer.Option("--limit", help="Max. kilistázott menetszám felhasználónként")
@@ -305,10 +304,10 @@ def usage(
 @app.command("medals")
 def medals(
     db: Annotated[
-        Optional[Path], typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
+        Path | None, typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
     ] = None,
     user: Annotated[
-        Optional[str], typer.Option("--user", help="Szűrés egy felhasználóra")
+        str | None, typer.Option("--user", help="Szűrés egy felhasználóra")
     ] = None,
     list_all: Annotated[
         bool, typer.Option("--list", help="Az összes lehetséges érem katalógusának kiírása")
@@ -338,26 +337,27 @@ def medals(
         int, typer.Option("--window-hours", help="Dry-run javaslat időablaka órában (1-18)")
     ] = 18,
     delete_id: Annotated[
-        Optional[str], typer.Option("--delete-id", help="Érem törlése az id alapján (csak dinamikus/privát érmekre)")
+        str | None, typer.Option("--delete-id", help="Érem törlése az id alapján (csak dinamikus/privát érmekre)")
     ] = None,
 ) -> None:
     """Érmek / achievements: katalógus és felhasználói haladás."""
+    import json as _json
     import re
     from datetime import datetime, timezone
 
+    from sqlalchemy import select, text
+    from sqlalchemy.orm import Session
+
     from felvi_games.achievements import (
         EREM_KATALOGUS,
-        _eval_dynamic_condition,
         _count_dynamic_condition,
+        _eval_dynamic_condition,
         get_all_medals_for_user,
     )
     from felvi_games.config import get_db_path
-    from felvi_games.db import FelhasznaloRecord, FeladatRepository, get_engine
+    from felvi_games.db import FeladatRepository, FelhasznaloRecord, get_engine
     from felvi_games.models import Erem
     from felvi_games.progress_check import estimate_close_medals, get_user_stats
-    from sqlalchemy import select, text
-    from sqlalchemy.orm import Session
-    import json as _json
 
     def _collect_generator_inputs(
         repo: FeladatRepository,
@@ -568,7 +568,8 @@ def medals(
                 typer.echo(f"    condition: {_json.dumps(cond, ensure_ascii=False)}")
                 if user:
                     try:
-                        from datetime import datetime, timezone as _tz
+                        from datetime import datetime
+                        from datetime import timezone as _tz
                         vf = r.created_at
                         if isinstance(vf, str):
                             vf = datetime.fromisoformat(vf)
@@ -666,8 +667,8 @@ def medals(
                 szamlalo = f" ×{fe.szamlalo}" if fe.szamlalo > 1 else ""
                 lejarat = ""
                 if fe.lejarat:
-                    from datetime import timezone as _tz
                     from datetime import datetime as _dt
+                    from datetime import timezone as _tz
                     days_left = (_dt.now(_tz.utc) - fe.lejarat.replace(tzinfo=_tz.utc) if fe.lejarat.tzinfo is None else fe.lejarat).days
                     lejarat = f"  [lejár: {fe.lejarat.strftime('%Y-%m-%d')}]"
                 typer.echo(
@@ -696,7 +697,7 @@ def medals(
 @app.command("medal-assets")
 def medal_assets_cmd(
     erem_id: Annotated[
-        Optional[str], typer.Option("--erem-id", help="Csak ehhez az éremhez generál")
+        str | None, typer.Option("--erem-id", help="Csak ehhez az éremhez generál")
     ] = None,
     kinds: Annotated[
         str, typer.Option("--kinds", help="Vesszővel elválasztott asset típusok: kep,hang")
@@ -761,24 +762,24 @@ def medal_assets_cmd(
 # felvi medal-add  /  medal-edit  /  medal-grant  /  medal-delete
 # ---------------------------------------------------------------------------
 
-def _get_repo_for_medals(db: Optional[Path]) -> "FeladatRepository":
+def _get_repo_for_medals(db: Path | None) -> FeladatRepository:
     from felvi_games.db import FeladatRepository
     return FeladatRepository(db)
 
 
 @app.command("medal-add")
 def medal_add_cmd(
-    db: Annotated[Optional[Path], typer.Option("--db", help="DB fájl útvonala")] = None,
+    db: Annotated[Path | None, typer.Option("--db", help="DB fájl útvonala")] = None,
     id: Annotated[str, typer.Option("--id", help="Egyedi slug, pl. 'kivalosag_2026'")] = ...,
     nev: Annotated[str, typer.Option("--nev", help="Magyar megjelenítési név")] = ...,
     leiras: Annotated[str, typer.Option("--leiras", help="Rövid leírás")] = ...,
     ikon: Annotated[str, typer.Option("--ikon", help="Emoji ikon")] = "🏅",
     kategoria: Annotated[str, typer.Option("--kategoria")] = "teljesitmeny",
     ideiglenes: Annotated[bool, typer.Option("--ideiglenes")] = False,
-    ervenyes_napig: Annotated[Optional[int], typer.Option("--ervenyes-napig")] = None,
+    ervenyes_napig: Annotated[int | None, typer.Option("--ervenyes-napig")] = None,
     ismetelheto: Annotated[bool, typer.Option("--ismetelheto")] = False,
     privat: Annotated[bool, typer.Option("--privat", help="Privát érem (csak a célfelhasználónak látható)")] = False,
-    cel_felhasznalo: Annotated[Optional[str], typer.Option("--cel-felhasznalo", help="Privát érem célfelhasználója")] = None,
+    cel_felhasznalo: Annotated[str | None, typer.Option("--cel-felhasznalo", help="Privát érem célfelhasználója")] = None,
 ) -> None:
     """Új érem hozzáadása a katalógushoz (azonnal érvényes, újraindítás nélkül)."""
     from felvi_games.models import Erem
@@ -805,19 +806,19 @@ def medal_add_cmd(
 
 @app.command("medal-edit")
 def medal_edit_cmd(
-    db: Annotated[Optional[Path], typer.Option("--db")] = None,
+    db: Annotated[Path | None, typer.Option("--db")] = None,
     id: Annotated[str, typer.Option("--id", help="Szerkesztendő érem azonosítója")] = ...,
-    nev: Annotated[Optional[str], typer.Option("--nev")] = None,
-    leiras: Annotated[Optional[str], typer.Option("--leiras")] = None,
-    ikon: Annotated[Optional[str], typer.Option("--ikon")] = None,
-    kategoria: Annotated[Optional[str], typer.Option("--kategoria")] = None,
-    ideiglenes: Annotated[Optional[bool], typer.Option("--ideiglenes/--nem-ideiglenes")] = None,
-    ervenyes_napig: Annotated[Optional[int], typer.Option("--ervenyes-napig")] = None,
-    ismetelheto: Annotated[Optional[bool], typer.Option("--ismetelheto/--nem-ismetelheto")] = None,
-    privat: Annotated[Optional[bool], typer.Option("--privat/--globalis")] = None,
-    cel_felhasznalo: Annotated[Optional[str], typer.Option("--cel-felhasznalo")] = None,
+    nev: Annotated[str | None, typer.Option("--nev")] = None,
+    leiras: Annotated[str | None, typer.Option("--leiras")] = None,
+    ikon: Annotated[str | None, typer.Option("--ikon")] = None,
+    kategoria: Annotated[str | None, typer.Option("--kategoria")] = None,
+    ideiglenes: Annotated[bool | None, typer.Option("--ideiglenes/--nem-ideiglenes")] = None,
+    ervenyes_napig: Annotated[int | None, typer.Option("--ervenyes-napig")] = None,
+    ismetelheto: Annotated[bool | None, typer.Option("--ismetelheto/--nem-ismetelheto")] = None,
+    privat: Annotated[bool | None, typer.Option("--privat/--globalis")] = None,
+    cel_felhasznalo: Annotated[str | None, typer.Option("--cel-felhasznalo")] = None,
     condition_json: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--condition-json", help="Dinamikus feltétel JSON (pl. '{\"type\":\"after_hour\",...}')"),
     ] = None,
     clear_condition: Annotated[
@@ -829,8 +830,9 @@ def medal_edit_cmd(
     import dataclasses
     import json as _json
 
-    from felvi_games.db import EremRecord
     from sqlalchemy.orm import Session as _Session
+
+    from felvi_games.db import EremRecord
 
     repo = _get_repo_for_medals(db)
     with _Session(repo._engine) as s:
@@ -878,15 +880,17 @@ def medal_edit_cmd(
 
 @app.command("medal-grant")
 def medal_grant_cmd(
-    db: Annotated[Optional[Path], typer.Option("--db")] = None,
+    db: Annotated[Path | None, typer.Option("--db")] = None,
     id: Annotated[str, typer.Option("--id", help="Érem azonosítója")] = ...,
     felhasznalo: Annotated[str, typer.Option("--felhasznalo", help="Felhasználó neve")] = ...,
-    ervenyes_napig: Annotated[Optional[int], typer.Option("--ervenyes-napig", help="Lejárat napokban")] = None,
+    ervenyes_napig: Annotated[int | None, typer.Option("--ervenyes-napig", help="Lejárat napokban")] = None,
 ) -> None:
     """Érem manuális odaítélése egy felhasználónak (privát érmekhez hasznos)."""
     from datetime import datetime, timedelta, timezone
-    from felvi_games.db import EremRecord
+
     from sqlalchemy.orm import Session as _Session
+
+    from felvi_games.db import EremRecord
 
     repo = _get_repo_for_medals(db)
     with _Session(repo._engine) as s:
@@ -913,7 +917,7 @@ def medal_grant_cmd(
 
 @app.command("medal-delete")
 def medal_delete_cmd(
-    db: Annotated[Optional[Path], typer.Option("--db")] = None,
+    db: Annotated[Path | None, typer.Option("--db")] = None,
     id: Annotated[str, typer.Option("--id", help="Törlendő érem azonosítója")] = ...,
     force: Annotated[bool, typer.Option("--force", help="Megerősítés kihagyása")] = False,
 ) -> None:
@@ -939,7 +943,7 @@ def medal_delete_cmd(
 @app.command("stats")
 def stats_cmd(
     db: Annotated[
-        Optional[Path], typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
+        Path | None, typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
     ] = None,
 ) -> None:
     """Feladatok és megoldások összefoglaló statisztikája a DB-ből."""
@@ -1006,16 +1010,16 @@ def stats_cmd(
 @app.command("wrong")
 def wrong_cmd(
     db: Annotated[
-        Optional[Path], typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
+        Path | None, typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
     ] = None,
     user: Annotated[
-        Optional[str], typer.Option("--user", help="Szűrés egy felhasználóra")
+        str | None, typer.Option("--user", help="Szűrés egy felhasználóra")
     ] = None,
     targy: Annotated[
-        Optional[Targy], typer.Option("--targy", help="Tantárgy szűrő")
+        Targy | None, typer.Option("--targy", help="Tantárgy szűrő")
     ] = None,
     szint: Annotated[
-        Optional[EvfolyamKulcs], typer.Option("--szint", help="Évfolyam szűrő (4/6/8)")
+        EvfolyamKulcs | None, typer.Option("--szint", help="Évfolyam szűrő (4/6/8)")
     ] = None,
     min_hibas: Annotated[
         int, typer.Option("--min-hibas", help="Csak legalább ennyi hibás kísérlettel rendelkező feladatok")
@@ -1027,7 +1031,7 @@ def wrong_cmd(
         bool, typer.Option("--detail", help="A ténylegesen beírt hibás válaszok is jelenjenek meg")
     ] = False,
     output: Annotated[
-        Optional[Path], typer.Option("--output", help="Kimenet fájl útvonala (üres = stdout)")
+        Path | None, typer.Option("--output", help="Kimenet fájl útvonala (üres = stdout)")
     ] = None,
 ) -> None:
     """Feladatok, amelyekre legalább egy hibás választ adtak (legtöbbet rontottak elöl)."""
@@ -1098,7 +1102,7 @@ def check_answer_cmd(
     feladat_id: Annotated[str, typer.Argument(help="Feladat ID (pl. mag4_2021_3_8_a)")],
     valasz: Annotated[str, typer.Argument(help="Ellenőrizendő válasz")],
     db: Annotated[
-        Optional[Path], typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
+        Path | None, typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
     ] = None,
     apply_latest: Annotated[
         bool,
@@ -1108,7 +1112,7 @@ def check_answer_cmd(
         ),
     ] = False,
     user: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--user", help="Felhasználó szűrő --apply-latest használatakor"),
     ] = None,
 ) -> None:
@@ -1117,10 +1121,11 @@ def check_answer_cmd(
     Alapból csak kiírja az eredményt. ``--apply-latest`` esetén a legfrissebb,
     eltárolt megoldásra rá is menti az újraértékelt pontszámot.
     """
+    from sqlalchemy.orm import Session
+
     from felvi_games.ai import check_answer
     from felvi_games.config import get_db_path
     from felvi_games.db import FeladatRecord, FeladatRepository
-    from sqlalchemy.orm import Session
 
     db_path = db or get_db_path()
     if not db_path.exists():
@@ -1135,7 +1140,7 @@ def check_answer_cmd(
         typer.echo(f"[!] Feladat nem található: {feladat_id}")
         raise typer.Exit(code=1)
 
-    typer.echo(f"\n=== GPT válaszellenőrzés ===\n")
+    typer.echo("\n=== GPT válaszellenőrzés ===\n")
     typer.echo(f"  Feladat:       {feladat_id}  [{f.targy}/{f.szint}]")
     typer.echo(f"  Kérdés:        {f.kerdes[:120]}")
     typer.echo(f"  Helyes válasz: {f.helyes_valasz}")
@@ -1205,7 +1210,7 @@ def check_answer_cmd(
 def medal_check_cmd(
     user: Annotated[str, typer.Argument(help="Felhasználó neve (pl. 'Lóri')")],
     db: Annotated[
-        Optional[Path], typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
+        Path | None, typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
     ] = None,
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Megmutatja a duplikátumokat és mit ér el a törlés+újraértékelés, de NEM ment")
@@ -1234,12 +1239,15 @@ def medal_check_cmd(
     --simulate --apply: clear + újraosztás helyes (első tüzelés) időbélyegekkel.
     --clear:    törli az összes szerzett érmet és nulláról értékeli újra (mai dátummal).
     """
-    from felvi_games.achievements import check_new_medals, SZABALY_REGISTRY
+    from collections import Counter
+
+    from sqlalchemy import delete as sa_delete
+    from sqlalchemy import or_, select
+    from sqlalchemy.orm import Session
+
+    from felvi_games.achievements import SZABALY_REGISTRY, check_new_medals
     from felvi_games.config import get_db_path
     from felvi_games.db import EremRecord, FeladatRepository, FelhasznaloEremRecord
-    from sqlalchemy import or_, select, delete as sa_delete
-    from sqlalchemy.orm import Session
-    from collections import Counter
 
     if dry_run and clear:
         typer.echo("[!] A --dry-run és --clear együtt nem használható.")
@@ -1319,12 +1327,16 @@ def medal_check_cmd(
     # ── SIMULATE ─────────────────────────────────────────────────────────
     if simulate:
         from datetime import timezone as _tz
-        from felvi_games.achievements import (
-            SZABALY_REGISTRY, _eval_dynamic_condition, _simulation_as_of,
-        )
-        from felvi_games.db import MegoldasRecord, MenetRecord
+
         from sqlalchemy import update as sa_update
         from sqlalchemy.orm import Session
+
+        from felvi_games.achievements import (
+            SZABALY_REGISTRY,
+            _eval_dynamic_condition,
+            _simulation_as_of,
+        )
+        from felvi_games.db import MegoldasRecord, MenetRecord
 
         # medals that depend on "current time" externally (can't be simulated)
         SKIP_SIM = {"tokeletes_menet", "maraton", "pentek_matek_honap"}
@@ -1343,7 +1355,7 @@ def medal_check_cmd(
                 .order_by(MenetRecord.ended_at)
             ).all())
 
-        def _utc(dt: "datetime") -> "datetime":
+        def _utc(dt: datetime) -> datetime:
             return dt.replace(tzinfo=_tz.utc) if dt.tzinfo is None else dt
 
         all_ts = sorted({_utc(t) for t in megoldas_ts + menet_ts})
@@ -1353,7 +1365,7 @@ def medal_check_cmd(
             return
 
         catalog = repo.get_erem_katalogus(user)
-        first_fire: dict[str, "datetime"] = {}  # erem_id → first-fire timestamp
+        first_fire: dict[str, datetime] = {}  # erem_id → first-fire timestamp
 
         typer.echo(f"\n=== Érem időrendi szimuláció: {user}  (DB: {db_path}) ===")
         typer.echo(f"  {len(all_ts)} esemény · {len(catalog)} katalógus-érem\n")
@@ -1410,7 +1422,7 @@ def medal_check_cmd(
             typer.echo(f"\n  ✅ Duplikált sorok megszűnnek: {', '.join(duplicates.keys())}")
 
         if not apply:
-            typer.echo(f"\n  (Semmi nem változott. Adj hozzá --apply-t a tényleges clear+újraosztáshoz.)\n")
+            typer.echo("\n  (Semmi nem változott. Adj hozzá --apply-t a tényleges clear+újraosztáshoz.)\n")
             return
 
         # ── Apply: clear + re-grant with corrected timestamps ────────────
@@ -1425,7 +1437,6 @@ def medal_check_cmd(
             e = catalog.get(eid)
             if e is None:
                 continue
-            from datetime import timedelta
             expires = ts + timedelta(days=e.ervenyes_napig) if e.ideiglenes and e.ervenyes_napig else None
             repo.grant_erem(user, eid, lejarat_at=expires)
             # Backdate szerzett_at to first-fire time
@@ -1443,15 +1454,18 @@ def medal_check_cmd(
 
     # ── DRY-RUN ──────────────────────────────────────────────────────────
     if dry_run:
-        from datetime import datetime, timezone as _tz
+        from datetime import datetime
+        from datetime import timezone as _tz
+
         from felvi_games.achievements import (
-            SZABALY_REGISTRY, _eval_dynamic_condition, _count_dynamic_condition,
+            SZABALY_REGISTRY,
+            _eval_dynamic_condition,
         )
 
         typer.echo(f"\n=== Érem dry-run szimulació: {user}  (DB: {db_path}) ===\n")
 
         # ── 1. Current state ─────────────────────────────────────────────
-        typer.echo(f"  JELENLEGI ÁLLAPOT")
+        typer.echo("  JELENLEGI ÁLLAPOT")
         typer.echo(f"  Szerzett éremsorok száma: {len(awards)}")
         typer.echo(f"  Egyedi érem-id-k:         {len(counts)}")
 
@@ -1466,7 +1480,7 @@ def medal_check_cmd(
             typer.echo("  ✅ Nincs duplikált érem-sor.")
 
         # ── 2. Simulate clear + reeval ───────────────────────────────────
-        typer.echo(f"\n  SZIMULÁCIÓ (ha --clear futna most)")
+        typer.echo("\n  SZIMULÁCIÓ (ha --clear futna most)")
         typer.echo(f"  Törlésre kerülne: {len(awards)} award-sor")
 
         # Preserve original first-earned timestamps per medal
@@ -1522,12 +1536,12 @@ def medal_check_cmd(
                 typer.echo(f"    • {label}")
 
         # ── 3. Timestamp warning ─────────────────────────────────────────
-        typer.echo(f"\n  ⏰ IDŐBÉLYEG FIGYELMEZTETÉS:")
-        typer.echo(f"  A grant_erem mindig datetime.now()-t használ szerzett_at-nak.")
-        typer.echo(f"  Az eredeti szerzési dátumok ELVESZNEK a --clear után!")
+        typer.echo("\n  ⏰ IDŐBÉLYEG FIGYELMEZTETÉS:")
+        typer.echo("  A grant_erem mindig datetime.now()-t használ szerzett_at-nak.")
+        typer.echo("  Az eredeti szerzési dátumok ELVESZNEK a --clear után!")
         typer.echo(f"  Pl. '🥇 Félszázad' eredetileg: {first_earned.get('felszazad', 'ismeretlen')}")
         typer.echo(f"      újra kiosztva: {now.strftime('%Y-%m-%d %H:%M:%S')} UTC (mai dátum)")
-        typer.echo(f"\n  (Semmi nem változott – ez dry-run volt.)\n")
+        typer.echo("\n  (Semmi nem változott – ez dry-run volt.)\n")
         return
 
     # ── CLEAR + REEVAL ────────────────────────────────────────────────────
@@ -1540,8 +1554,8 @@ def medal_check_cmd(
                 .where(FelhasznaloEremRecord.felhasznalo_nev == user)
             )
             s.commit()
-        typer.echo(f"  ✅ Törölve.")
-        typer.echo(f"  Újraértékelés futtatása...")
+        typer.echo("  ✅ Törölve.")
+        typer.echo("  Újraértékelés futtatása...")
         earned = check_new_medals(user, None, repo)
         if earned:
             typer.echo(f"\n  ✅ Kiosztott érmek ({len(earned)} db):")
@@ -1579,16 +1593,16 @@ def medal_check_cmd(
 @app.command("reeval")
 def reeval_cmd(
     db: Annotated[
-        Optional[Path], typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
+        Path | None, typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
     ] = None,
     user: Annotated[
-        Optional[str], typer.Option("--user", help="Szűrés egy felhasználóra")
+        str | None, typer.Option("--user", help="Szűrés egy felhasználóra")
     ] = None,
     feladat_id: Annotated[
-        Optional[str], typer.Option("--feladat-id", help="Szűrés egy feladatra")
+        str | None, typer.Option("--feladat-id", help="Szűrés egy feladatra")
     ] = None,
     megoldas_id: Annotated[
-        Optional[int], typer.Option("--id", help="Egy konkrét megoldás újraértékelése ID alapján")
+        int | None, typer.Option("--id", help="Egy konkrét megoldás újraértékelése ID alapján")
     ] = None,
     pending: Annotated[
         bool, typer.Option("--pending", help="Csak függő jutalom-feldolgozást futtasson (nem küld GPT-nek)")
@@ -1612,11 +1626,12 @@ def reeval_cmd(
     """
     import json as _json
 
+    from sqlalchemy import select
+    from sqlalchemy.orm import Session
+
     from felvi_games.ai import check_answer
     from felvi_games.config import get_db_path
     from felvi_games.db import FeladatRecord, FeladatRepository, MegoldasRecord
-    from sqlalchemy import select
-    from sqlalchemy.orm import Session
 
     db_path = db or get_db_path()
     if not db_path.exists():
@@ -1686,8 +1701,8 @@ def reeval_cmd(
                 f"{r.feladat_id}  {r.felhasznalo_nev}  "
                 f"  válasz: {str(r.adott_valasz or '')[:60]}"
             )
-        typer.echo(f"\nTipp: felvi reeval --id <ID>   egy konkrét újraértékeléshez")
-        typer.echo(      f"      felvi reeval --user <NÉV>  tömeges újraértékeléshez\n")
+        typer.echo("\nTipp: felvi reeval --id <ID>   egy konkrét újraértékeléshez")
+        typer.echo(      "      felvi reeval --user <NÉV>  tömeges újraértékeléshez\n")
         return
 
     # Reevaluate rows with GPT
@@ -1754,7 +1769,7 @@ def reeval_cmd(
             if earned:
                 typer.echo(f"  ✅ Jutalmak kiosztva: {', '.join(earned)}\n")
     else:
-        typer.echo(f"\n  (Dry-run, semmi nem lett mentve.)\n")
+        typer.echo("\n  (Dry-run, semmi nem lett mentve.)\n")
 
 
 # ---------------------------------------------------------------------------
@@ -1765,7 +1780,7 @@ def reeval_cmd(
 def user_stats_cmd(
     user: Annotated[str, typer.Argument(help="Felhasználó neve (pl. 'Lackó')")],
     db: Annotated[
-        Optional[Path], typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
+        Path | None, typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
     ] = None,
     simulate: Annotated[
         bool, typer.Option("--simulate", help="Éremszabályok szimulációja (nem ment semmit)")
@@ -1830,7 +1845,7 @@ def user_stats_cmd(
         engine = get_engine(db_path)
         earned_ids = {fe.erem_id for fe in stats.eremek}
         sim_results = simulate_medal_rules(user, engine, earned_ids)
-        typer.echo(f"\n--- Éremszabály szimuláció ---")
+        typer.echo("\n--- Éremszabály szimuláció ---")
         typer.echo(f"  {'Érem':<32} {'Teljesül':>8}  Megjegyzés")
         typer.echo("  " + "-" * 60)
         for r in sim_results:
@@ -1859,10 +1874,10 @@ def user_stats_cmd(
 @app.command("medal-clear")
 def medal_clear_cmd(
     db: Annotated[
-        Optional[Path], typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
+        Path | None, typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
     ] = None,
     user: Annotated[
-        Optional[str], typer.Option("--user", help="Csak egy felhasználó érmeinek törlése")
+        str | None, typer.Option("--user", help="Csak egy felhasználó érmeinek törlése")
     ] = None,
     yes: Annotated[
         bool, typer.Option("--yes", "-y", help="Megerősítés kérése nélkül töröl")
@@ -1875,9 +1890,10 @@ def medal_clear_cmd(
     felvi medal-clear --user Lóri   # csak Lóri érme
     felvi medal-clear --yes         # megerősítés nélkül
     """
+    from sqlalchemy import text
+
     from felvi_games.config import get_db_path
     from felvi_games.db import get_engine
-    from sqlalchemy import text
 
     db_path = db or get_db_path()
     if not db_path.exists():
@@ -1923,10 +1939,10 @@ def medal_clear_cmd(
 @app.command("medal-recheck")
 def medal_recheck_cmd(
     db: Annotated[
-        Optional[Path], typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
+        Path | None, typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
     ] = None,
     user: Annotated[
-        Optional[str], typer.Option("--user", help="Csak egy felhasználó kiértékelése")
+        str | None, typer.Option("--user", help="Csak egy felhasználó kiértékelése")
     ] = None,
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Csak listázza a várható érmeket, nem ment")
@@ -1944,6 +1960,9 @@ def medal_recheck_cmd(
     """
     from datetime import datetime, timedelta, timezone
 
+    from sqlalchemy import select
+    from sqlalchemy.orm import Session as _Session
+
     from felvi_games.achievements import (
         _as_utc,
         _cooldown_elapsed,
@@ -1953,9 +1972,7 @@ def medal_recheck_cmd(
         simulate_medal_rules,
     )
     from felvi_games.config import get_db_path
-    from felvi_games.db import FelhasznaloRecord, FeladatRepository, get_engine
-    from sqlalchemy import select
-    from sqlalchemy.orm import Session as _Session
+    from felvi_games.db import FeladatRepository, FelhasznaloRecord, get_engine
 
     db_path = db or get_db_path()
     if not db_path.exists():
@@ -2048,10 +2065,10 @@ def medal_recheck_cmd(
 @app.command("review")
 def review_cmd(
     feladat_id: Annotated[
-        Optional[str], typer.Argument(help="Feladat ID, amire review-t futtatunk")
+        str | None, typer.Argument(help="Feladat ID, amire review-t futtatunk")
     ] = None,
     db: Annotated[
-        Optional[Path], typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
+        Path | None, typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
     ] = None,
     wrong: Annotated[
         bool, typer.Option("--wrong", help="A legtöbbet rontott feladatokat veszi alapul")
@@ -2060,10 +2077,10 @@ def review_cmd(
         int, typer.Option("--limit", help="Max. feldolgozandó feladatok száma (--wrong esetén)")
     ] = 5,
     megjegyzes: Annotated[
-        Optional[str], typer.Option("--megjegyzes", help="Kézi megjegyzés az AI-nak")
+        str | None, typer.Option("--megjegyzes", help="Kézi megjegyzés az AI-nak")
     ] = None,
     model: Annotated[
-        Optional[str], typer.Option("--model", help="LLM modell neve (alap: LLM_MODEL env)")
+        str | None, typer.Option("--model", help="LLM modell neve (alap: LLM_MODEL env)")
     ] = None,
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Futtatja az AI review-t, de nem ment DB-be")
@@ -2161,23 +2178,23 @@ def review_cmd(
 
 @app.command("medal-promote-candidates")
 def medal_promote_candidates_cmd(
-    db: Annotated[Optional[Path], typer.Option("--db", help="SQLite DB útvonala")] = None,
+    db: Annotated[Path | None, typer.Option("--db", help="SQLite DB útvonala")] = None,
     min_users: Annotated[
         int,
         typer.Option("--min-users", help="Minimum felhasználók száma, akiknél megjelent (alap: 2)"),
     ] = 2,
     promote_id: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--promote", help="Érem azonosítója, amelyet nyilvánossá tesz"),
     ] = None,
     new_id: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--new-id", help="Új nyilvános azonosító a promóció során (--promote esetén kötelező)"),
     ] = None,
-    new_nev: Annotated[Optional[str], typer.Option("--new-nev")] = None,
-    new_leiras: Annotated[Optional[str], typer.Option("--new-leiras")] = None,
-    new_ikon: Annotated[Optional[str], typer.Option("--new-ikon")] = None,
-    new_kategoria: Annotated[Optional[str], typer.Option("--new-kategoria")] = None,
+    new_nev: Annotated[str | None, typer.Option("--new-nev")] = None,
+    new_leiras: Annotated[str | None, typer.Option("--new-leiras")] = None,
+    new_ikon: Annotated[str | None, typer.Option("--new-ikon")] = None,
+    new_kategoria: Annotated[str | None, typer.Option("--new-kategoria")] = None,
     ismetelheto: Annotated[
         bool,
         typer.Option("--ismetelheto/--nem-ismetelheto", help="Ismételhető legyen-e a nyilvános érem"),
@@ -2205,6 +2222,7 @@ def medal_promote_candidates_cmd(
     """
     import dataclasses
     import json as _json
+
     from felvi_games.progress_check import find_cross_user_medal_clusters
 
     repo = _get_repo_for_medals(db)
@@ -2262,7 +2280,7 @@ def medal_promote_candidates_cmd(
             )
             typer.echo(f"     Leírás   : {rep.leiras}")
             typer.echo(f"     Feltétel : {_json.dumps(rep.condition, ensure_ascii=False)}")
-            typer.echo(f"     Tagok    :")
+            typer.echo("     Tagok    :")
             for m in cluster.members:
                 user_label = m.cel_felhasznalo or "?"
                 cond_str = _json.dumps(m.condition, ensure_ascii=False) if m.condition else "—"
@@ -2300,8 +2318,9 @@ def medal_promote_candidates_cmd(
         typer.echo("[!] A --new-id megadása kötelező --promote esetén.")
         raise typer.Exit(code=2)
 
-    from felvi_games.db import EremRecord
     from sqlalchemy.orm import Session as _Session
+
+    from felvi_games.db import EremRecord
 
     repo2 = _get_repo_for_medals(db)
     with _Session(repo2._engine) as s:
@@ -2314,7 +2333,6 @@ def medal_promote_candidates_cmd(
             raise typer.Exit(code=1)
         source_erem = source_rec.to_domain()
 
-    from felvi_games.models import Erem
 
     public_medal = dataclasses.replace(
         source_erem,
@@ -2358,13 +2376,13 @@ def report_cmd(
         int, typer.Option("--days", help="Hány napra visszamenőleg (alap: 7)")
     ] = 7,
     output_dir: Annotated[
-        Optional[Path], typer.Option("--output-dir", help="Kimeneti mappa (alap: ./reports/<dátum>_<napok>d/)")
+        Path | None, typer.Option("--output-dir", help="Kimeneti mappa (alap: ./reports/<dátum>_<napok>d/)")
     ] = None,
     user: Annotated[
-        Optional[str], typer.Option("--user", help="Csak egy felhasználó adatai")
+        str | None, typer.Option("--user", help="Csak egy felhasználó adatai")
     ] = None,
     db: Annotated[
-        Optional[Path], typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
+        Path | None, typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
     ] = None,
     open_report: Annotated[
         bool, typer.Option("--open", help="Megnyitja a kimeneti mappát fájlkezelőben")
@@ -2406,7 +2424,8 @@ def report_cmd(
         typer.echo(f"   {f.name}")
 
     if open_report:
-        import subprocess, sys
+        import subprocess
+        import sys
         if sys.platform == "win32":
             subprocess.Popen(["explorer", str(out_dir)])
         elif sys.platform == "darwin":
@@ -2424,13 +2443,13 @@ def report_cmd(
 @app.command("tts-clear")
 def tts_clear_cmd(
     feladat_id: Annotated[
-        Optional[str], typer.Argument(help="Csak ezt a feladatot érinti")
+        str | None, typer.Argument(help="Csak ezt a feladatot érinti")
     ] = None,
     targy: Annotated[
-        Optional[Targy], typer.Option("--targy", help="Csak ezt a tárgyat érinti (matek/magyar)")
+        Targy | None, typer.Option("--targy", help="Csak ezt a tárgyat érinti (matek/magyar)")
     ] = None,
     db: Annotated[
-        Optional[Path], typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
+        Path | None, typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
     ] = None,
 ) -> None:
     """TTS kérdésszöveg (tts_kerdes_szoveg) törlése DB-ből.

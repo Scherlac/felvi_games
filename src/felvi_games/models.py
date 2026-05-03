@@ -126,7 +126,7 @@ class FeladatCsoport:
     max_pont_ossz: int = 1               # csoport összpontszáma
 
     @classmethod
-    def from_record(cls, r: "FeladatCsoportRecord") -> "FeladatCsoport":
+    def from_record(cls, r: FeladatCsoportRecord) -> FeladatCsoport:
         return cls(
             id=r.id,
             targy=r.targy,
@@ -201,7 +201,7 @@ class Feladat:
         return Path(self.ut_pdf_path).name if self.ut_pdf_path else None
 
     @classmethod
-    def from_dict(cls, d: dict, targy: str = "") -> "Feladat":
+    def from_dict(cls, d: dict, targy: str = "") -> Feladat:
         ev_raw = d.get("ev")
         val_raw = d.get("valtozat")
         max_pont_raw = d.get("max_pont", 1)
@@ -231,7 +231,7 @@ class Feladat:
         )
 
     @classmethod
-    def from_record(cls, r: "FeladatRecord") -> "Feladat":
+    def from_record(cls, r: FeladatRecord) -> Feladat:
         return cls(
             id=r.id,
             neh=r.neh,
@@ -276,7 +276,7 @@ class Feladat:
         tts_magyarazat_path: str | None = None,
         tts_kerdes_szoveg: str | None = None,
         tts_kerdes_bemenet_hash: str | None = None,
-    ) -> "Feladat":
+    ) -> Feladat:
         """Return a new Feladat with updated asset path fields (frozen → copy)."""
         return dataclasses.replace(
             self,
@@ -314,7 +314,7 @@ class Ertekeles:
     pont: int
 
     @classmethod
-    def from_dict(cls, d: dict) -> "Ertekeles":
+    def from_dict(cls, d: dict) -> Ertekeles:
         return cls(
             helyes=bool(d.get("helyes", False)),
             visszajelzes=str(d.get("visszajelzes", "")),
@@ -322,7 +322,7 @@ class Ertekeles:
         )
 
     @classmethod
-    def hiba(cls) -> "Ertekeles":
+    def hiba(cls) -> Ertekeles:
         return cls(helyes=False, visszajelzes="Nem sikerült értékelni.", pont=0)
 
 
@@ -434,7 +434,7 @@ class Erem:
     cel_felhasznalo: str | None = None      # specific user this private medal targets
     # --- dynamic condition (LLM-generated, machine-evaluable) ---
     condition: dict | None = None           # structured condition dict; see achievements._eval_dynamic_condition
-    condition_valid_from: "datetime | None" = None  # anchor: count only events AFTER this timestamp
+    condition_valid_from: datetime | None = None  # anchor: count only events AFTER this timestamp
 
 
 @dataclass(frozen=True)

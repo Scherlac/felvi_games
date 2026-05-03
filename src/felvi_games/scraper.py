@@ -43,8 +43,8 @@ from urllib.parse import urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup
 
-from felvi_games.models import KATEGORIA_INFO, KategoriaKulcs, KategoriaNevezektan  # noqa: F401
 from felvi_games.config import get_exams_dir
+from felvi_games.models import KATEGORIA_INFO, KategoriaKulcs, KategoriaNevezektan  # noqa: F401
 
 # ---------------------------------------------------------------------------
 # Konstansok

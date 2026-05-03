@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Sequence
 
 from sqlalchemy import (
     Boolean,
@@ -32,7 +32,6 @@ from sqlalchemy.orm import (
 )
 
 from felvi_games.config import (
-    get_assets_dir,
     get_db_path,
     relative_asset_path,
     resolve_asset,
@@ -81,11 +80,11 @@ class FelhasznaloRecord(Base):
         DateTime, default=lambda: datetime.now(timezone.utc)
     )
 
-    menetek: Mapped[list["MenetRecord"]] = relationship(
+    menetek: Mapped[list[MenetRecord]] = relationship(
         back_populates="felhasznalo", cascade="all, delete-orphan",
         foreign_keys="MenetRecord.felhasznalo_id",
     )
-    eremek_gyujtemeny: Mapped[list["FelhasznaloEremRecord"]] = relationship(
+    eremek_gyujtemeny: Mapped[list[FelhasznaloEremRecord]] = relationship(
         back_populates="felhasznalo", cascade="all, delete-orphan",
         foreign_keys="FelhasznaloEremRecord.felhasznalo_id",
     )
@@ -115,10 +114,10 @@ class MenetRecord(Base):
     )
     ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    felhasznalo: Mapped["FelhasznaloRecord"] = relationship(
+    felhasznalo: Mapped[FelhasznaloRecord] = relationship(
         back_populates="menetek", foreign_keys=[felhasznalo_id]
     )
-    megoldasok: Mapped[list["MegoldasRecord"]] = relationship(back_populates="menet")
+    megoldasok: Mapped[list[MegoldasRecord]] = relationship(back_populates="menet")
 
     def to_domain(self) -> Menet:
         return Menet(
@@ -233,7 +232,7 @@ class FeladatRecord(Base):
     )
 
     # Relationship to user attempts
-    megoldasok: Mapped[list["MegoldasRecord"]] = relationship(
+    megoldasok: Mapped[list[MegoldasRecord]] = relationship(
         back_populates="feladat", cascade="all, delete-orphan"
     )
 
@@ -274,8 +273,8 @@ class MegoldasRecord(Base):
         DateTime, default=lambda: datetime.now(timezone.utc)
     )
 
-    feladat: Mapped["FeladatRecord"] = relationship(back_populates="megoldasok")
-    menet: Mapped["MenetRecord | None"] = relationship(back_populates="megoldasok")
+    feladat: Mapped[FeladatRecord] = relationship(back_populates="megoldasok")
+    menet: Mapped[MenetRecord | None] = relationship(back_populates="megoldasok")
 
 
 class EremRecord(Base):
@@ -405,7 +404,7 @@ class FelhasznaloEremRecord(Base):
     lejarat_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     szamlalo: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
-    felhasznalo: Mapped["FelhasznaloRecord | None"] = relationship(
+    felhasznalo: Mapped[FelhasznaloRecord | None] = relationship(
         back_populates="eremek_gyujtemeny", foreign_keys=[felhasznalo_id]
     )
 
@@ -1649,14 +1648,13 @@ class FeladatRepository:
         min_hibas: int = 1,
         limit: int = 0,
         include_wrong_answers: bool = False,
-    ) -> list["WrongFeladatRow"]:
+    ) -> list[WrongFeladatRow]:
         """Return tasks that received at least *min_hibas* wrong answers.
 
         Results are ordered by wrong-answer count descending.
         When *include_wrong_answers* is True each row's ``hibas_valaszok`` list
         is populated with the actual submitted wrong answers.
         """
-        from collections import Counter
 
         from sqlalchemy import case, func, select
 
@@ -1727,7 +1725,7 @@ class FeladatRepository:
             for r in rows
         ]
 
-    def get_user_stats(self, user_nev: str) -> "UserStats | None":
+    def get_user_stats(self, user_nev: str) -> UserStats | None:
         """Return aggregated statistics for *user_nev*, or None if unknown."""
         from sqlalchemy import case, func, select
 
