@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 from typer.testing import CliRunner
+from sqlalchemy import update
+from sqlalchemy.orm import Session
 
 from felvi_games.cli import app
+from felvi_games.db import FeladatRepository, FelhasznaloEremSzerzesRecord
 from felvi_games.models import Erem
 from felvi_games.progress_check import CloseMedal
 
@@ -88,3 +92,40 @@ def test_medals_generator_inputs_requires_user(tmp_path: Path) -> None:
 
     assert result.exit_code != 0
     assert "--user" in result.output
+
+
+def test_medals_shows_all_earned_dates_for_repeated_medal(tmp_path: Path) -> None:
+    db_file = _empty_db(tmp_path)
+    repo = FeladatRepository(db_path=db_file)
+
+    repo.grant_erem("Lóri", "elso_menet")
+    repo.grant_erem("Lóri", "elso_menet")
+
+    first_dt = datetime(2026, 5, 1, 7, 20, tzinfo=timezone.utc)
+    second_dt = datetime(2026, 5, 3, 8, 10, tzinfo=timezone.utc)
+
+    with Session(repo._engine) as session:
+        ids = [
+            row[0]
+            for row in session.query(FelhasznaloEremSzerzesRecord.id)
+            .filter_by(felhasznalo_nev="Lóri", erem_id="elso_menet")
+            .order_by(FelhasznaloEremSzerzesRecord.id.asc())
+            .all()
+        ]
+        session.execute(
+            update(FelhasznaloEremSzerzesRecord)
+            .where(FelhasznaloEremSzerzesRecord.id == ids[0])
+            .values(szerzett_at=first_dt)
+        )
+        session.execute(
+            update(FelhasznaloEremSzerzesRecord)
+            .where(FelhasznaloEremSzerzesRecord.id == ids[1])
+            .values(szerzett_at=second_dt)
+        )
+        session.commit()
+
+    result = runner.invoke(app, ["medals", "--db", str(db_file), "--user", "Lóri"])
+
+    assert result.exit_code == 0
+    assert "🚀  Első Menet ×2" in result.output
+    assert "Szerezve: 2026-05-03 08:10; 2026-05-01 07:20" in result.output

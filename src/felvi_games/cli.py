@@ -351,7 +351,6 @@ def medals(
         _count_dynamic_condition,
         get_all_medals_for_user,
     )
-    from felvi_games.ai import generate_daily_insight
     from felvi_games.config import get_db_path
     from felvi_games.db import FelhasznaloRecord, FeladatRepository, get_engine
     from felvi_games.models import Erem
@@ -436,6 +435,8 @@ def medals(
         return
 
     if generate_dry_run or generate:
+        from felvi_games.ai import generate_daily_insight
+
         if not user:
             typer.echo("[!] A --generate/--generate-dry-run használatához add meg a --user opciót.")
             raise typer.Exit(code=2)
@@ -656,6 +657,7 @@ def medals(
     typer.echo(f"\n=== Earned Medals  (DB: {db_path}) ===\n")
     for nev in users:
         pairs = get_all_medals_for_user(nev, repo, include_expired=include_expired)
+        szerzes_map = repo.get_erem_szerzesek_map(nev)
         typer.echo(f"👤 {nev}  ({len(pairs)} érem)")
         if not pairs:
             typer.echo("   (még nincs érem)")
@@ -672,7 +674,18 @@ def medals(
                     f"  {erem.ikon}  {erem.nev}{szamlalo}"
                     f"  [{erem.kategoria}]{lejarat}"
                 )
-                typer.echo(f"      Szerezve: {fe.szerzett.strftime('%Y-%m-%d %H:%M')}")
+                szerzesek = szerzes_map.get(erem.id, [])
+                if szerzesek:
+                    stamps = [s.strftime('%Y-%m-%d %H:%M') for s in szerzesek[:fe.szamlalo]]
+                    typer.echo(f"      Szerezve: {'; '.join(stamps)}")
+                    if fe.szamlalo > len(stamps):
+                        missing = fe.szamlalo - len(stamps)
+                        plural = "alkalom" if missing == 1 else "alkalom"
+                        typer.echo(
+                            f"      (+{missing} korábbi {plural}, dátum nélkül - régi adatok)"
+                        )
+                else:
+                    typer.echo(f"      Szerezve: {fe.szerzett.strftime('%Y-%m-%d %H:%M')}")
         typer.echo()
 
 

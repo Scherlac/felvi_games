@@ -420,6 +420,24 @@ class FelhasznaloEremRecord(Base):
         )
 
 
+class FelhasznaloEremSzerzesRecord(Base):
+    """Award history row (one record per medal earn event)."""
+
+    __tablename__ = "felhasznalo_erem_szerzesek"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    felhasznalo_nev: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    felhasznalo_id: Mapped[int | None] = mapped_column(
+        ForeignKey("felhasznalok.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    erem_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    szerzett_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc), index=True
+    )
+
+
 def _ensure_feladat_columns(engine) -> None:
     """Add new columns to the feladatok table on existing databases."""
     new_columns = [
@@ -1400,6 +1418,8 @@ class FeladatRepository:
     ) -> FelhasznaloErem:
         """Grant a medal.  For repeatable medals, increments the counter."""
         with Session(self._engine) as session:
+            now_utc = datetime.now(timezone.utc)
+            user_id = self._get_felhasznalo_id(felhasznalo_nev)
             existing = session.execute(
                 select(FelhasznaloEremRecord)
                 .where(
@@ -1411,20 +1431,32 @@ class FeladatRepository:
 
             if existing:
                 existing.szamlalo += 1
-                existing.szerzett_at = datetime.now(timezone.utc)
+                existing.szerzett_at = now_utc
                 if lejarat_at is not None:
                     existing.lejarat_at = lejarat_at
+                session.add(FelhasznaloEremSzerzesRecord(
+                    felhasznalo_nev=felhasznalo_nev,
+                    felhasznalo_id=user_id,
+                    erem_id=erem_id,
+                    szerzett_at=now_utc,
+                ))
                 session.commit()
                 return existing.to_domain()
             else:
-                user_id = self._get_felhasznalo_id(felhasznalo_nev)
                 rec = FelhasznaloEremRecord(
                     felhasznalo_nev=felhasznalo_nev,
                     felhasznalo_id=user_id,
                     erem_id=erem_id,
+                    szerzett_at=now_utc,
                     lejarat_at=lejarat_at,
                 )
                 session.add(rec)
+                session.add(FelhasznaloEremSzerzesRecord(
+                    felhasznalo_nev=felhasznalo_nev,
+                    felhasznalo_id=user_id,
+                    erem_id=erem_id,
+                    szerzett_at=now_utc,
+                ))
                 session.commit()
                 return rec.to_domain()
 
@@ -1448,6 +1480,26 @@ class FeladatRepository:
     def has_erem(self, felhasznalo_nev: str, erem_id: str) -> bool:
         """True if the user has an active (non-expired) instance of this medal."""
         return any(r.erem_id == erem_id for r in self.get_eremek(felhasznalo_nev))
+
+    def get_erem_szerzesek_map(self, felhasznalo_nev: str) -> dict[str, list[datetime]]:
+        """Return medal award timestamps grouped by medal id (newest first)."""
+        with Session(self._engine) as session:
+            rows = session.execute(
+                select(
+                    FelhasznaloEremSzerzesRecord.erem_id,
+                    FelhasznaloEremSzerzesRecord.szerzett_at,
+                )
+                .where(FelhasznaloEremSzerzesRecord.felhasznalo_nev == felhasznalo_nev)
+                .order_by(
+                    FelhasznaloEremSzerzesRecord.szerzett_at.desc(),
+                    FelhasznaloEremSzerzesRecord.id.desc(),
+                )
+            ).all()
+
+        grouped: dict[str, list[datetime]] = {}
+        for erem_id, szerzett_at in rows:
+            grouped.setdefault(erem_id, []).append(szerzett_at)
+        return grouped
 
     # --- Medal catalog (EremRecord) ---
 

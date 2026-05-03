@@ -9,7 +9,7 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from felvi_games.achievements import _eval_dynamic_condition
-from felvi_games.db import FeladatRepository, MegoldasRecord
+from felvi_games.db import FeladatRepository, FelhasznaloEremSzerzesRecord, MegoldasRecord
 from felvi_games.models import Ertekeles, Feladat, InterakcioTipus
 
 
@@ -359,6 +359,28 @@ class TestDynamicEventConditions:
         with Session(repo._engine) as session:
             remaining = session.query(MegoldasRecord).all()
         assert remaining == []
+
+
+class TestMedalAwardHistory:
+    def test_grant_erem_records_every_award_event(self, repo):
+        repo.grant_erem("Lori", "elso_menet")
+        repo.grant_erem("Lori", "elso_menet")
+        repo.grant_erem("Lori", "elso_menet")
+
+        eremek = repo.get_eremek("Lori", include_expired=True)
+        assert len(eremek) == 1
+        assert eremek[0].szamlalo == 3
+
+        szerzes_map = repo.get_erem_szerzesek_map("Lori")
+        assert "elso_menet" in szerzes_map
+        assert len(szerzes_map["elso_menet"]) == 3
+
+        with Session(repo._engine) as session:
+            rows = session.query(FelhasznaloEremSzerzesRecord).filter_by(
+                felhasznalo_nev="Lori",
+                erem_id="elso_menet",
+            ).all()
+        assert len(rows) == 3
 
 
 # ---------------------------------------------------------------------------
