@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from typer.testing import CliRunner
@@ -11,7 +11,7 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from felvi_games.cli import app
-from felvi_games.db import FeladatRepository, FelhasznaloEremSzerzesRecord
+from felvi_games.db import EremRecord, FeladatRepository, FelhasznaloEremRecord, FelhasznaloEremSzerzesRecord
 from felvi_games.models import Erem
 from felvi_games.progress_check import CloseMedal
 
@@ -129,3 +129,79 @@ def test_medals_shows_all_earned_dates_for_repeated_medal(tmp_path: Path) -> Non
     assert result.exit_code == 0
     assert "×2" in result.output
     assert "Szerezve: 2026-05-03 08:10; 2026-05-01 07:20" in result.output
+
+
+def test_medal_check_policy_fix_makes_temp_one_time_reearnable(tmp_path: Path) -> None:
+    db_file = _empty_db(tmp_path)
+    repo = FeladatRepository(db_path=db_file)
+
+    one_time_temp = Erem(
+        id="dyn_reggeli",
+        nev="Reggeli rajt",
+        leiras="Teszt",
+        ikon="🚀",
+        kategoria="teljesitmeny",
+        ideiglenes=True,
+        ervenyes_napig=1,
+        ismetelheto=False,
+        privat=True,
+        cel_felhasznalo="Lóri",
+        condition={"type": "feladat_count", "n": 1, "window_hours": 2},
+    )
+    repo.upsert_erem(one_time_temp)
+    repo.grant_erem(
+        "Lóri",
+        "dyn_reggeli",
+        lejarat_at=datetime.now(timezone.utc) - timedelta(days=1),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "medal-check",
+            "Lóri",
+            "--db",
+            str(db_file),
+            "--policy-fix",
+            "--dry-run",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "dry-run" in result.output
+
+    with Session(repo._engine) as session:
+        rec_before = session.get(EremRecord, "dyn_reggeli")
+        earned_before = session.query(FelhasznaloEremRecord).filter_by(
+            felhasznalo_nev="Lóri",
+            erem_id="dyn_reggeli",
+        ).first()
+
+    assert rec_before is not None
+    assert rec_before.ismetelheto is False
+    assert earned_before is not None
+    assert earned_before.lejarat_at is not None
+
+    result = runner.invoke(
+        app,
+        [
+            "medal-check",
+            "Lóri",
+            "--db",
+            str(db_file),
+            "--policy-fix",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "Policy fix mentve" in result.output
+
+    with Session(repo._engine) as session:
+        rec = session.get(EremRecord, "dyn_reggeli")
+        earned = session.query(FelhasznaloEremRecord).filter_by(
+            felhasznalo_nev="Lóri",
+            erem_id="dyn_reggeli",
+        ).first()
+
+    assert rec is not None
+    assert rec.ismetelheto is True
+    assert earned is not None
+    assert earned.lejarat_at is None

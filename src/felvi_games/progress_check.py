@@ -585,7 +585,7 @@ def daily_check(
                     kategoria=medal_data.get("kategoria", "teljesitmeny"),
                     ideiglenes=True,
                     ervenyes_napig=ervenyes_napig,
-                    ismetelheto=False,
+                    ismetelheto=True,
                     privat=True,
                     cel_felhasznalo=user,
                     condition=condition if isinstance(condition, dict) else None,

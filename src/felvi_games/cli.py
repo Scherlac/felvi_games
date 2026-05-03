@@ -506,7 +506,7 @@ def medals(
                 kategoria=str(nm.get("kategoria", "teljesitmeny")),
                 ideiglenes=True,
                 ervenyes_napig=int(nm.get("ervenyes_napig", 1) or 1),
-                ismetelheto=False,
+                ismetelheto=True,
                 privat=True,
                 cel_felhasznalo=user,
                 condition=cond if isinstance(cond, dict) else None,
@@ -856,7 +856,7 @@ def medal_grant_cmd(
     ervenyes_napig: Annotated[Optional[int], typer.Option("--ervenyes-napig", help="Lejárat napokban")] = None,
 ) -> None:
     """Érem manuális odaítélése egy felhasználónak (privát érmekhez hasznos)."""
-    from datetime import timedelta
+    from datetime import datetime, timedelta, timezone
     from felvi_games.db import EremRecord
     from sqlalchemy.orm import Session as _Session
 
@@ -867,13 +867,17 @@ def medal_grant_cmd(
         typer.echo(f"[!] Ismeretlen érem azonosító: '{id}'")
         raise typer.Exit(code=1)
 
+    erem = rec.to_domain()
+    if ervenyes_napig and not erem.ismetelheto:
+        typer.echo("[i] Nem ismételhető éremnél a lejárat figyelmen kívül lesz hagyva (örökre megmarad).")
+        ervenyes_napig = None
+
     expires_at = None
     if ervenyes_napig:
         from datetime import datetime, timezone
         expires_at = datetime.now(timezone.utc) + timedelta(days=ervenyes_napig)
 
     fe = repo.grant_erem(felhasznalo, id, lejarat_at=expires_at)
-    erem = rec.to_domain()
     typer.echo(f"✓ {erem.ikon} {erem.nev} → {felhasznalo}  (szerzett #{fe.szamlalo})")
     if expires_at:
         typer.echo(f"  Lejárat: {expires_at.strftime('%Y-%m-%d')}")
@@ -1187,6 +1191,13 @@ def medal_check_cmd(
     apply: Annotated[
         bool, typer.Option("--apply", help="--simulate után ténylegesen törli és helyes időbélyeggel újraosztja az érmeket")
     ] = False,
+    policy_fix: Annotated[
+        bool,
+        typer.Option(
+            "--policy-fix",
+            help="Szabályjavítás: ideiglenes egyedi érmeket ismételhetővé tesz és az egyszeri érmek lejáratát törli",
+        ),
+    ] = False,
 ) -> None:
     """Kiértékeli az összes érem-feltételt és kiosztja a teljesített érmeket.
 
@@ -1197,8 +1208,8 @@ def medal_check_cmd(
     """
     from felvi_games.achievements import check_new_medals, SZABALY_REGISTRY
     from felvi_games.config import get_db_path
-    from felvi_games.db import FeladatRepository, FelhasznaloEremRecord
-    from sqlalchemy import select, delete as sa_delete
+    from felvi_games.db import EremRecord, FeladatRepository, FelhasznaloEremRecord
+    from sqlalchemy import or_, select, delete as sa_delete
     from sqlalchemy.orm import Session
     from collections import Counter
 
@@ -1215,6 +1226,55 @@ def medal_check_cmd(
         raise typer.Exit(code=1)
 
     repo = FeladatRepository(db_path)
+
+    if policy_fix:
+        with Session(repo._engine) as s:
+            temp_one_time = s.execute(
+                select(EremRecord)
+                .where(
+                    EremRecord.ideiglenes.is_(True),
+                    EremRecord.ismetelheto.is_(False),
+                    or_(
+                        EremRecord.cel_felhasznalo.is_(None),
+                        EremRecord.cel_felhasznalo == user,
+                    ),
+                )
+                .order_by(EremRecord.created_at.desc())
+            ).scalars().all()
+
+            non_repeatable_ids = list(s.scalars(
+                select(EremRecord.id).where(EremRecord.ismetelheto.is_(False))
+            ))
+            expiring_one_time_rows = []
+            if non_repeatable_ids:
+                expiring_one_time_rows = s.execute(
+                    select(FelhasznaloEremRecord)
+                    .where(
+                        FelhasznaloEremRecord.felhasznalo_nev == user,
+                        FelhasznaloEremRecord.lejarat_at.is_not(None),
+                        FelhasznaloEremRecord.erem_id.in_(non_repeatable_ids),
+                    )
+                ).scalars().all()
+
+            typer.echo("\n=== Érem policy fix (non-repeatable=örök, temporary=újra szerezhető) ===")
+            typer.echo(f"  Temporary one-time → repeatable: {len(temp_one_time)}")
+            for rec in temp_one_time[:20]:
+                typer.echo(f"    • {rec.id}  ({rec.nev})")
+            if len(temp_one_time) > 20:
+                typer.echo(f"    ... +{len(temp_one_time) - 20} további")
+
+            typer.echo(f"  Expiring one-time earned rows to normalize: {len(expiring_one_time_rows)}")
+
+            if not dry_run:
+                for rec in temp_one_time:
+                    rec.ismetelheto = True
+                for row in expiring_one_time_rows:
+                    row.lejarat_at = None
+                s.commit()
+                typer.echo("  ✅ Policy fix mentve.")
+            else:
+                typer.echo("  (dry-run: nincs mentés)")
+            typer.echo()
 
     # ── Fetch all current award rows ──────────────────────────────────────
     with Session(repo._engine) as s:
@@ -1854,7 +1914,16 @@ def medal_recheck_cmd(
     felvi medal-recheck --user Lóri   # csak Lóri
     felvi medal-recheck --dry-run     # csak kiírja, nem ment
     """
-    from felvi_games.achievements import check_new_medals, simulate_medal_rules
+    from datetime import datetime, timedelta, timezone
+
+    from felvi_games.achievements import (
+        _as_utc,
+        _cooldown_elapsed,
+        _eval_dynamic_condition,
+        _repeatable_has_fresh_signal,
+        check_new_medals,
+        simulate_medal_rules,
+    )
     from felvi_games.config import get_db_path
     from felvi_games.db import FelhasznaloRecord, FeladatRepository, get_engine
     from sqlalchemy import select
@@ -1882,8 +1951,45 @@ def medal_recheck_cmd(
         if dry_run:
             earned_ids = {fe.erem_id for fe in repo.get_eremek(nev, include_expired=True)}
             results = simulate_medal_rules(nev, engine, earned_ids)
+            catalog = repo.get_erem_katalogus(nev)
+            latest_awards = {
+                eid: _as_utc(stamps[0])
+                for eid, stamps in repo.get_erem_szerzesek_map(nev).items()
+                if stamps
+            }
             new_pending = [r for r in results if r.result and not r.already_earned]
-            would_repeat = [r for r in results if r.result and r.already_earned and r.ismetelheto]
+            would_repeat = []
+            for r in results:
+                if not (r.result and r.already_earned and r.ismetelheto):
+                    continue
+                erem = catalog.get(r.erem_id)
+                if erem is None:
+                    continue
+                last_award_at = latest_awards.get(r.erem_id)
+                if last_award_at is None:
+                    would_repeat.append(r)
+                    continue
+                if not _cooldown_elapsed(r.erem_id, last_award_at, datetime.now(timezone.utc)):
+                    continue
+                if erem.condition:
+                    cond_anchor = erem.condition_valid_from
+                    cond_anchor_utc = _as_utc(cond_anchor) if cond_anchor is not None else None
+                    from_anchor = last_award_at + timedelta(microseconds=1)
+                    if cond_anchor_utc is not None and cond_anchor_utc > from_anchor:
+                        from_anchor = cond_anchor_utc
+                    try:
+                        fresh_signal = _eval_dynamic_condition(
+                            nev,
+                            erem.condition,
+                            engine,
+                            valid_from=from_anchor,
+                        )
+                    except Exception:
+                        fresh_signal = False
+                else:
+                    fresh_signal = _repeatable_has_fresh_signal(r.erem_id, nev, engine, last_award_at)
+                if fresh_signal:
+                    would_repeat.append(r)
             if new_pending:
                 for r in new_pending:
                     typer.echo(f"  🏅 {r.ikon} {r.nev}  → ÚJ")

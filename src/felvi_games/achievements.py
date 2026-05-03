@@ -46,6 +46,20 @@ logger = logging.getLogger(__name__)
 # that moment is "now" (i.e. only events up to that timestamp are visible).
 _simulation_as_of: ContextVar["datetime | None"] = ContextVar("_simulation_as_of", default=None)
 
+# Repeatable medals should not trigger back-to-back from historical data.
+# Cooldown is in hours, per medal id. Unlisted repeatables use the default.
+_REPEATABLE_COOLDOWN_DEFAULT_HOURS = 12
+_REPEATABLE_COOLDOWN_HOURS: dict[str, int] = {
+    "villam": 2,
+    "reggeli_tanulas": 20,
+    "esti_tanulas": 20,
+    "heti_haromszor": 24,
+    "het_egymas_utan": 24,
+    "heti_bajnok": 24,
+    "pentek_matek_honap": 24,
+    "tokeletes_menet": 4,
+}
+
 
 # ---------------------------------------------------------------------------
 # Medal catalog
@@ -300,6 +314,81 @@ def _sim_now() -> datetime:
     """Return the simulation reference time, or actual now."""
     t = _simulation_as_of.get()
     return t if t is not None else datetime.now(timezone.utc)
+
+
+def _as_utc(dt: datetime) -> datetime:
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+
+
+def _cooldown_elapsed(erem_id: str, last_award_at: datetime, now: datetime) -> bool:
+    hours = _REPEATABLE_COOLDOWN_HOURS.get(erem_id, _REPEATABLE_COOLDOWN_DEFAULT_HOURS)
+    return now >= (_as_utc(last_award_at) + timedelta(hours=hours))
+
+
+def _has_new_attempt_after(user: str, engine: "Engine", since: datetime, *, hour_cmp: str | None = None, hour_val: int | None = None, require_fast_correct: bool = False) -> bool:
+    from felvi_games.db import MegoldasRecord
+
+    since_utc = _as_utc(since)
+    _as_of = _simulation_as_of.get()
+    with Session(engine) as s:
+        stmt = (
+            select(func.count()).select_from(MegoldasRecord)
+            .where(
+                MegoldasRecord.felhasznalo_nev == user,
+                MegoldasRecord.created_at > since_utc,
+            )
+        )
+        if _as_of is not None:
+            stmt = stmt.where(MegoldasRecord.created_at <= _as_of)
+        if require_fast_correct:
+            stmt = stmt.where(
+                MegoldasRecord.helyes.is_(True),
+                MegoldasRecord.elapsed_sec.is_not(None),
+                MegoldasRecord.elapsed_sec <= 10.0,
+            )
+        if hour_cmp is not None and hour_val is not None:
+            hh = f"{hour_val:02d}"
+            local_h = func.strftime("%H", func.datetime(MegoldasRecord.created_at, "localtime"))
+            if hour_cmp == "lt":
+                stmt = stmt.where(local_h < hh)
+            elif hour_cmp == "ge":
+                stmt = stmt.where(local_h >= hh)
+        return (s.scalar(stmt) or 0) > 0
+
+
+def _has_new_activity_after(user: str, engine: "Engine", since: datetime) -> bool:
+    from felvi_games.db import InterakcioRecord, MegoldasRecord, MenetRecord
+
+    since_utc = _as_utc(since)
+    _as_of = _simulation_as_of.get()
+    with Session(engine) as s:
+        m_stmt = (
+            select(func.count()).select_from(MegoldasRecord)
+            .where(MegoldasRecord.felhasznalo_nev == user, MegoldasRecord.created_at > since_utc)
+        )
+        n_stmt = (
+            select(func.count()).select_from(MenetRecord)
+            .where(MenetRecord.felhasznalo_nev == user, MenetRecord.started_at > since_utc)
+        )
+        i_stmt = (
+            select(func.count()).select_from(InterakcioRecord)
+            .where(InterakcioRecord.felhasznalo_nev == user, InterakcioRecord.created_at > since_utc)
+        )
+        if _as_of is not None:
+            m_stmt = m_stmt.where(MegoldasRecord.created_at <= _as_of)
+            n_stmt = n_stmt.where(MenetRecord.started_at <= _as_of)
+            i_stmt = i_stmt.where(InterakcioRecord.created_at <= _as_of)
+        return (s.scalar(m_stmt) or 0) > 0 or (s.scalar(n_stmt) or 0) > 0 or (s.scalar(i_stmt) or 0) > 0
+
+
+def _repeatable_has_fresh_signal(erem_id: str, user: str, engine: "Engine", last_award_at: datetime) -> bool:
+    if erem_id == "villam":
+        return _has_new_attempt_after(user, engine, last_award_at, require_fast_correct=True)
+    if erem_id == "reggeli_tanulas":
+        return _has_new_attempt_after(user, engine, last_award_at, hour_cmp="lt", hour_val=8)
+    if erem_id == "esti_tanulas":
+        return _has_new_attempt_after(user, engine, last_award_at, hour_cmp="ge", hour_val=22)
+    return _has_new_activity_after(user, engine, last_award_at)
 
 
 def _distinct_play_days(session: Session, user: str, from_dt: datetime | None = None) -> list[datetime]:
@@ -985,56 +1074,40 @@ def _count_dynamic_condition(
         elif ctype == "feladat_subject":
             subject = condition.get("subject", "")
             from felvi_games.db import MenetRecord as MR
-            stmt = (select(func.count()).select_from(MegoldasRecord)
-                    .join(MR, MR.id == MegoldasRecord.menet_id)
-                    .where(MegoldasRecord.felhasznalo_nev == user,
-                           MR.targy == subject,
-                           MegoldasRecord.created_at >= cutoff))
-            if upper is not None:
-                stmt = stmt.where(MegoldasRecord.created_at <= upper)
-            cnt = s.scalar(stmt) or 0
-            return cnt >= n
-
-        elif ctype == "before_hour":
-            hour = int(condition.get("hour", 8))
-            stmt = (select(func.count()).select_from(MegoldasRecord)
-                    .where(MegoldasRecord.felhasznalo_nev == user,
-                           MegoldasRecord.created_at >= cutoff,
-                           func.strftime("%H", func.datetime(MegoldasRecord.created_at, "localtime")) < f"{hour:02d}"))
-            if upper is not None:
-                stmt = stmt.where(MegoldasRecord.created_at <= upper)
-            cnt = s.scalar(stmt) or 0
-            return cnt >= n
-
-        elif ctype == "after_hour":
-            hour = int(condition.get("hour", 22))
-            stmt = (select(func.count()).select_from(MegoldasRecord)
-                    .where(MegoldasRecord.felhasznalo_nev == user,
-                           MegoldasRecord.created_at >= cutoff,
-                           func.strftime("%H", func.datetime(MegoldasRecord.created_at, "localtime")) >= f"{hour:02d}"))
-            if upper is not None:
-                stmt = stmt.where(MegoldasRecord.created_at <= upper)
-            cnt = s.scalar(stmt) or 0
-            return cnt >= n
-
-        elif ctype == "session_count":
-            stmt = (select(func.count()).select_from(MenetRecord)
-                    .where(MenetRecord.felhasznalo_nev == user,
-                           MenetRecord.started_at >= cutoff))
-            if upper is not None:
-                stmt = stmt.where(MenetRecord.started_at <= upper)
-            cnt = s.scalar(stmt) or 0
-            return cnt >= n
-
-        elif ctype == "feladat_subject":
-            subject = condition.get("subject", "")
-            from felvi_games.db import MenetRecord as MR
             cnt = s.scalar(
                 select(func.count()).select_from(MegoldasRecord)
                 .join(MR, MR.id == MegoldasRecord.menet_id)
                 .where(MegoldasRecord.felhasznalo_nev == user,
                        MR.targy == subject,
                        MegoldasRecord.created_at >= cutoff)
+            ) or 0
+            return cnt, n
+
+        elif ctype == "before_hour":
+            hour = int(condition.get("hour", 8))
+            cnt = s.scalar(
+                select(func.count()).select_from(MegoldasRecord)
+                .where(MegoldasRecord.felhasznalo_nev == user,
+                       MegoldasRecord.created_at >= cutoff,
+                       func.strftime("%H", func.datetime(MegoldasRecord.created_at, "localtime")) < f"{hour:02d}")
+            ) or 0
+            return cnt, n
+
+        elif ctype == "after_hour":
+            hour = int(condition.get("hour", 22))
+            cnt = s.scalar(
+                select(func.count()).select_from(MegoldasRecord)
+                .where(MegoldasRecord.felhasznalo_nev == user,
+                       MegoldasRecord.created_at >= cutoff,
+                       func.strftime("%H", func.datetime(MegoldasRecord.created_at, "localtime")) >= f"{hour:02d}")
+            ) or 0
+            return cnt, n
+
+        elif ctype == "session_count":
+            cnt = s.scalar(
+                select(func.count()).select_from(MenetRecord)
+                .where(MenetRecord.felhasznalo_nev == user,
+                       MenetRecord.started_at >= cutoff)
             ) or 0
             return cnt, n
 
@@ -1114,9 +1187,16 @@ def check_new_medals(
     """
     engine = repo._engine
     newly_earned: list[Erem] = []
-    now = datetime.now(timezone.utc)
+    now = _sim_now()
 
     catalog = repo.get_erem_katalogus(user)
+    earned_any_ids = {fe.erem_id for fe in repo.get_eremek(user, include_expired=True)}
+    szerzes_map = repo.get_erem_szerzesek_map(user)
+    latest_award_by_id = {
+        erem_id: _as_utc(stamps[0])
+        for erem_id, stamps in szerzes_map.items()
+        if stamps
+    }
 
     logger.info(
         "check_new_medals start | user=%s session=%s catalog_size=%d",
@@ -1124,14 +1204,30 @@ def check_new_medals(
     )
 
     skipped_already_has = 0
+    skipped_cooldown = 0
+    skipped_no_new_signal = 0
     skipped_no_rule = 0
     rule_errors: list[str] = []
 
     for erem_id, erem in catalog.items():
+        last_award_at = latest_award_by_id.get(erem_id)
+
         # Non-repeatable + already earned → skip
-        if not erem.ismetelheto and repo.has_erem(user, erem_id):
+        if not erem.ismetelheto and erem_id in earned_any_ids:
             skipped_already_has += 1
             logger.debug("skip already_earned | user=%s medal=%s", user, erem_id)
+            continue
+
+        # Repeatable medals need a cooldown so historical truth does not re-fire instantly.
+        if erem.ismetelheto and last_award_at is not None and not _cooldown_elapsed(erem_id, last_award_at, now):
+            skipped_cooldown += 1
+            logger.debug(
+                "skip cooldown | user=%s medal=%s last_award=%s now=%s",
+                user,
+                erem_id,
+                last_award_at.isoformat(),
+                now.isoformat(),
+            )
             continue
 
         # No rule registered → check for dynamic condition, else manual-grant only
@@ -1173,8 +1269,38 @@ def check_new_medals(
         )
 
         if earned:
+            if erem.ismetelheto and last_award_at is not None:
+                if erem.condition:
+                    cond_anchor = erem.condition_valid_from
+                    cond_anchor_utc = _as_utc(cond_anchor) if cond_anchor is not None else None
+                    from_anchor = last_award_at + timedelta(microseconds=1)
+                    if cond_anchor_utc is not None and cond_anchor_utc > from_anchor:
+                        from_anchor = cond_anchor_utc
+                    try:
+                        fresh_signal = _eval_dynamic_condition(
+                            user,
+                            erem.condition,
+                            engine,
+                            valid_from=from_anchor,
+                        )
+                    except Exception:
+                        fresh_signal = False
+                else:
+                    fresh_signal = _repeatable_has_fresh_signal(erem_id, user, engine, last_award_at)
+
+                if not fresh_signal:
+                    skipped_no_new_signal += 1
+                    logger.debug(
+                        "skip no_new_signal | user=%s medal=%s last_award=%s",
+                        user,
+                        erem_id,
+                        last_award_at.isoformat(),
+                    )
+                    continue
+
             expires_at: datetime | None = None
-            if erem.ideiglenes and erem.ervenyes_napig:
+            # Expiry is only used for repeatable medals; one-time medals stay in history forever.
+            if erem.ideiglenes and erem.ismetelheto and erem.ervenyes_napig:
                 expires_at = now + timedelta(days=erem.ervenyes_napig)
             repo.grant_erem(user, erem_id, lejarat_at=expires_at)
             newly_earned.append(erem)
@@ -1186,9 +1312,11 @@ def check_new_medals(
 
     logger.info(
         "check_new_medals done | user=%s session=%s granted=%d "
-        "skipped_owned=%d skipped_no_rule=%d errors=%d",
+        "skipped_owned=%d skipped_cooldown=%d skipped_no_new_signal=%d "
+        "skipped_no_rule=%d errors=%d",
         user, session_id, len(newly_earned),
-        skipped_already_has, skipped_no_rule, len(rule_errors),
+        skipped_already_has, skipped_cooldown, skipped_no_new_signal,
+        skipped_no_rule, len(rule_errors),
     )
     if rule_errors:
         logger.warning("rule_errors detail | user=%s medals=%s", user, rule_errors)

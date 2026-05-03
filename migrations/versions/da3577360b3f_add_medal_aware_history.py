@@ -36,6 +36,19 @@ def upgrade() -> None:
         batch_op.create_index(batch_op.f('ix_felhasznalo_erem_szerzesek_felhasznalo_nev'), ['felhasznalo_nev'], unique=False)
         batch_op.create_index(batch_op.f('ix_felhasznalo_erem_szerzesek_szerzett_at'), ['szerzett_at'], unique=False)
 
+    # Non-repeatable medals stay in user history permanently.
+    # Clear legacy expiry timestamps from already earned one-time medals.
+    op.execute(
+        """
+        UPDATE felhasznalo_eremek
+        SET lejarat_at = NULL
+        WHERE lejarat_at IS NOT NULL
+          AND erem_id IN (
+              SELECT id FROM eremek WHERE COALESCE(ismetelheto, 0) = 0
+          )
+        """
+    )
+
     # ### end Alembic commands ###
 
 
