@@ -654,7 +654,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--coverage-cache-max-age-minutes",
         type=float,
-        default=20.0,
+        default=10.0,
         help="Reuse coverage data file when it is newer than this many minutes.",
     )
     parser.add_argument(
@@ -680,35 +680,55 @@ def _write_text(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def _is_strictly_better(current: Snapshot, baseline: Snapshot) -> bool:
-    """Return True only if current is at least as good on every metric and
-    strictly better on at least one — no metric may have worsened."""
-    worse = (
-        current.avg_cc > baseline.avg_cc
-        or current.p95_cc > baseline.p95_cc
-        or current.d_or_worse_blocks > baseline.d_or_worse_blocks
-        or current.f_blocks > baseline.f_blocks
-        or len(current.parse_error_files) > len(baseline.parse_error_files)
-        or (
-            baseline.coverage_pct is not None
-            and (current.coverage_pct is None or current.coverage_pct < baseline.coverage_pct)
-        )
-    )
-    if worse:
-        return False
-    improved = (
-        current.avg_cc < baseline.avg_cc
-        or current.p95_cc < baseline.p95_cc
-        or current.d_or_worse_blocks < baseline.d_or_worse_blocks
-        or current.f_blocks < baseline.f_blocks
-        or len(current.parse_error_files) < len(baseline.parse_error_files)
-        or (
-            current.coverage_pct is not None
-            and baseline.coverage_pct is not None
-            and current.coverage_pct > baseline.coverage_pct
-        )
-    )
-    return improved
+def _ratchet_baseline_individual_metrics(
+    current: Snapshot,
+    baseline: Snapshot,
+) -> tuple[Snapshot | None, list[str]]:
+    """Return a partially-ratcheted baseline and changed metric names.
+
+    Each metric ratchets independently:
+      - lower is better: avg_cc, p95_cc, d_or_worse_blocks, f_blocks,
+        parse_error_files count
+      - higher is better: coverage_pct
+    """
+    payload = asdict(baseline)
+    changed: list[str] = []
+
+    if current.avg_cc < baseline.avg_cc:
+        payload["avg_cc"] = current.avg_cc
+        changed.append("avg_cc")
+
+    if current.p95_cc < baseline.p95_cc:
+        payload["p95_cc"] = current.p95_cc
+        changed.append("p95_cc")
+
+    if current.d_or_worse_blocks < baseline.d_or_worse_blocks:
+        payload["d_or_worse_blocks"] = current.d_or_worse_blocks
+        changed.append("d_or_worse_blocks")
+
+    if current.f_blocks < baseline.f_blocks:
+        payload["f_blocks"] = current.f_blocks
+        changed.append("f_blocks")
+
+    if len(current.parse_error_files) < len(baseline.parse_error_files):
+        payload["parse_error_files"] = list(current.parse_error_files)
+        changed.append("parse_error_files")
+
+    if current.coverage_pct is not None and (
+        baseline.coverage_pct is None or current.coverage_pct > baseline.coverage_pct
+    ):
+        payload["coverage_pct"] = current.coverage_pct
+        payload["coverage_files"] = current.coverage_files
+        payload["low_coverage_files"] = list(current.low_coverage_files)
+        payload["coverage_error"] = current.coverage_error
+        payload["coverage_source"] = current.coverage_source
+        changed.append("coverage_pct")
+
+    if not changed:
+        return None, []
+
+    payload["generated_at_utc"] = current.generated_at_utc
+    return _snapshot_from_json(payload), changed
 
 
 def main() -> int:
@@ -812,13 +832,42 @@ def main() -> int:
         return 2 if args.strict else 0
 
     print(f"QUALITY_GATE: {gate.status}")
+    if baseline is not None:
+        def _fmt_delta(val: float, invert: bool = False) -> str:
+            sign = "+" if val > 0 else ""
+            indicator = ""
+            if val != 0:
+                indicator = " ✓" if (val < 0) != invert else " ✗"
+            return f"{sign}{val:.3g}{indicator}"
+        print(
+            f"  avg CC    {current.avg_cc:.3g}"
+            f"  (Δ {_fmt_delta(current.avg_cc - baseline.avg_cc)})"
+        )
+        print(
+            f"  F blocks  {current.f_blocks}"
+            f"  (Δ {_fmt_delta(current.f_blocks - baseline.f_blocks)})"
+        )
+        print(
+            f"  D/E/F     {current.d_or_worse_blocks}"
+            f"  (Δ {_fmt_delta(current.d_or_worse_blocks - baseline.d_or_worse_blocks)})"
+        )
+        if current.coverage_pct is not None and baseline.coverage_pct is not None:
+            print(
+                f"  coverage  {current.coverage_pct:.2f}%"
+                f"  (Δ {_fmt_delta(current.coverage_pct - baseline.coverage_pct, invert=True)})"
+            )
     print(f"Report written: {report_path}")
 
-    # Auto-ratchet: if the run passed and the code genuinely improved on every
-    # key metric, lock in the better score so future runs are held to the new bar.
-    if gate.status == "PASS" and baseline is not None and _is_strictly_better(current, baseline):
-        _write_json(baseline_path, asdict(current))
-        print("Baseline auto-updated: current scores are strictly better (ratchet).")
+    # Auto-ratchet (per metric): on PASS, lock in any individual metric
+    # improvements without requiring all metrics to improve together.
+    if gate.status == "PASS" and baseline is not None:
+        ratcheted, changed_metrics = _ratchet_baseline_individual_metrics(current, baseline)
+        if ratcheted is not None:
+            _write_json(baseline_path, asdict(ratcheted))
+            print(
+                "Baseline auto-updated (per-metric ratchet): "
+                + ", ".join(changed_metrics)
+            )
 
     if gate.status == "FAIL" and args.strict:
         return 1

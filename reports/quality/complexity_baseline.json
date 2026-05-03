@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generated_at_utc": "2026-05-03T08:01:57+00:00",
+  "generated_at_utc": "2026-05-03T08:51:53+00:00",
   "paths": [
     "src",
     "tests"
@@ -10,8 +10,8 @@
   "total_sloc": 11354,
   "total_blank": 2144,
   "avg_mi": 40.332,
-  "avg_cc": 4.819,
-  "p95_cc": 17.0,
+  "avg_cc": 4.672,
+  "p95_cc": 16.0,
   "counts_by_rank": {
     "A": 459,
     "B": 52,
@@ -20,8 +20,8 @@
     "E": 5,
     "F": 5
   },
-  "d_or_worse_blocks": 19,
-  "f_blocks": 5,
+  "d_or_worse_blocks": 18,
+  "f_blocks": 4,
   "parse_error_files": [],
   "blocks": [
     {
@@ -4045,15 +4045,9 @@
       "rank": "D"
     }
   ],
-  "coverage_pct": 50.421,
+  "coverage_pct": 52.317,
   "coverage_files": 14,
   "low_coverage_files": [
-    {
-      "file": "src/felvi_games/medal_assets.py",
-      "coverage_pct": 0.0,
-      "covered_lines": 0,
-      "num_statements": 32
-    },
     {
       "file": "src/felvi_games/report.py",
       "coverage_pct": 0.0,
@@ -4065,12 +4059,6 @@
       "coverage_pct": 0.0,
       "covered_lines": 0,
       "num_statements": 187
-    },
-    {
-      "file": "src/felvi_games/status.py",
-      "coverage_pct": 0.0,
-      "covered_lines": 0,
-      "num_statements": 72
     },
     {
       "file": "src/felvi_games/cli.py",
@@ -4092,9 +4080,15 @@
     },
     {
       "file": "src/felvi_games/achievements.py",
-      "coverage_pct": 66.722,
-      "covered_lines": 405,
-      "num_statements": 607
+      "coverage_pct": 66.775,
+      "covered_lines": 412,
+      "num_statements": 617
+    },
+    {
+      "file": "src/felvi_games/status.py",
+      "coverage_pct": 75.0,
+      "covered_lines": 54,
+      "num_statements": 72
     },
     {
       "file": "src/felvi_games/pdf_parser.py",
@@ -4107,8 +4101,14 @@
       "coverage_pct": 76.499,
       "covered_lines": 319,
       "num_statements": 417
+    },
+    {
+      "file": "src/felvi_games/models.py",
+      "coverage_pct": 80.364,
+      "covered_lines": 221,
+      "num_statements": 275
     }
   ],
   "coverage_error": null,
-  "coverage_source": "cached .coverage (7.15 min old)"
+  "coverage_source": "fresh test run via --coverage-command"
 }
