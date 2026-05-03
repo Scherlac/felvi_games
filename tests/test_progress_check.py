@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import dataclasses
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from felvi_games.db import InterakcioRecord, MegoldasRecord, MenetRecord
-from felvi_games.models import Ertekeles, InterakcioTipus
-from felvi_games.progress_check import get_user_stats
+from felvi_games.models import Erem, Ertekeles, InterakcioTipus
+from felvi_games.progress_check import daily_check, get_user_stats
 
 
 def test_get_user_stats_includes_trends_patterns_and_events(repo, feladat_matek, feladat_magyar) -> None:
@@ -104,3 +105,129 @@ def test_get_user_stats_includes_trends_patterns_and_events(repo, feladat_matek,
     assert stats["events"]["reevaluation_improved_last_7d"] == 1
     assert stats["events"]["pending_reward_attempts"] == 0
     assert InterakcioTipus.HELYES_VALASZ.value in {item["type"] for item in stats["events"]["recent"]}
+
+
+def test_daily_check_rejects_overlapping_dynamic_medal(repo) -> None:
+    user = "Lori"
+    repo.upsert_erem(
+        Erem(
+            id="daily_lori_existing",
+            nev="Esti ötös",
+            leiras="Oldj meg 5 esti feladatot!",
+            ikon="🌙",
+            kategoria="rendszeresseg",
+            ideiglenes=True,
+            ervenyes_napig=1,
+            ismetelheto=True,
+            privat=True,
+            cel_felhasznalo=user,
+            condition={"type": "after_hour", "hour": 22, "n": 5, "window_hours": 12},
+        )
+    )
+
+    ai_result = {
+        "greeting": "Szia",
+        "new_medal": {
+            "nev": "Késő esti ötös",
+            "leiras": "Oldj meg 6 feladatot 22 óra után!",
+            "ikon": "🦉",
+            "kategoria": "rendszeresseg",
+            "ervenyes_napig": 1,
+            "condition": {"type": "after_hour", "hour": 22, "n": 6, "window_hours": 10},
+        },
+    }
+    base_stats = {
+        "total_attempts": 0,
+        "correct": 0,
+        "accuracy_pct": 0.0,
+        "completed_sessions": 0,
+        "current_streak_days": 0,
+        "recent_days_7d": 0,
+        "best_correct_streak": 0,
+        "subjects_used": [],
+        "events": {"counts_last_24h": {}},
+    }
+
+    with (
+        patch("felvi_games.progress_check.get_user_stats", return_value=base_stats),
+        patch("felvi_games.progress_check.estimate_close_medals", return_value=[]),
+        patch("felvi_games.progress_check.random.random", return_value=0.0),
+        patch("felvi_games.progress_check.random.choice", return_value=12),
+        patch("felvi_games.ai.generate_daily_insight", return_value=ai_result),
+        patch("felvi_games.ai.judge_medal_novelty", return_value={"reasonably_different": False, "reason": "too similar"}),
+        patch("felvi_games.ai.refine_daily_medal", return_value=None),
+    ):
+        insight = daily_check(user, repo, force=True)
+
+    assert insight is not None
+    assert insight.greeting == "Szia"
+    assert insight.new_medal_created is False
+    dynamic_medals = [erem for erem in repo.get_erem_katalogus(user).values() if erem.id.startswith("daily_")]
+    assert [erem.id for erem in dynamic_medals] == ["daily_lori_existing"]
+
+
+def test_daily_check_refines_overlapping_dynamic_medal(repo) -> None:
+    user = "Lori"
+    repo.upsert_erem(
+        Erem(
+            id="daily_lori_existing",
+            nev="Esti ötös",
+            leiras="Oldj meg 5 esti feladatot!",
+            ikon="🌙",
+            kategoria="rendszeresseg",
+            ideiglenes=True,
+            ervenyes_napig=1,
+            ismetelheto=True,
+            privat=True,
+            cel_felhasznalo=user,
+            condition={"type": "after_hour", "hour": 22, "n": 5, "window_hours": 12},
+        )
+    )
+
+    ai_result = {
+        "greeting": "Szia",
+        "new_medal": {
+            "nev": "Késő esti ötös",
+            "leiras": "Oldj meg 6 feladatot 22 óra után!",
+            "ikon": "🦉",
+            "kategoria": "rendszeresseg",
+            "ervenyes_napig": 1,
+            "condition": {"type": "after_hour", "hour": 22, "n": 6, "window_hours": 10},
+        },
+    }
+    refined = {
+        "nev": "Reggeli rajt",
+        "leiras": "Oldj meg 4 feladatot reggel 8 előtt!",
+        "ikon": "🌅",
+        "kategoria": "rendszeresseg",
+        "ervenyes_napig": 1,
+        "condition": {"type": "before_hour", "hour": 8, "n": 4, "window_hours": 8},
+    }
+    base_stats = {
+        "total_attempts": 0,
+        "correct": 0,
+        "accuracy_pct": 0.0,
+        "completed_sessions": 0,
+        "current_streak_days": 0,
+        "recent_days_7d": 0,
+        "best_correct_streak": 0,
+        "subjects_used": [],
+        "events": {"counts_last_24h": {}},
+    }
+
+    with (
+        patch("felvi_games.progress_check.get_user_stats", return_value=base_stats),
+        patch("felvi_games.progress_check.estimate_close_medals", return_value=[]),
+        patch("felvi_games.progress_check.random.random", return_value=0.0),
+        patch("felvi_games.progress_check.random.choice", return_value=12),
+        patch("felvi_games.ai.generate_daily_insight", return_value=ai_result),
+        patch("felvi_games.ai.judge_medal_novelty", return_value={"reasonably_different": False, "reason": "too similar"}),
+        patch("felvi_games.ai.refine_daily_medal", return_value=refined),
+    ):
+        insight = daily_check(user, repo, force=True)
+
+    assert insight is not None
+    assert insight.new_medal_created is True
+    dynamic_medals = [erem for erem in repo.get_erem_katalogus(user).values() if erem.id.startswith("daily_")]
+    assert len(dynamic_medals) == 2
+    assert any(erem.nev == "Reggeli rajt" for erem in dynamic_medals)

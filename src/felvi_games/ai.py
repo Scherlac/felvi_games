@@ -291,6 +291,67 @@ Válaszolj CSAK JSON-ban:
   }} | null
 }}"""
 
+_NOVELTY_GATE_SYSTEM = (
+        "Magyar felvételi játék érmeihez tartozó minőségellenőr vagy. "
+        "A feladatod eldönteni, hogy egy új kihívásérem szabálya érdemben különbözik-e "
+        "a meglévő aktív kihívásoktól. Csak akkor mondd, hogy elég különböző, ha a játékos "
+        "számára tényleg más viselkedést vagy időablakot jutalmaz."
+)
+
+_NOVELTY_GATE_TEMPLATE = """\
+Vizsgáld meg, hogy az új érem elég újszerű-e a meglévőkhöz képest.
+
+Új jelölt:
+{candidate_json}
+
+Ütköző meglévő érmek:
+{existing_json}
+
+Szabályok:
+- "reasonably_different" csak akkor legyen true, ha a kihívás tényleg más viselkedést, más időzítést,
+    más tárgyfókuszt vagy érdemben más célt kér.
+- Pusztán névcsere vagy minimális n/window_hours eltérés önmagában nem elég.
+- Válaszolj CSAK JSON-nal ebben a formában:
+    {{"reasonably_different": true|false, "reason": "rövid indok"}}
+"""
+
+_REFINE_MEDAL_SYSTEM = (
+        "Magyar felvételi kvíz coach vagy. "
+        "Egy túl hasonló privát napi kihívásérmet kell átdolgoznod úgy, hogy továbbra is reálisan "
+        "teljesíthető legyen, de világosan eltérjen a meglévő aktív kihívásoktól."
+)
+
+_REFINE_MEDAL_TEMPLATE = """\
+Felhasználó: {user}
+Mostani időablak: {window_hours} óra
+Összes megszerzett érem: {earned_count}
+
+Rövid statisztika:
+{stats_json}
+
+Közel lévő érmek:
+{close_medals_json}
+
+Elutasított jelölt:
+{candidate_json}
+
+Miért problémás:
+{rejection_reason}
+
+Meglévő ütköző aktív érmek:
+{existing_json}
+
+{condition_types_doc}
+
+Feladat:
+- Adj vissza egy ÉRDEMBEN eltérő új `new_medal` objektumot, vagy null-t, ha nincs jó ötlet.
+- Az új feltétel ne csak minimális számbeli eltérés legyen.
+- A feltétel továbbra is legyen rövid távon teljesíthető és gépileg kiértékelhető.
+
+Válaszolj CSAK JSON-ban:
+{{"new_medal": {{...}} | null}}
+"""
+
 
 def generate_daily_insight(
     user: str,
@@ -373,4 +434,96 @@ def generate_daily_insight(
         return json.loads(raw)
     except json.JSONDecodeError:
         return {"greeting": f"Helló {user}! Üdv vissza! 🎉", "new_medal": None}
+
+
+def judge_medal_novelty(candidate: dict, existing_medals: list[dict]) -> dict:
+    """Return LLM judgement for whether candidate differs enough from conflicts."""
+    if not candidate or not existing_medals:
+        return {"reasonably_different": True, "reason": "no_conflicts"}
+
+    prompt = _NOVELTY_GATE_TEMPLATE.format(
+        candidate_json=json.dumps(candidate, ensure_ascii=False, indent=2),
+        existing_json=json.dumps(existing_medals, ensure_ascii=False, indent=2),
+    )
+    response = _client.chat.completions.create(
+        model=_CHEAP_MODEL,
+        messages=[
+            {"role": "system", "content": _NOVELTY_GATE_SYSTEM},
+            {"role": "user", "content": prompt},
+        ],
+        response_format={"type": "json_object"},
+        temperature=0,
+        max_completion_tokens=250,
+    )
+    raw = response.choices[0].message.content or "{}"
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {"reasonably_different": False, "reason": "invalid_llm_review"}
+    return {
+        "reasonably_different": bool(parsed.get("reasonably_different")),
+        "reason": str(parsed.get("reason", "")).strip(),
+    }
+
+
+def refine_daily_medal(
+    user: str,
+    stats: dict,
+    close_medals: list,
+    earned_count: int,
+    *,
+    window_hours: int,
+    candidate: dict,
+    conflicting_medals: list[dict],
+    rejection_reason: str,
+) -> dict | None:
+    """Ask the LLM for one refined medal candidate after novelty rejection."""
+    close_payload = [
+        {
+            "nev": cm.erem.nev,
+            "kategoria": cm.erem.kategoria,
+            "hint": cm.hint,
+            "progress": round(cm.progress, 3),
+        }
+        for cm in close_medals[:5]
+    ]
+    stats_payload = {
+        "total_attempts": stats.get("total_attempts", 0),
+        "correct": stats.get("correct", 0),
+        "accuracy_pct": stats.get("accuracy_pct", 0),
+        "completed_sessions": stats.get("completed_sessions", 0),
+        "recent_days_7d": stats.get("recent_days_7d", 0),
+        "current_streak_days": stats.get("current_streak_days", 0),
+        "best_correct_streak": stats.get("best_correct_streak", 0),
+        "subjects_used": stats.get("subjects_used", []),
+        "events": stats.get("events", {}).get("counts_last_24h", {}),
+    }
+    prompt = _REFINE_MEDAL_TEMPLATE.format(
+        user=user,
+        window_hours=window_hours,
+        earned_count=earned_count,
+        stats_json=json.dumps(stats_payload, ensure_ascii=False, indent=2),
+        close_medals_json=json.dumps(close_payload, ensure_ascii=False, indent=2),
+        candidate_json=json.dumps(candidate, ensure_ascii=False, indent=2),
+        rejection_reason=rejection_reason,
+        existing_json=json.dumps(conflicting_medals, ensure_ascii=False, indent=2),
+        condition_types_doc=_CONDITION_TYPES_DOC,
+    )
+    response = _client.chat.completions.create(
+        model=MODEL,
+        messages=[
+            {"role": "system", "content": _REFINE_MEDAL_SYSTEM},
+            {"role": "user", "content": prompt},
+        ],
+        response_format={"type": "json_object"},
+        temperature=0.8,
+        max_completion_tokens=400,
+    )
+    raw = response.choices[0].message.content or "{}"
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    refined = parsed.get("new_medal")
+    return refined if isinstance(refined, dict) else None
 

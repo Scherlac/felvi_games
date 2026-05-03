@@ -24,6 +24,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+import logging
 from typing import TYPE_CHECKING
 import random
 
@@ -34,6 +35,9 @@ from felvi_games.models import Erem
 
 if TYPE_CHECKING:
     from felvi_games.db import FeladatRepository
+
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -57,6 +61,194 @@ class DailyInsight:
 
 # Fix typo in the field reference above
 CloseModal = CloseMedal   # alias used in the dataclass default_factory annotation
+
+
+_DYNAMIC_CONDITION_DIMENSION_KEYS: dict[str, tuple[str, ...]] = {
+    "feladat_count": (),
+    "helyes_count": (),
+    "pont_sum": (),
+    "streak": (),
+    "session_count": (),
+    "tokeletes_session": (),
+    "feladat_subject": ("subject",),
+    "before_hour": ("hour",),
+    "after_hour": ("hour",),
+    "special_date": ("date",),
+    "interakcio_count": ("event_type", "targy", "szint", "feladat_id", "meta_contains"),
+    "interakcio_exists": ("event_type", "targy", "szint", "feladat_id", "meta_contains"),
+}
+
+
+def _safe_int(value: object, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_float(value: object, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _normalize_condition_value(value: object) -> object:
+    if hasattr(value, "value"):
+        value = getattr(value, "value")
+    if isinstance(value, str):
+        return value.strip().lower()
+    return value
+
+
+def _normalize_dynamic_condition(condition: dict) -> dict:
+    normalized: dict[str, object] = {}
+    for key, value in condition.items():
+        normalized[str(key)] = _normalize_condition_value(value)
+    return normalized
+
+
+def _window_ratio(left: float, right: float) -> float:
+    if left <= 0 or right <= 0:
+        return 0.0
+    return min(left, right) / max(left, right)
+
+
+def _target_ratio(candidate: dict, existing: dict) -> float:
+    if candidate.get("type") == "special_date":
+        left = _safe_int(candidate.get("feladat_count", 1), 1)
+        right = _safe_int(existing.get("feladat_count", 1), 1)
+    else:
+        left = _safe_int(candidate.get("n", 1), 1)
+        right = _safe_int(existing.get("n", 1), 1)
+    return _window_ratio(float(left), float(right))
+
+
+def _dynamic_overlap_reason(candidate: dict, existing: dict) -> str | None:
+    cand = _normalize_dynamic_condition(candidate)
+    prev = _normalize_dynamic_condition(existing)
+    ctype = str(cand.get("type", "")).strip()
+    if not ctype or ctype != str(prev.get("type", "")).strip():
+        return None
+
+    for key in _DYNAMIC_CONDITION_DIMENSION_KEYS.get(ctype, ()): 
+        if cand.get(key) != prev.get(key):
+            return None
+
+    window_ratio = _window_ratio(
+        _safe_float(cand.get("window_hours", 24), 24.0),
+        _safe_float(prev.get("window_hours", 24), 24.0),
+    )
+    target_ratio = _target_ratio(cand, prev)
+    if window_ratio >= 0.6 and target_ratio >= 0.7:
+        return f"{ctype} structural overlap"
+    if cand == prev:
+        return f"{ctype} exact overlap"
+    return None
+
+
+def _dynamic_medal_expiry(erem: Erem) -> datetime | None:
+    if not erem.ideiglenes or not erem.ervenyes_napig or erem.condition_valid_from is None:
+        return None
+    anchor = erem.condition_valid_from
+    anchor_utc = anchor if anchor.tzinfo else anchor.replace(tzinfo=timezone.utc)
+    return anchor_utc + timedelta(days=erem.ervenyes_napig)
+
+
+def _conflicting_dynamic_medals(user: str, repo: "FeladatRepository", candidate: dict) -> list[dict]:
+    now = datetime.now(timezone.utc)
+    conflicts: list[dict] = []
+    for erem in repo.get_erem_katalogus(user).values():
+        if not erem.privat or erem.cel_felhasznalo != user or not erem.condition:
+            continue
+        if not erem.id.startswith("daily_"):
+            continue
+        if repo.has_erem(user, erem.id):
+            continue
+        expiry = _dynamic_medal_expiry(erem)
+        if expiry is not None and expiry <= now:
+            continue
+        reason = _dynamic_overlap_reason(candidate, erem.condition)
+        if reason is None:
+            continue
+        conflicts.append(
+            {
+                "id": erem.id,
+                "nev": erem.nev,
+                "leiras": erem.leiras,
+                "kategoria": erem.kategoria,
+                "condition": erem.condition,
+                "reason": reason,
+            }
+        )
+    return conflicts
+
+
+def _screen_dynamic_medal_candidate(
+    user: str,
+    repo: "FeladatRepository",
+    stats: dict,
+    close_medals: list[CloseMedal],
+    earned_count: int,
+    medal_data: dict | None,
+    *,
+    window_hours: int,
+) -> dict | None:
+    if not isinstance(medal_data, dict):
+        return None
+    if not isinstance(medal_data.get("condition"), dict):
+        return None
+
+    conflicts = _conflicting_dynamic_medals(user, repo, medal_data["condition"])
+    if not conflicts:
+        return medal_data
+
+    try:
+        from felvi_games.ai import judge_medal_novelty, refine_daily_medal
+    except Exception:
+        logger.warning("dynamic_medal_quality_gate_import_failed", exc_info=True)
+        return None
+
+    try:
+        novelty = judge_medal_novelty(medal_data, conflicts)
+    except Exception:
+        logger.warning("dynamic_medal_novelty_check_failed", exc_info=True)
+        return None
+
+    if novelty.get("reasonably_different"):
+        return medal_data
+
+    rejection_reason = str(novelty.get("reason", "too_similar")).strip() or "too_similar"
+    try:
+        refined = refine_daily_medal(
+            user,
+            stats,
+            close_medals,
+            earned_count,
+            window_hours=window_hours,
+            candidate=medal_data,
+            conflicting_medals=conflicts,
+            rejection_reason=rejection_reason,
+        )
+    except Exception:
+        logger.warning("dynamic_medal_refine_failed", exc_info=True)
+        return None
+
+    if not isinstance(refined, dict) or not isinstance(refined.get("condition"), dict):
+        return None
+
+    refined_conflicts = _conflicting_dynamic_medals(user, repo, refined["condition"])
+    if not refined_conflicts:
+        return refined
+
+    try:
+        refined_novelty = judge_medal_novelty(refined, refined_conflicts)
+    except Exception:
+        logger.warning("dynamic_medal_refined_novelty_check_failed", exc_info=True)
+        return None
+    if refined_novelty.get("reasonably_different"):
+        return refined
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -560,6 +752,15 @@ def daily_check(
     new_medal: Erem | None = None
     new_medal_created = False
     medal_data = ai_result.get("new_medal") if introduce_new_medal else None
+    medal_data = _screen_dynamic_medal_candidate(
+        user,
+        repo,
+        stats,
+        close,
+        earned_count,
+        medal_data,
+        window_hours=window_hours,
+    ) if introduce_new_medal else None
     if medal_data and isinstance(medal_data, dict):
         try:
             import re
