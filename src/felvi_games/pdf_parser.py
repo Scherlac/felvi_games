@@ -45,12 +45,8 @@ logger = logging.getLogger(__name__)
 # Filename prefix → subject name
 _TARGY_MAP: dict[str, str] = {"A": "magyar", "M": "matek"}
 
-# Filename gym-type number → szint_ertek (matches models.KATEGORIA_INFO)
-# A fájlnévben lévő szám a TANULÓ jelenlegi évfolyamát jelöli:
-# A8_ / M8_ → 8. osztályos tanuló → 4 osztályos gimnázium felvételi
-# A6_ / M6_ → 6. osztályos tanuló → 6 osztályos gimnázium felvételi
-# A4_ / M4_ → 4. osztályos tanuló → 8 osztályos gimnázium felvételi
-_SZINT_MAP: dict[int, str] = {8: "4 osztályos", 6: "6 osztályos", 4: "8 osztályos"}
+# Filename numeric level → internal szint label.
+_SZINT_MAP: dict[int, str] = {8: "8 osztályos", 6: "6 osztályos", 4: "4 osztályos"}
 
 # CLI --szint érték (gimnázium osztályszám) → szint label
 _CLI_SZINT_MAP: dict[str, str] = {"4": "4 osztályos", "6": "6 osztályos", "8": "8 osztályos"}

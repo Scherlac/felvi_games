@@ -418,7 +418,7 @@ class TestFelhasznalo:
 
         from felvi_games.db import FelhasznaloRecord
         with Session(repo._engine) as session:
-            record = session.get(FelhasznaloRecord, "Bence")
+            record = session.query(FelhasznaloRecord).filter_by(nev="Bence").one_or_none()
         assert record is not None
         assert record.nev == "Bence"
 

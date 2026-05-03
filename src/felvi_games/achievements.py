@@ -21,10 +21,10 @@ Adding a new medal:
 """
 from __future__ import annotations
 
-from dataclasses import dataclass as _dataclass
 import logging
 from collections.abc import Callable
 from contextvars import ContextVar
+from dataclasses import dataclass as _dataclass
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
