@@ -42,6 +42,8 @@ def _rank_value(rank: str) -> int:
 
 @dataclass
 class GateThresholds:
+    # FAIL thresholds — exceeding any of these causes QUALITY_GATE: FAIL.
+    # Any regression that stays *within* tolerance triggers a WARNING note instead.
     max_avg_cc_increase: float = 0.35
     max_p95_cc_increase: float = 1.25
     max_d_or_worse_increase: int = 3
@@ -342,28 +344,45 @@ def decide_gate(
         notes.append("Block-level regression check skipped (baseline lacks block detail).")
 
     reasons: list[str] = []
+    warnings: list[str] = []
+
     if deltas["avg_cc"] > thresholds.max_avg_cc_increase:
         reasons.append(
             f"Average CC increased by {deltas['avg_cc']} (> {thresholds.max_avg_cc_increase})."
         )
+    elif deltas["avg_cc"] > 0:
+        warnings.append(f"Avg CC +{deltas['avg_cc']} (within tolerance {thresholds.max_avg_cc_increase}).")
+
     if deltas["p95_cc"] > thresholds.max_p95_cc_increase:
         reasons.append(
             f"P95 CC increased by {deltas['p95_cc']} (> {thresholds.max_p95_cc_increase})."
         )
+    elif deltas["p95_cc"] > 0:
+        warnings.append(f"P95 CC +{deltas['p95_cc']} (within tolerance {thresholds.max_p95_cc_increase}).")
+
     if deltas["d_or_worse_blocks"] > thresholds.max_d_or_worse_increase:
         reasons.append(
             "Count of D/E/F blocks increased by "
             f"{deltas['d_or_worse_blocks']} (> {thresholds.max_d_or_worse_increase})."
         )
+    elif deltas["d_or_worse_blocks"] > 0:
+        warnings.append(f"D/E/F block count +{deltas['d_or_worse_blocks']} (within tolerance {thresholds.max_d_or_worse_increase}).")
+
     if deltas["f_blocks"] > thresholds.max_f_increase:
         reasons.append(
             f"Count of F blocks increased by {deltas['f_blocks']} (> {thresholds.max_f_increase})."
         )
+    elif deltas["f_blocks"] > 0:
+        warnings.append(f"F block count +{deltas['f_blocks']} (within tolerance {thresholds.max_f_increase}).")
+
     if len(significant_regressions) > thresholds.max_significant_block_regressions:
         reasons.append(
             "Significant per-block regressions: "
             f"{len(significant_regressions)} (> {thresholds.max_significant_block_regressions})."
         )
+    elif significant_regressions:
+        warnings.append(f"Per-block regressions: {len(significant_regressions)} (within tolerance {thresholds.max_significant_block_regressions}).")
+
     if deltas["parse_error_files"] > 0:
         reasons.append(
             f"Parse-error files increased by {deltas['parse_error_files']} (baseline comparison)."
@@ -381,13 +400,16 @@ def decide_gate(
     if (
         current.coverage_pct is not None
         and baseline.coverage_pct is not None
-        and (baseline.coverage_pct - current.coverage_pct) > thresholds.max_coverage_drop
     ):
-        reasons.append(
-            "Coverage dropped by "
-            f"{round(baseline.coverage_pct - current.coverage_pct, 3)} "
-            f"(> {thresholds.max_coverage_drop})."
-        )
+        drop = round(baseline.coverage_pct - current.coverage_pct, 3)
+        if drop > thresholds.max_coverage_drop:
+            reasons.append(
+                f"Coverage dropped by {drop} (> {thresholds.max_coverage_drop})."
+            )
+        elif drop > 0:
+            warnings.append(f"Coverage -0{drop}% (within tolerance {thresholds.max_coverage_drop}%).")
+
+    notes.extend(f"⚠️ WARNING: {w}" for w in warnings)
 
     return GateDecision(
         status="FAIL" if reasons else "PASS",
@@ -566,10 +588,14 @@ def render_report(current: Snapshot, baseline: Snapshot | None, gate: GateDecisi
 
     lines.append("## Copilot Summary")
     lines.append("")
-    if gate_status == "PASS":
+    warnings_in_notes = gate and [n for n in gate.notes if n.startswith("⚠️")]
+    if gate_status == "PASS" and warnings_in_notes:
+        lines.append("- Quality gate passed with warnings: small regressions detected (within tolerance).")
+        lines.append("- Review warnings above; refactor if the trend continues.")
+    elif gate_status == "PASS":
         lines.append("- Quality gate passed: no significant complexity or coverage regression detected.")
     elif gate_status == "FAIL":
-        lines.append("- Quality gate failed: significant complexity regression detected.")
+        lines.append("- Quality gate failed: significant regression detected.")
         lines.append("- Refactor the listed high-complexity blocks before merge.")
     else:
         lines.append("- No baseline yet. Establish baseline first, then enforce regression gate.")
@@ -601,14 +627,15 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Write current snapshot as new baseline and exit PASS.",
     )
-    parser.add_argument("--max-avg-cc-increase", type=float, default=0.35)
-    parser.add_argument("--max-p95-cc-increase", type=float, default=1.25)
-    parser.add_argument("--max-d-or-worse-increase", type=int, default=3)
-    parser.add_argument("--max-f-increase", type=int, default=0)
-    parser.add_argument("--max-block-cc-increase", type=float, default=4.0)
-    parser.add_argument("--max-significant-block-regressions", type=int, default=1)
-    parser.add_argument("--min-coverage-pct", type=float, default=0.0)
-    parser.add_argument("--max-coverage-drop", type=float, default=1.0)
+    _d = GateThresholds()  # single source of truth for defaults
+    parser.add_argument("--max-avg-cc-increase", type=float, default=_d.max_avg_cc_increase)
+    parser.add_argument("--max-p95-cc-increase", type=float, default=_d.max_p95_cc_increase)
+    parser.add_argument("--max-d-or-worse-increase", type=int, default=_d.max_d_or_worse_increase)
+    parser.add_argument("--max-f-increase", type=int, default=_d.max_f_increase)
+    parser.add_argument("--max-block-cc-increase", type=float, default=_d.max_block_cc_increase)
+    parser.add_argument("--max-significant-block-regressions", type=int, default=_d.max_significant_block_regressions)
+    parser.add_argument("--min-coverage-pct", type=float, default=_d.min_coverage_pct)
+    parser.add_argument("--max-coverage-drop", type=float, default=_d.max_coverage_drop)
     parser.add_argument(
         "--coverage-command",
         default="pytest --cov=src/felvi_games --cov-report=json:reports/quality/coverage_current.json -q",
