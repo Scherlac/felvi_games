@@ -262,19 +262,28 @@ C:/Users/scher/.conda/envs/felvi/python.exe tools/quality_gate_report.py --refre
 # Regresszió-alapú gate (javulás mindig OK, jelentős romlás bukik)
 C:/Users/scher/.conda/envs/felvi/python.exe tools/quality_gate_report.py --strict
 
+# Regresszió-alapú gate coverage-ellenőrzéssel (pytest-cov futtatása + report)
+C:/Users/scher/.conda/envs/felvi/python.exe tools/quality_gate_report.py --strict \
+    --min-coverage-pct 70 --max-coverage-drop 1.0
+
+# Gyors mód: ha .coverage frissebb mint 20 perc, azt használja (nem futtat újra teszteket)
+C:/Users/scher/.conda/envs/felvi/python.exe tools/quality_gate_report.py --strict \
+    --coverage-data-file .coverage --coverage-cache-max-age-minutes 20
+
 # (opcionális) Küszöbök finomhangolása
 C:/Users/scher/.conda/envs/felvi/python.exe tools/quality_gate_report.py --strict \
     --max-avg-cc-increase 0.25 --max-p95-cc-increase 1.0 --max-d-or-worse-increase 2
 
-# Teszt lefedettség mint további minőségi metrika
-pytest --cov=src/felvi_games --cov-report=term-missing --cov-report=html
+# Ha coverage gyűjtés nélkül akarod futtatni a gate-et
+C:/Users/scher/.conda/envs/felvi/python.exe tools/quality_gate_report.py --strict --no-coverage
 ```
 
 Ajánlott CI gate:
 - A `tools/quality_gate_report.py --strict` parancs bukjon, ha a baseline-hoz képest jelentős komplexitás-romlás történik.
+- Ugyanitt coverage regresszió gate is van (`--min-coverage-pct`, `--max-coverage-drop`).
 - A report itt készül: `reports/quality/complexity_report.md`.
 - A baseline itt van: `reports/quality/complexity_baseline.json`.
-- `pytest-cov` mellett állíts be minimális coverage küszöböt (`--cov-fail-under`).
+- Coverage JSON itt készül futáskor: `reports/quality/coverage_current.json`.
 
 ---
 

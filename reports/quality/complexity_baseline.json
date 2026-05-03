@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generated_at_utc": "2026-05-03T07:28:26+00:00",
+  "generated_at_utc": "2026-05-03T08:01:57+00:00",
   "paths": [
     "src",
     "tests"
@@ -4044,5 +4044,71 @@
       "complexity": 23.0,
       "rank": "D"
     }
-  ]
+  ],
+  "coverage_pct": 50.421,
+  "coverage_files": 14,
+  "low_coverage_files": [
+    {
+      "file": "src/felvi_games/medal_assets.py",
+      "coverage_pct": 0.0,
+      "covered_lines": 0,
+      "num_statements": 32
+    },
+    {
+      "file": "src/felvi_games/report.py",
+      "coverage_pct": 0.0,
+      "covered_lines": 0,
+      "num_statements": 410
+    },
+    {
+      "file": "src/felvi_games/scraper.py",
+      "coverage_pct": 0.0,
+      "covered_lines": 0,
+      "num_statements": 187
+    },
+    {
+      "file": "src/felvi_games/status.py",
+      "coverage_pct": 0.0,
+      "covered_lines": 0,
+      "num_statements": 72
+    },
+    {
+      "file": "src/felvi_games/cli.py",
+      "coverage_pct": 23.471,
+      "covered_lines": 284,
+      "num_statements": 1210
+    },
+    {
+      "file": "src/felvi_games/ai.py",
+      "coverage_pct": 46.667,
+      "covered_lines": 49,
+      "num_statements": 105
+    },
+    {
+      "file": "src/felvi_games/review.py",
+      "coverage_pct": 50.314,
+      "covered_lines": 80,
+      "num_statements": 159
+    },
+    {
+      "file": "src/felvi_games/achievements.py",
+      "coverage_pct": 66.722,
+      "covered_lines": 405,
+      "num_statements": 607
+    },
+    {
+      "file": "src/felvi_games/pdf_parser.py",
+      "coverage_pct": 76.471,
+      "covered_lines": 221,
+      "num_statements": 289
+    },
+    {
+      "file": "src/felvi_games/progress_check.py",
+      "coverage_pct": 76.499,
+      "covered_lines": 319,
+      "num_statements": 417
+    }
+  ],
+  "coverage_error": null,
+  "coverage_source": "cached .coverage (7.15 min old)"
 }

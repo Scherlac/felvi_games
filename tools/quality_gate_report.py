@@ -10,7 +10,8 @@ from __future__ import annotations
 import argparse
 import json
 import statistics
-from dataclasses import asdict, dataclass
+import subprocess
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Iterable
@@ -47,6 +48,8 @@ class GateThresholds:
     max_f_increase: int = 0
     max_block_cc_increase: float = 4.0
     max_significant_block_regressions: int = 1
+    min_coverage_pct: float = 0.0
+    max_coverage_drop: float = 1.0
 
 
 @dataclass
@@ -76,6 +79,11 @@ class Snapshot:
     parse_error_files: list[str]
     blocks: list[dict[str, object]]
     top_blocks: list[dict[str, object]]
+    coverage_pct: float | None = None
+    coverage_files: int = 0
+    low_coverage_files: list[dict[str, object]] = field(default_factory=list)
+    coverage_error: str | None = None
+    coverage_source: str | None = None
 
 
 @dataclass
@@ -183,10 +191,111 @@ def build_snapshot(repo_root: Path, scan_paths: list[Path], top_n: int = 15) -> 
         parse_error_files=sorted(parse_error_files),
         blocks=[asdict(b) for b in blocks],
         top_blocks=[asdict(tb) for tb in top_blocks],
+        coverage_pct=None,
+        coverage_files=0,
+        low_coverage_files=[],
+        coverage_error=None,
+        coverage_source=None,
     )
 
 
-def decide_gate(current: Snapshot, baseline: Snapshot, thresholds: GateThresholds) -> GateDecision:
+def _run_coverage_command(repo_root: Path, coverage_command: str) -> str | None:
+    if not coverage_command.strip():
+        return "Coverage command is empty."
+    result = subprocess.run(  # noqa: S603
+        coverage_command,
+        cwd=repo_root,
+        shell=True,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        return None
+    tail_lines = [line for line in (result.stderr or result.stdout).splitlines() if line][-8:]
+    details = " | ".join(tail_lines) if tail_lines else "No stderr/stdout details."
+    return f"Coverage command failed (exit={result.returncode}). {details}"
+
+
+def _coverage_age_minutes(coverage_data_path: Path) -> float | None:
+    if not coverage_data_path.exists():
+        return None
+    modified = datetime.fromtimestamp(coverage_data_path.stat().st_mtime, tz=UTC)
+    now = datetime.now(UTC)
+    delta = now - modified
+    return round(delta.total_seconds() / 60.0, 3)
+
+
+def _coverage_json_from_data_file(
+    repo_root: Path,
+    coverage_data_path: Path,
+    coverage_json_path: Path,
+) -> str | None:
+    coverage_json_path.parent.mkdir(parents=True, exist_ok=True)
+    command = (
+        f"coverage json --data-file \"{coverage_data_path}\" "
+        f"-o \"{coverage_json_path}\" --quiet"
+    )
+    result = subprocess.run(  # noqa: S603
+        command,
+        cwd=repo_root,
+        shell=True,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        return None
+    tail_lines = [line for line in (result.stderr or result.stdout).splitlines() if line][-8:]
+    details = " | ".join(tail_lines) if tail_lines else "No stderr/stdout details."
+    return f"coverage json failed (exit={result.returncode}). {details}"
+
+
+def _load_coverage_snapshot(
+    coverage_json_path: Path,
+    repo_root: Path,
+    low_n: int = 10,
+) -> tuple[float, int, list[dict[str, object]]] | None:
+    if not coverage_json_path.exists():
+        return None
+    payload = json.loads(coverage_json_path.read_text(encoding="utf-8"))
+    totals = dict(payload.get("totals", {}))
+    files_payload = dict(payload.get("files", {}))
+
+    pct_raw = totals.get("percent_covered")
+    if pct_raw is None:
+        return None
+    coverage_pct = round(float(pct_raw), 3)
+
+    rows: list[dict[str, object]] = []
+    for file_path, raw in files_payload.items():
+        item = dict(raw)
+        summary = dict(item.get("summary", {}))
+        file_pct = float(summary.get("percent_covered", 0.0))
+        num_statements = int(summary.get("num_statements", 0))
+        covered_lines = int(summary.get("covered_lines", 0))
+        if num_statements <= 0:
+            continue
+        rel = _rel(Path(str(file_path)), repo_root)
+        rows.append(
+            {
+                "file": rel,
+                "coverage_pct": round(file_pct, 3),
+                "covered_lines": covered_lines,
+                "num_statements": num_statements,
+            }
+        )
+
+    rows.sort(key=lambda r: (float(r["coverage_pct"]), str(r["file"])))
+    return coverage_pct, len(rows), rows[:low_n]
+
+
+def decide_gate(
+    current: Snapshot,
+    baseline: Snapshot,
+    thresholds: GateThresholds,
+    coverage_required: bool,
+) -> GateDecision:
+    notes: list[str] = []
+
     deltas = {
         "avg_cc": round(current.avg_cc - baseline.avg_cc, 3),
         "p95_cc": round(current.p95_cc - baseline.p95_cc, 3),
@@ -194,8 +303,10 @@ def decide_gate(current: Snapshot, baseline: Snapshot, thresholds: GateThreshold
         "f_blocks": current.f_blocks - baseline.f_blocks,
         "parse_error_files": len(current.parse_error_files) - len(baseline.parse_error_files),
     }
-
-    notes: list[str] = []
+    if current.coverage_pct is not None and baseline.coverage_pct is not None:
+        deltas["coverage_pct"] = round(current.coverage_pct - baseline.coverage_pct, 3)
+    elif current.coverage_pct is not None and baseline.coverage_pct is None:
+        notes.append("Coverage baseline is missing; run with --refresh-baseline to start coverage regression tracking.")
 
     base_blocks = {
         (str(b["file"]), str(b["name"]), int(b["line"])): (float(b["complexity"]), str(b["rank"]))
@@ -257,6 +368,26 @@ def decide_gate(current: Snapshot, baseline: Snapshot, thresholds: GateThreshold
         reasons.append(
             f"Parse-error files increased by {deltas['parse_error_files']} (baseline comparison)."
         )
+    if coverage_required and current.coverage_pct is None:
+        reasons.append("Coverage data missing in current run.")
+    if current.coverage_error:
+        reasons.append(current.coverage_error)
+    if current.coverage_pct is not None and current.coverage_pct < thresholds.min_coverage_pct:
+        reasons.append(
+            f"Coverage is {current.coverage_pct}% (< min {thresholds.min_coverage_pct}%)."
+        )
+    if current.coverage_pct is None and baseline.coverage_pct is not None:
+        reasons.append("Coverage baseline exists, but current coverage is unavailable.")
+    if (
+        current.coverage_pct is not None
+        and baseline.coverage_pct is not None
+        and (baseline.coverage_pct - current.coverage_pct) > thresholds.max_coverage_drop
+    ):
+        reasons.append(
+            "Coverage dropped by "
+            f"{round(baseline.coverage_pct - current.coverage_pct, 3)} "
+            f"(> {thresholds.max_coverage_drop})."
+        )
 
     return GateDecision(
         status="FAIL" if reasons else "PASS",
@@ -289,6 +420,11 @@ def _snapshot_from_json(payload: dict[str, object]) -> Snapshot:
         parse_error_files=[str(x) for x in payload.get("parse_error_files", [])],
         blocks=[dict(x) for x in list(payload.get("blocks", []))],
         top_blocks=[dict(x) for x in list(payload.get("top_blocks", []))],
+        coverage_pct=float(payload["coverage_pct"]) if payload.get("coverage_pct") is not None else None,
+        coverage_files=int(payload.get("coverage_files", 0)),
+        low_coverage_files=[dict(x) for x in list(payload.get("low_coverage_files", []))],
+        coverage_error=str(payload["coverage_error"]) if payload.get("coverage_error") else None,
+        coverage_source=str(payload["coverage_source"]) if payload.get("coverage_source") else None,
     )
 
 
@@ -333,7 +469,35 @@ def render_report(current: Snapshot, baseline: Snapshot | None, gate: GateDecisi
     lines.append(f"- D/E/F blocks: {current.d_or_worse_blocks}")
     lines.append(f"- F blocks: {current.f_blocks}")
     lines.append(f"- Parse-error files: {len(current.parse_error_files)}")
+    lines.append(
+        f"- Coverage: {current.coverage_pct if current.coverage_pct is not None else 'N/A'}%"
+    )
     lines.append("")
+
+    lines.append("## Coverage")
+    lines.append("")
+    lines.append(
+        f"- Total line coverage: {current.coverage_pct if current.coverage_pct is not None else 'N/A'}%"
+    )
+    lines.append(f"- Files measured: {current.coverage_files}")
+    if current.coverage_source:
+        lines.append(f"- Coverage source: {current.coverage_source}")
+    if current.coverage_error:
+        lines.append(f"- Coverage status: ERROR ({current.coverage_error})")
+    else:
+        lines.append("- Coverage status: OK")
+    lines.append("")
+
+    if current.low_coverage_files:
+        lines.append("### Lowest Coverage Files")
+        lines.append("")
+        lines.append("| Coverage % | Covered/Statements | File |")
+        lines.append("|---:|---:|---|")
+        for row in current.low_coverage_files:
+            lines.append(
+                f"| {row['coverage_pct']} | {row['covered_lines']}/{row['num_statements']} | {row['file']} |"
+            )
+        lines.append("")
 
     if current.parse_error_files:
         lines.append("## Parse Errors")
@@ -353,6 +517,8 @@ def render_report(current: Snapshot, baseline: Snapshot | None, gate: GateDecisi
         lines.append(f"- Delta D/E/F blocks: {gate.deltas['d_or_worse_blocks']}")
         lines.append(f"- Delta F blocks: {gate.deltas['f_blocks']}")
         lines.append(f"- Delta parse-error files: {gate.deltas['parse_error_files']}")
+        if "coverage_pct" in gate.deltas:
+            lines.append(f"- Delta coverage_pct: {gate.deltas['coverage_pct']}")
         lines.append("")
 
         if gate.notes:
@@ -372,6 +538,8 @@ def render_report(current: Snapshot, baseline: Snapshot | None, gate: GateDecisi
         "- max_significant_block_regressions: "
         f"{thresholds.max_significant_block_regressions}"
     )
+    lines.append(f"- min-coverage-pct: {thresholds.min_coverage_pct}")
+    lines.append(f"- max-coverage-drop: {thresholds.max_coverage_drop}")
     lines.append("")
 
     if gate and gate.significant_regressions:
@@ -399,7 +567,7 @@ def render_report(current: Snapshot, baseline: Snapshot | None, gate: GateDecisi
     lines.append("## Copilot Summary")
     lines.append("")
     if gate_status == "PASS":
-        lines.append("- Quality gate passed: no significant complexity regression detected.")
+        lines.append("- Quality gate passed: no significant complexity or coverage regression detected.")
     elif gate_status == "FAIL":
         lines.append("- Quality gate failed: significant complexity regression detected.")
         lines.append("- Refactor the listed high-complexity blocks before merge.")
@@ -439,6 +607,34 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-f-increase", type=int, default=0)
     parser.add_argument("--max-block-cc-increase", type=float, default=4.0)
     parser.add_argument("--max-significant-block-regressions", type=int, default=1)
+    parser.add_argument("--min-coverage-pct", type=float, default=0.0)
+    parser.add_argument("--max-coverage-drop", type=float, default=1.0)
+    parser.add_argument(
+        "--coverage-command",
+        default="pytest --cov=src/felvi_games --cov-report=json:reports/quality/coverage_current.json -q",
+        help="Command used to collect coverage JSON.",
+    )
+    parser.add_argument(
+        "--coverage-json-path",
+        default="reports/quality/coverage_current.json",
+        help="Coverage JSON path produced by --coverage-command.",
+    )
+    parser.add_argument(
+        "--coverage-data-file",
+        default=".coverage",
+        help="Coverage data file used for fast JSON export when fresh.",
+    )
+    parser.add_argument(
+        "--coverage-cache-max-age-minutes",
+        type=float,
+        default=20.0,
+        help="Reuse coverage data file when it is newer than this many minutes.",
+    )
+    parser.add_argument(
+        "--no-coverage",
+        action="store_true",
+        help="Skip coverage collection and coverage gate checks.",
+    )
     parser.add_argument(
         "--strict",
         action="store_true",
@@ -466,6 +662,10 @@ def _is_strictly_better(current: Snapshot, baseline: Snapshot) -> bool:
         or current.d_or_worse_blocks > baseline.d_or_worse_blocks
         or current.f_blocks > baseline.f_blocks
         or len(current.parse_error_files) > len(baseline.parse_error_files)
+        or (
+            baseline.coverage_pct is not None
+            and (current.coverage_pct is None or current.coverage_pct < baseline.coverage_pct)
+        )
     )
     if worse:
         return False
@@ -475,6 +675,11 @@ def _is_strictly_better(current: Snapshot, baseline: Snapshot) -> bool:
         or current.d_or_worse_blocks < baseline.d_or_worse_blocks
         or current.f_blocks < baseline.f_blocks
         or len(current.parse_error_files) < len(baseline.parse_error_files)
+        or (
+            current.coverage_pct is not None
+            and baseline.coverage_pct is not None
+            and current.coverage_pct > baseline.coverage_pct
+        )
     )
     return improved
 
@@ -495,9 +700,61 @@ def main() -> int:
         max_f_increase=int(args.max_f_increase),
         max_block_cc_increase=float(args.max_block_cc_increase),
         max_significant_block_regressions=int(args.max_significant_block_regressions),
+        min_coverage_pct=float(args.min_coverage_pct),
+        max_coverage_drop=float(args.max_coverage_drop),
     )
 
     current = build_snapshot(repo_root, scan_paths)
+
+    coverage_required = not bool(args.no_coverage)
+    if coverage_required:
+        coverage_json_path = (repo_root / args.coverage_json_path).resolve()
+        coverage_data_path = (repo_root / args.coverage_data_file).resolve()
+        coverage_error: str | None = None
+        age_minutes = _coverage_age_minutes(coverage_data_path)
+
+        reused_cache = (
+            age_minutes is not None
+            and age_minutes <= float(args.coverage_cache_max_age_minutes)
+        )
+
+        if reused_cache:
+            coverage_error = _coverage_json_from_data_file(
+                repo_root,
+                coverage_data_path,
+                coverage_json_path,
+            )
+            if coverage_error is None:
+                current.coverage_source = (
+                    f"cached {args.coverage_data_file} ({round(age_minutes or 0.0, 2)} min old)"
+                )
+        else:
+            coverage_error = _run_coverage_command(repo_root, str(args.coverage_command))
+            if coverage_error is None:
+                current.coverage_source = "fresh test run via --coverage-command"
+
+        # Fallback: cache export failed, try full coverage command once.
+        if reused_cache and coverage_error is not None:
+            coverage_error = _run_coverage_command(repo_root, str(args.coverage_command))
+            if coverage_error is None:
+                current.coverage_source = "fresh test run via --coverage-command (cache fallback)"
+
+        coverage_snapshot = _load_coverage_snapshot(coverage_json_path, repo_root)
+        if coverage_snapshot is not None:
+            cov_pct, cov_files, low_files = coverage_snapshot
+            current.coverage_pct = cov_pct
+            current.coverage_files = cov_files
+            current.low_coverage_files = low_files
+            if current.coverage_source is None:
+                current.coverage_source = "coverage json import"
+        else:
+            current.coverage_error = (
+                coverage_error
+                or f"Coverage JSON not found or unreadable: {coverage_json_path}"
+            )
+        if coverage_error and current.coverage_error is None:
+            current.coverage_error = coverage_error
+
     _write_json(stats_path, asdict(current))
 
     if args.refresh_baseline:
@@ -515,7 +772,7 @@ def main() -> int:
     if baseline_path.exists():
         baseline_payload = json.loads(baseline_path.read_text(encoding="utf-8"))
         baseline = _snapshot_from_json(baseline_payload)
-        gate = decide_gate(current, baseline, thresholds)
+        gate = decide_gate(current, baseline, thresholds, coverage_required=coverage_required)
     else:
         gate = None
 
