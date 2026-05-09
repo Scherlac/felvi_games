@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 from contextvars import ContextVar
-from dataclasses import dataclass as _dataclass
+from dataclasses import dataclass as _dataclass, field as _field
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
@@ -165,6 +165,24 @@ def _repeatable_has_fresh_signal(user: str, engine: Engine, last_award_at: datet
     return _has_new_activity_after(user, engine, last_award_at)
 
 
+def _effective_condition_valid_from(erem: Erem, last_award_at: datetime | None) -> datetime | None:
+    """Return effective lower-bound anchor for medal condition evaluation.
+
+    For repeatable medals with at least one previous award, evaluation must only
+    consider events strictly after the last award (and still honor any explicit
+    condition_valid_from floor).
+    """
+    if not erem.ismetelheto or last_award_at is None:
+        return erem.condition_valid_from
+
+    from_anchor = last_award_at + timedelta(microseconds=1)
+    cond_anchor = erem.condition_valid_from
+    cond_anchor_utc = _as_utc(cond_anchor) if cond_anchor is not None else None
+    if cond_anchor_utc is not None and cond_anchor_utc > from_anchor:
+        from_anchor = cond_anchor_utc
+    return from_anchor
+
+
 # ---------------------------------------------------------------------------
 # Dynamic condition evaluator
 # Condition types, parameters, events, and evaluators live in condition_registry.
@@ -283,11 +301,21 @@ def _count_dynamic_condition(
 # Public API
 # ---------------------------------------------------------------------------
 
+@_dataclass
+class MedalCheckDetails:
+    """Optional extra outputs for check_new_medals()."""
+
+    would_repeat: list[Erem] = _field(default_factory=list)
+    rule_errors: list[str] = _field(default_factory=list)
+
 def check_new_medals(
     user: str,
     session_id: int | None,
     repo: FeladatRepository,
     trigger_tipus: str | None = None,
+    *,
+    dry_run: bool = False,
+    details: MedalCheckDetails | None = None,
 ) -> list[Erem]:
     """Evaluate all rules and grant any newly earned medals.
 
@@ -344,14 +372,7 @@ def check_new_medals(
             skipped_no_rule += 1
             logger.debug("skip no_condition | user=%s medal=%s", user, erem_id)
             continue
-        eval_valid_from = erem.condition_valid_from
-        if erem.ismetelheto and last_award_at is not None:
-            from_anchor = last_award_at + timedelta(microseconds=1)
-            cond_anchor = erem.condition_valid_from
-            cond_anchor_utc = _as_utc(cond_anchor) if cond_anchor is not None else None
-            if cond_anchor_utc is not None and cond_anchor_utc > from_anchor:
-                from_anchor = cond_anchor_utc
-            eval_valid_from = from_anchor
+        eval_valid_from = _effective_condition_valid_from(erem, last_award_at)
 
         try:
             earned = _eval_dynamic_condition(
@@ -362,6 +383,8 @@ def check_new_medals(
             )
         except Exception as exc:  # noqa: BLE001 – evaluation must not crash the game
             rule_errors.append(erem_id)
+            if details is not None:
+                details.rule_errors.append(erem_id)
             logger.warning(
                 "condition_error | user=%s medal=%s error=%s",
                 user, erem_id, exc, exc_info=True,
@@ -374,6 +397,14 @@ def check_new_medals(
         )
 
         if earned:
+            if dry_run:
+                if erem.ismetelheto and erem_id in earned_any_ids:
+                    if details is not None:
+                        details.would_repeat.append(erem)
+                else:
+                    newly_earned.append(erem)
+                continue
+
             expires_at: datetime | None = None
             # Expiry is only used for repeatable medals; one-time medals stay in history forever.
             if erem.ideiglenes and erem.ismetelheto and erem.ervenyes_napig:
@@ -388,10 +419,11 @@ def check_new_medals(
 
     logger.info(
         "check_new_medals done | user=%s session=%s granted=%d "
-        "skipped_owned=%d skipped_cooldown=%d "
+        "skipped_owned=%d skipped_cooldown=%d dry_run=%s "
         "skipped_no_rule=%d errors=%d",
         user, session_id, len(newly_earned),
         skipped_already_has, skipped_cooldown,
+        dry_run,
         skipped_no_rule, len(rule_errors),
     )
     if rule_errors:

@@ -916,7 +916,7 @@ def medal_grant_cmd(
     ervenyes_napig: Annotated[int | None, typer.Option("--ervenyes-napig", help="Lejárat napokban")] = None,
 ) -> None:
     """Érem manuális odaítélése egy felhasználónak (privát érmekhez hasznos)."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timezone
 
     from sqlalchemy.orm import Session as _Session
 
@@ -1443,7 +1443,7 @@ def _medal_check_dry_run(
     from datetime import datetime
     from datetime import timezone as _tz
 
-    from felvi_games.achievements import SZABALY_REGISTRY, _eval_dynamic_condition
+    from felvi_games.achievements import _eval_dynamic_condition
 
     typer.echo(f"\n=== Érem dry-run szimulació: {user}  (DB: {db_path}) ===\n")
 
@@ -1474,22 +1474,15 @@ def _medal_check_dry_run(
     would_grant: list[tuple[str, object, object, str]] = []
 
     for erem_id, erem in catalog.items():
-        rule_fn = SZABALY_REGISTRY.get(erem_id)
-        if rule_fn is None:
-            if not erem.condition:
-                continue
-            try:
-                earned = _eval_dynamic_condition(
-                    user, erem.condition, repo._engine,
-                    valid_from=erem.condition_valid_from,
-                )
-            except Exception:
-                earned = False
-        else:
-            try:
-                earned = rule_fn(user, None, repo._engine)
-            except Exception:
-                earned = False
+        if not erem.condition:
+            continue
+        try:
+            earned = _eval_dynamic_condition(
+                user, erem.condition, repo._engine,
+                valid_from=erem.condition_valid_from,
+            )
+        except Exception:
+            earned = False
 
         if earned:
             orig = first_earned.get(erem_id)
@@ -2018,18 +2011,12 @@ def medal_recheck_cmd(
     felvi medal-recheck --user Lóri   # csak Lóri
     felvi medal-recheck --dry-run     # csak kiírja, nem ment
     """
-    from datetime import datetime, timedelta, timezone
-
     from sqlalchemy import select
     from sqlalchemy.orm import Session as _Session
 
     from felvi_games.achievements import (
-        _as_utc,
-        _cooldown_elapsed,
-        _eval_dynamic_condition,
-        _repeatable_has_fresh_signal,
+        MedalCheckDetails,
         check_new_medals,
-        simulate_medal_rules,
     )
     from felvi_games.config import get_db_path
     from felvi_games.db import FeladatRepository, FelhasznaloRecord, get_engine
@@ -2054,53 +2041,16 @@ def medal_recheck_cmd(
     for nev in users:
         typer.echo(f"👤 {nev}")
         if dry_run:
-            earned_ids = {fe.erem_id for fe in repo.get_eremek(nev, include_expired=True)}
-            results = simulate_medal_rules(nev, engine, earned_ids)
-            catalog = repo.get_erem_katalogus(nev)
-            latest_awards = {
-                eid: _as_utc(stamps[0])
-                for eid, stamps in repo.get_erem_szerzesek_map(nev).items()
-                if stamps
-            }
-            new_pending = [r for r in results if r.result and not r.already_earned]
-            would_repeat = []
-            for r in results:
-                if not (r.result and r.already_earned and r.ismetelheto):
-                    continue
-                erem = catalog.get(r.erem_id)
-                if erem is None:
-                    continue
-                last_award_at = latest_awards.get(r.erem_id)
-                if last_award_at is None:
-                    would_repeat.append(r)
-                    continue
-                if not _cooldown_elapsed(r.erem_id, last_award_at, datetime.now(timezone.utc)):
-                    continue
-                if erem.condition:
-                    cond_anchor = erem.condition_valid_from
-                    cond_anchor_utc = _as_utc(cond_anchor) if cond_anchor is not None else None
-                    from_anchor = last_award_at + timedelta(microseconds=1)
-                    if cond_anchor_utc is not None and cond_anchor_utc > from_anchor:
-                        from_anchor = cond_anchor_utc
-                    try:
-                        fresh_signal = _eval_dynamic_condition(
-                            nev,
-                            erem.condition,
-                            engine,
-                            valid_from=from_anchor,
-                        )
-                    except Exception:
-                        fresh_signal = False
-                else:
-                    fresh_signal = _repeatable_has_fresh_signal(r.erem_id, nev, engine, last_award_at)
-                if fresh_signal:
-                    would_repeat.append(r)
+            details = MedalCheckDetails()
+            new_pending = check_new_medals(nev, None, repo, dry_run=True, details=details)
+            would_repeat = details.would_repeat
+
             if new_pending:
-                for r in new_pending:
-                    typer.echo(f"  🏅 {r.ikon} {r.nev}  → ÚJ")
+                for e in new_pending:
+                    typer.echo(f"  🏅 {e.ikon} {e.nev}  → ÚJ")
             if would_repeat:
-                for r in would_repeat:
-                    typer.echo(f"  🔁 {r.ikon} {r.nev}  → ismételné")
+                for e in would_repeat:
+                    typer.echo(f"  🔁 {e.ikon} {e.nev}  → ismételné")
             if not new_pending and not would_repeat:
                 typer.echo("  (nincs új érem)")
         else:
