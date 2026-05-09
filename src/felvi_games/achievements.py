@@ -25,7 +25,7 @@ import logging
 from contextvars import ContextVar
 from dataclasses import dataclass as _dataclass, field as _field
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -339,6 +339,51 @@ class MedalCheckDetails:
 
     would_repeat: list[Erem] = _field(default_factory=list)
     rule_errors: list[str] = _field(default_factory=list)
+
+
+@_dataclass
+class NextAwardBasis:
+    """Shared basis for advertising likely next medals in CLI/UI/AI."""
+
+    stats: dict[str, Any]
+    close_medals: list[Any]
+    earned_count: int
+
+    def close_medals_payload(self) -> list[dict[str, Any]]:
+        payload: list[dict[str, Any]] = []
+        for cm in self.close_medals:
+            erem = getattr(cm, "erem", None)
+            if erem is None:
+                continue
+            progress = float(getattr(cm, "progress", 0.0) or 0.0)
+            hint = str(getattr(cm, "hint", ""))
+            payload.append(
+                {
+                    "id": erem.id,
+                    "nev": erem.nev,
+                    "ikon": erem.ikon,
+                    "kategoria": erem.kategoria,
+                    "progress": round(progress, 3),
+                    "progress_pct": int(progress * 100),
+                    "hint": hint,
+                }
+            )
+        return payload
+
+
+def get_next_award_basis(
+    user: str,
+    repo: FeladatRepository,
+    *,
+    threshold: float = 0.50,
+) -> NextAwardBasis:
+    """Return shared next-award inputs used to advertise upcoming medals."""
+    from felvi_games.progress_check import estimate_close_medals, get_user_stats
+
+    stats = get_user_stats(user, repo)
+    close = estimate_close_medals(user, repo, stats, threshold=threshold)
+    earned_count = len(repo.get_eremek(user, include_expired=True))
+    return NextAwardBasis(stats=stats, close_medals=close, earned_count=earned_count)
 
 def check_new_medals(
     user: str,

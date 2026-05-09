@@ -357,39 +357,26 @@ def medals(
         EREM_KATALOGUS,
         _eval_dynamic_condition,
         evaluate_dynamic_condition_progress,
+        get_next_award_basis,
         get_all_medals_for_user,
     )
     from felvi_games.config import get_db_path
     from felvi_games.db import FeladatRepository, FelhasznaloRecord, get_engine
     from felvi_games.models import Erem
-    from felvi_games.progress_check import estimate_close_medals, get_user_stats
 
     def _collect_generator_inputs(
         repo: FeladatRepository,
         player: str,
         hours: int,
+        basis=None,
     ) -> dict[str, object]:
-        stats = get_user_stats(player, repo)
-        close_medals = estimate_close_medals(player, repo, stats)
-        earned_count = len(repo.get_eremek(player, include_expired=True))
-        close_payload = [
-            {
-                "id": cm.erem.id,
-                "nev": cm.erem.nev,
-                "ikon": cm.erem.ikon,
-                "kategoria": cm.erem.kategoria,
-                "progress": round(cm.progress, 3),
-                "progress_pct": int(cm.progress * 100),
-                "hint": cm.hint,
-            }
-            for cm in close_medals
-        ]
+        basis = basis or get_next_award_basis(player, repo)
         return {
             "user": player,
             "window_hours": hours,
-            "earned_count": earned_count,
-            "stats": stats,
-            "close_medals": close_payload,
+            "earned_count": basis.earned_count,
+            "stats": basis.stats,
+            "close_medals": basis.close_medals_payload(),
         }
 
     def _resolve_db_path() -> Path:
@@ -443,10 +430,11 @@ def medals(
             raise typer.Exit(code=2)
 
         repo = FeladatRepository(db_path)
-        generator_payload = _collect_generator_inputs(repo, user, window_hours)
-        stats = generator_payload["stats"]
-        close = estimate_close_medals(user, repo, stats)
-        earned_count = int(generator_payload["earned_count"])
+        basis = get_next_award_basis(user, repo)
+        generator_payload = _collect_generator_inputs(repo, user, window_hours, basis=basis)
+        stats = basis.stats
+        close = basis.close_medals
+        earned_count = basis.earned_count
 
         insight = generate_daily_insight(
             user,

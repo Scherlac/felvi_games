@@ -842,10 +842,12 @@ def daily_check(
     if not force and not is_first_login_today(user, repo):
         return None
 
-    stats = get_user_stats(user, repo)
-    close = estimate_close_medals(user, repo, stats)
+    from felvi_games.achievements import get_next_award_basis
 
-    earned_count = len(repo.get_eremek(user, include_expired=True))
+    basis = get_next_award_basis(user, repo)
+    stats = basis.stats
+    close = basis.close_medals
+    earned_count = basis.earned_count
 
     # 40% random gate: only sometimes introduce a new dynamic challenge medal
     introduce_new_medal = random.random() < 0.40
