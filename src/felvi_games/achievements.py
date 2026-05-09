@@ -280,38 +280,6 @@ def _count_dynamic_condition(
 
 
 # ---------------------------------------------------------------------------
-def _check_fresh_signal(
-    erem_id: str,
-    erem: Erem,
-    user: str,
-    engine: Engine,
-    last_award_at: datetime,
-    trigger_tipus: str | None = None,
-) -> bool:
-    """Return True if new qualifying activity exists since the last award.
-
-    Used by check_new_medals() to gate repeatable medal re-grants.
-    """
-    if erem.condition:
-        cond_anchor = erem.condition_valid_from
-        cond_anchor_utc = _as_utc(cond_anchor) if cond_anchor is not None else None
-        from_anchor = last_award_at + timedelta(microseconds=1)
-        if cond_anchor_utc is not None and cond_anchor_utc > from_anchor:
-            from_anchor = cond_anchor_utc
-        try:
-            return _eval_dynamic_condition(
-                user,
-                erem.condition,
-                engine,
-                valid_from=from_anchor,
-                trigger_tipus=trigger_tipus,
-            )
-        except Exception:  # noqa: BLE001
-            return False
-    return _repeatable_has_fresh_signal(user, engine, last_award_at)
-
-
-# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -347,7 +315,6 @@ def check_new_medals(
 
     skipped_already_has = 0
     skipped_cooldown = 0
-    skipped_no_new_signal = 0
     skipped_no_rule = 0
     rule_errors: list[str] = []
 
@@ -377,10 +344,19 @@ def check_new_medals(
             skipped_no_rule += 1
             logger.debug("skip no_condition | user=%s medal=%s", user, erem_id)
             continue
+        eval_valid_from = erem.condition_valid_from
+        if erem.ismetelheto and last_award_at is not None:
+            from_anchor = last_award_at + timedelta(microseconds=1)
+            cond_anchor = erem.condition_valid_from
+            cond_anchor_utc = _as_utc(cond_anchor) if cond_anchor is not None else None
+            if cond_anchor_utc is not None and cond_anchor_utc > from_anchor:
+                from_anchor = cond_anchor_utc
+            eval_valid_from = from_anchor
+
         try:
             earned = _eval_dynamic_condition(
                 user, erem.condition, engine,
-                valid_from=erem.condition_valid_from,
+                valid_from=eval_valid_from,
                 trigger_tipus=trigger_tipus,
                 session_id=session_id,
             )
@@ -398,24 +374,6 @@ def check_new_medals(
         )
 
         if earned:
-            if erem.ismetelheto and last_award_at is not None:
-                if not _check_fresh_signal(
-                    erem_id,
-                    erem,
-                    user,
-                    engine,
-                    last_award_at,
-                    trigger_tipus=trigger_tipus,
-                ):
-                    skipped_no_new_signal += 1
-                    logger.debug(
-                        "skip no_new_signal | user=%s medal=%s last_award=%s",
-                        user,
-                        erem_id,
-                        last_award_at.isoformat(),
-                    )
-                    continue
-
             expires_at: datetime | None = None
             # Expiry is only used for repeatable medals; one-time medals stay in history forever.
             if erem.ideiglenes and erem.ismetelheto and erem.ervenyes_napig:
@@ -430,10 +388,10 @@ def check_new_medals(
 
     logger.info(
         "check_new_medals done | user=%s session=%s granted=%d "
-        "skipped_owned=%d skipped_cooldown=%d skipped_no_new_signal=%d "
+        "skipped_owned=%d skipped_cooldown=%d "
         "skipped_no_rule=%d errors=%d",
         user, session_id, len(newly_earned),
-        skipped_already_has, skipped_cooldown, skipped_no_new_signal,
+        skipped_already_has, skipped_cooldown,
         skipped_no_rule, len(rule_errors),
     )
     if rule_errors:

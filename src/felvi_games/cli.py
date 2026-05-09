@@ -2754,6 +2754,92 @@ def medal_resync_cmd(
 
 
 # ---------------------------------------------------------------------------
+# felvi medal-backup  – backup medals with conditions to repository
+# ---------------------------------------------------------------------------
+
+@app.command("medal-backup")
+def medal_backup_cmd(
+    db: Annotated[
+        Path | None, typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
+    ] = None,
+    output: Annotated[
+        Path, typer.Option("--output", "-o", help="Kimeneti JSON fájl útvonala")
+    ] = Path("data/eremek.backup.json"),
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Megmutatja mit csinálna, de nem ment fájlt")
+    ] = False,
+) -> None:
+    """Lementi az összes érem-feltételt a DB-ból egy JSON fájlba (repository backup).
+    
+    Ez az ellentéte a medal-resync-nek: a DB-ból exportál az aktuális feltételekkel.
+    Hasznos a feltételek megőrzésére és verziókezelésre.
+    """
+    import json as _json
+    from sqlalchemy import select
+    from sqlalchemy.orm import Session
+
+    from felvi_games.config import get_db_path
+    from felvi_games.db import EremRecord, FeladatRepository
+
+    db_path = db or get_db_path()
+    if not db_path.exists():
+        typer.echo(f"[!] DB nem található: {db_path}")
+        raise typer.Exit(code=1)
+
+    repo = FeladatRepository(db_path)
+    
+    # Collect all medals with conditions from DB
+    backup_medals = {}
+    backed_up_count = 0
+    
+    with Session(repo._engine) as s:
+        records = s.scalars(select(EremRecord).order_by(EremRecord.id)).all()
+        
+        for record in records:
+            if record.condition_json:
+                try:
+                    condition = _json.loads(record.condition_json)
+                    backup_medals[record.id] = {
+                        "nev": record.nev,
+                        "leiras": record.leiras,
+                        "ikon": record.ikon,
+                        "kategoria": record.kategoria,
+                        "ideiglenes": record.ideiglenes,
+                        "ismetelheto": record.ismetelheto,
+                        "condition": condition,
+                        "condition_valid_from": record.condition_valid_from.isoformat() if record.condition_valid_from else None,
+                    }
+                    backed_up_count += 1
+                except Exception as e:
+                    typer.echo(f"  ⚠️  Hiba: {record.id} feltételének olvasása: {e}")
+    
+    typer.echo(f"\n=== Medal Backup (DB: {db_path}) ===\n")
+    typer.echo(f"  Talált érmek feltétellel:  {backed_up_count}")
+    
+    if dry_run:
+        typer.echo(f"  [DRY-RUN] Lemenne: {output}")
+        typer.echo(f"\n[DRY-RUN] {backed_up_count} érem feltételét exportálná (valódi futáshoz hiányzik a --dry-run flag).\n")
+    else:
+        # Create output directory if needed
+        output.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Write backup file
+        with open(output, 'w', encoding='utf-8') as f:
+            _json.dump(backup_medals, f, indent=2, ensure_ascii=False)
+        
+        typer.echo(f"  ✓ Mentve:                  {output}")
+        typer.echo(f"\n✓ {backed_up_count} érem feltétele lementve.\n")
+        
+        # Show sample
+        if backup_medals:
+            first_id = next(iter(backup_medals))
+            typer.echo(f"  📋 Minta ({first_id}):")
+            sample = backup_medals[first_id]
+            typer.echo(f"    Név: {sample['nev']}")
+            typer.echo(f"    Feltétel: {sample['condition'].get('type', '?')}")
+
+
+# ---------------------------------------------------------------------------
 # Entry point (pyproject.toml → project.scripts)
 # ---------------------------------------------------------------------------
 

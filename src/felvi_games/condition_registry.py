@@ -39,6 +39,7 @@ from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+from felvi_games.models import InterakcioTipus
 
 # ---------------------------------------------------------------------------
 # Types
@@ -596,7 +597,9 @@ _P_HOUR_AFTER = ParamSpec(
     min_val=0, max_val=23,
 )
 _P_SUBJECT = ParamSpec(str, required=True, description="Subject: 'matek' or 'magyar'", choices=["matek", "magyar"])
-_P_EVENT_TYPE = ParamSpec(str, required=True, description="InterakcioTipus value, e.g. 'segitseg_kert'")
+_P_EVENT_TYPE = ParamSpec(str, required=True, description="InterakcioTipus value", 
+        choices=[e.value for e in InterakcioTipus]
+)
 _P_DATE = ParamSpec(str, required=True, description="Calendar date as MM-DD, e.g. '03-15'")
 _P_FELADAT_N = ParamSpec(int, required=False, default=1, description="Minimum tasks on the date", min_val=1)
 _P_SESSION_ID = ParamSpec(int, required=False, default=None, description="Specific session id (optional)")
@@ -1066,7 +1069,7 @@ register(ConditionDef(
 register(ConditionDef(
     name="interakcio_exists",
     description="At least one interaction event of a given type exists within the window. n is ignored.",
-    params={"window_hours": _P_WH, **_INTERAKCIO_PARAMS},
+    params=_INTERAKCIO_PARAMS,
     events={"interaction"},
     evaluator=_eval_interakcio_exists,
     count_fn=_count_interakcio,
