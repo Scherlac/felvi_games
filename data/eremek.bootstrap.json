@@ -34,7 +34,7 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {"type": "feladat_count", "n": 100},
     "condition_valid_from": null
   },
   "otszaz_feladat": {
@@ -51,7 +51,7 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {"type": "feladat_count", "n": 500},
     "condition_valid_from": null
   },
   "ezer_feladat": {
@@ -68,7 +68,7 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {"type": "feladat_count", "n": 1000},
     "condition_valid_from": null
   },
   "tokeletes_menet": {
@@ -109,7 +109,7 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {"type": "streak", "n": 5},
     "condition_valid_from": null
   },
   "sorozat_10": {
@@ -126,7 +126,7 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {"type": "streak", "n": 10},
     "condition_valid_from": null
   },
   "sorozat_20": {
@@ -143,7 +143,7 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {"type": "streak", "n": 20},
     "condition_valid_from": null
   },
   "villam": {
@@ -184,7 +184,7 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {"type": "hint_nelkul", "n": 20},
     "condition_valid_from": null
   },
   "magas_pontossag": {
@@ -201,7 +201,7 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {"type": "pontossag", "n": 50, "min_ratio": 0.8},
     "condition_valid_from": null
   },
   "het_egymas_utan": {
@@ -218,7 +218,7 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {"type": "day_streak", "n": 7},
     "policy": {
       "repeatable_cooldown_hours": 24
     },
@@ -238,7 +238,7 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {"type": "day_streak_max", "n": 21},
     "condition_valid_from": null
   },
   "pentek_matek_honap": {
@@ -255,7 +255,7 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {"type": "pentek_matek"},
     "policy": {
       "repeatable_cooldown_hours": 24
     },
@@ -275,7 +275,7 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {"type": "recent_play_days", "n": 3, "window_hours": 168},
     "policy": {
       "repeatable_cooldown_hours": 24
     },
@@ -320,7 +320,7 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {"type": "menet_cover", "attr": "targy", "values": ["matek", "magyar"]},
     "condition_valid_from": null
   },
   "minden_szint": {
@@ -337,7 +337,7 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {"type": "menet_cover", "attr": "szint", "values": ["4 osztályos", "6 osztályos", "8 osztályos"]},
     "condition_valid_from": null
   },
   "minden_feladattipus": {
@@ -354,7 +354,7 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {"type": "feladattipus_cover"},
     "condition_valid_from": null
   },
   "tiz_feladat": {
@@ -371,7 +371,7 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {"type": "feladat_count", "n": 10},
     "condition_valid_from": null
   },
   "huszonot_feladat": {
@@ -388,7 +388,7 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {"type": "feladat_count", "n": 25},
     "condition_valid_from": null
   },
   "otven_feladat": {
@@ -405,7 +405,7 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {"type": "feladat_count", "n": 50},
     "condition_valid_from": null
   },
   "szaz_pont": {
@@ -422,7 +422,7 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {"type": "pont_sum", "n": 100},
     "condition_valid_from": null
   },
   "otszaz_pont": {
@@ -439,7 +439,7 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {"type": "pont_sum", "n": 500},
     "condition_valid_from": null
   },
   "esti_tanulas": {
@@ -481,7 +481,7 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {"type": "play_days", "n": 3},
     "condition_valid_from": null
   },
   "visszatero_tiz": {
@@ -498,7 +498,7 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {"type": "play_days", "n": 10},
     "condition_valid_from": null
   },
   "maraton": {
@@ -536,7 +536,7 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {"type": "recent_play_days", "n": 5, "window_hours": 168},
     "policy": {
       "repeatable_cooldown_hours": 24
     },

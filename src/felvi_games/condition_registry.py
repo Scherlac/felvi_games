@@ -34,7 +34,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import func, select
@@ -71,6 +71,10 @@ class ParamSpec:
             if self.required:
                 raise ValueError(f"Required param '{name}' is missing")
             return self.default
+        if self.type is list:
+            if not isinstance(value, list):
+                raise ValueError(f"Param '{name}' must be a list, got {value!r}")
+            return value
         try:
             value = self.type(value)
         except (TypeError, ValueError):
@@ -735,6 +739,328 @@ register(ConditionDef(
     events={"interaction"},
     evaluator=_eval_interakcio_count,
     count_fn=_count_interakcio,
+))
+
+# ---------------------------------------------------------------------------
+# Shared helpers for play-day and streak computation
+# ---------------------------------------------------------------------------
+
+def _q_all_play_days(user: str, upper: datetime | None, s: Session) -> list[datetime]:
+    """Sorted list of distinct play-day datetimes (UTC midnight), all-time."""
+    from felvi_games.db import MenetRecord
+    stmt = (
+        select(MenetRecord.started_at)
+        .where(MenetRecord.felhasznalo_nev == user)
+        .order_by(MenetRecord.started_at)
+    )
+    if upper:
+        stmt = stmt.where(MenetRecord.started_at <= upper)
+    rows = s.scalars(stmt).all()
+    seen: set[str] = set()
+    days: list[datetime] = []
+    for dt in rows:
+        d = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+        d = d.replace(hour=0, minute=0, second=0, microsecond=0)
+        key = d.strftime("%Y-%m-%d")
+        if key not in seen:
+            seen.add(key)
+            days.append(d)
+    return days
+
+
+def _day_streak_current(days: list[datetime]) -> int:
+    """Current trailing streak of consecutive play days (must include today or yesterday)."""
+    if not days:
+        return 0
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    streak = 0
+    prev = today
+    for d in reversed(days):
+        if (prev - d).days <= 1:
+            streak += 1
+            prev = d
+        else:
+            break
+    return streak
+
+
+def _day_streak_max(days: list[datetime]) -> int:
+    """All-time longest consecutive play day streak."""
+    if not days:
+        return 0
+    best = current = 1
+    for i in range(1, len(days)):
+        if (days[i] - days[i - 1]).days == 1:
+            current += 1
+            best = max(best, current)
+        else:
+            current = 1
+    return best
+
+
+# Task types that must all be covered for feladattipus_cover
+_FELADAT_TIPUSOK_COVER = frozenset({
+    "nyilt_valasz", "tobbvalasztos", "parositas", "igaz_hamis", "fogalmazas", "kitoltes",
+})
+
+
+# ---------------------------------------------------------------------------
+# New evaluators
+# ---------------------------------------------------------------------------
+
+def _eval_play_days(user, condition, n, cutoff, upper, s):
+    """Total distinct play days (all-time, ignores cutoff)."""
+    return len(_q_all_play_days(user, upper, s)) >= n
+
+def _eval_recent_play_days(user, condition, n, cutoff, upper, s):
+    """Distinct play days within the rolling window (uses cutoff)."""
+    days = _q_all_play_days(user, upper, s)
+    return sum(1 for d in days if d >= cutoff) >= n
+
+def _eval_day_streak(user, condition, n, cutoff, upper, s):
+    """Current trailing consecutive play-day streak >= n."""
+    return _day_streak_current(_q_all_play_days(user, upper, s)) >= n
+
+def _eval_day_streak_max(user, condition, n, cutoff, upper, s):
+    """All-time longest consecutive play-day streak >= n."""
+    return _day_streak_max(_q_all_play_days(user, upper, s)) >= n
+
+def _eval_hint_nelkul(user, condition, n, cutoff, upper, s):
+    """Last N answers contain no hint requests."""
+    from felvi_games.db import MegoldasRecord
+    stmt = (
+        select(MegoldasRecord.segitseg_kert)
+        .where(MegoldasRecord.felhasznalo_nev == user)
+        .order_by(MegoldasRecord.created_at.desc())
+        .limit(n)
+    )
+    if upper:
+        stmt = (
+            select(MegoldasRecord.segitseg_kert)
+            .where(MegoldasRecord.felhasznalo_nev == user, MegoldasRecord.created_at <= upper)
+            .order_by(MegoldasRecord.created_at.desc())
+            .limit(n)
+        )
+    rows = s.scalars(stmt).all()
+    return len(rows) == n and not any(rows)
+
+def _eval_pontossag(user, condition, n, cutoff, upper, s):
+    """At least n attempts with accuracy >= min_ratio (all-time, ignores cutoff)."""
+    from felvi_games.db import FeladatRecord, MegoldasRecord
+    min_ratio = float(condition.get("min_ratio", 0.8))
+    filters = [MegoldasRecord.felhasznalo_nev == user]
+    if upper:
+        filters.append(MegoldasRecord.created_at <= upper)
+    total = s.scalar(select(func.count()).select_from(MegoldasRecord).where(*filters)) or 0
+    if total < n:
+        return False
+    earned = s.scalar(select(func.sum(MegoldasRecord.pont)).where(*filters)) or 0
+    max_possible = s.scalar(
+        select(func.sum(FeladatRecord.max_pont))
+        .join(MegoldasRecord, MegoldasRecord.feladat_id == FeladatRecord.id)
+        .where(*filters)
+    ) or 0
+    return max_possible > 0 and (earned / max_possible) >= min_ratio
+
+def _eval_menet_cover(user, condition, n, cutoff, upper, s):
+    """Sessions cover all required values of a menet attribute (all-time)."""
+    from felvi_games.db import MenetRecord
+    attr = str(condition.get("attr", ""))
+    values = condition.get("values", [])
+    if not attr or not values:
+        return False
+    required = set(values)
+    col = getattr(MenetRecord, attr, None)
+    if col is None:
+        return False
+    stmt = select(col).where(MenetRecord.felhasznalo_nev == user)
+    if upper:
+        stmt = stmt.where(MenetRecord.started_at <= upper)
+    return required.issubset(set(s.scalars(stmt).all()))
+
+def _eval_feladattipus_cover(user, condition, n, cutoff, upper, s):
+    """All required feladat_tipus values have been encountered (all-time)."""
+    from felvi_games.db import FeladatRecord, MegoldasRecord
+    stmt = (
+        select(FeladatRecord.feladat_tipus)
+        .join(MegoldasRecord, MegoldasRecord.feladat_id == FeladatRecord.id)
+        .where(MegoldasRecord.felhasznalo_nev == user)
+    )
+    if upper:
+        stmt = stmt.where(MegoldasRecord.created_at <= upper)
+    rows = s.scalars(stmt).all()
+    return _FELADAT_TIPUSOK_COVER.issubset({r for r in rows if r})
+
+def _eval_pentek_matek(user, condition, n, cutoff, upper, s):
+    """All Fridays of the previous calendar month were covered with matek sessions."""
+    from felvi_games.db import MenetRecord
+    now = datetime.now(timezone.utc)
+    first_this = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    last_prev = first_this - timedelta(seconds=1)
+    first_prev = last_prev.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    fridays: set[str] = set()
+    d = first_prev
+    while d <= last_prev:
+        if d.weekday() == 4:
+            fridays.add(d.strftime("%Y-%m-%d"))
+        d += timedelta(days=1)
+    if not fridays:
+        return False
+    rows = s.scalars(
+        select(MenetRecord.started_at).where(
+            MenetRecord.felhasznalo_nev == user,
+            MenetRecord.targy == "matek",
+            MenetRecord.started_at >= first_prev,
+            MenetRecord.started_at <= last_prev,
+        )
+    ).all()
+    def _day(dt: datetime) -> datetime:
+        x = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+        return x.replace(hour=0, minute=0, second=0, microsecond=0)
+    played_fridays = {_day(dt).strftime("%Y-%m-%d") for dt in rows if _day(dt).weekday() == 4}
+    return fridays.issubset(played_fridays)
+
+
+# ---------------------------------------------------------------------------
+# New count functions
+# ---------------------------------------------------------------------------
+
+def _count_play_days(user, condition, cutoff, upper, s):
+    return len(_q_all_play_days(user, upper, s))
+
+def _count_recent_play_days(user, condition, cutoff, upper, s):
+    days = _q_all_play_days(user, upper, s)
+    return sum(1 for d in days if d >= cutoff)
+
+def _count_day_streak(user, condition, cutoff, upper, s):
+    return _day_streak_current(_q_all_play_days(user, upper, s))
+
+def _count_day_streak_max(user, condition, cutoff, upper, s):
+    return _day_streak_max(_q_all_play_days(user, upper, s))
+
+def _count_hint_nelkul(user, condition, cutoff, upper, s):
+    """Returns how many of the last n answers have no hint (for progress display)."""
+    from felvi_games.db import MegoldasRecord
+    n = int(condition.get("n", 20))
+    stmt = (
+        select(MegoldasRecord.segitseg_kert)
+        .where(MegoldasRecord.felhasznalo_nev == user)
+        .order_by(MegoldasRecord.created_at.desc())
+        .limit(n)
+    )
+    if upper:
+        stmt = (
+            select(MegoldasRecord.segitseg_kert)
+            .where(MegoldasRecord.felhasznalo_nev == user, MegoldasRecord.created_at <= upper)
+            .order_by(MegoldasRecord.created_at.desc())
+            .limit(n)
+        )
+    rows = s.scalars(stmt).all()
+    return sum(1 for h in rows if not h)
+
+
+# ---------------------------------------------------------------------------
+# New param specs and registrations
+# ---------------------------------------------------------------------------
+
+_P_MIN_RATIO = ParamSpec(
+    float, required=False, default=0.8,
+    description="Minimum accuracy ratio (0.0–1.0)", min_val=0.0, max_val=1.0,
+)
+_P_ATTR = ParamSpec(
+    str, required=True, description="Menet attribute to check: 'targy' or 'szint'",
+    choices=["targy", "szint"],
+)
+_P_VALUES = ParamSpec(list, required=True, description="List of required values")
+
+register(ConditionDef(
+    name="play_days",
+    description="User has played on at least N distinct calendar days (all-time).",
+    params={"n": _P_N},
+    events={"session"},
+    evaluator=_eval_play_days,
+    count_fn=_count_play_days,
+))
+
+register(ConditionDef(
+    name="recent_play_days",
+    description="User has played on at least N distinct days within the rolling window.",
+    params={"n": _P_N, "window_hours": _P_WH},
+    events={"session"},
+    evaluator=_eval_recent_play_days,
+    count_fn=_count_recent_play_days,
+))
+
+register(ConditionDef(
+    name="day_streak",
+    description="User's current trailing consecutive play-day streak is at least N.",
+    params={"n": _P_N},
+    events={"session"},
+    evaluator=_eval_day_streak,
+    count_fn=_count_day_streak,
+))
+
+register(ConditionDef(
+    name="day_streak_max",
+    description="User's all-time longest consecutive play-day streak is at least N.",
+    params={"n": _P_N},
+    events={"session"},
+    evaluator=_eval_day_streak_max,
+    count_fn=_count_day_streak_max,
+))
+
+register(ConditionDef(
+    name="hint_nelkul",
+    description="The last N answers were all submitted without requesting a hint.",
+    params={"n": _P_N},
+    events={"answer"},
+    evaluator=_eval_hint_nelkul,
+    count_fn=_count_hint_nelkul,
+))
+
+register(ConditionDef(
+    name="pontossag",
+    description=(
+        "User has at least n total attempts and earned >= min_ratio of maximum"
+        " possible points (all-time accuracy gate)."
+    ),
+    params={"n": _P_N, "min_ratio": _P_MIN_RATIO},
+    events={"answer"},
+    evaluator=_eval_pontossag,
+    count_fn=None,
+))
+
+register(ConditionDef(
+    name="menet_cover",
+    description=(
+        "User's sessions cover all required values of a menet attribute"
+        " ('targy' or 'szint')."
+    ),
+    params={"attr": _P_ATTR, "values": _P_VALUES},
+    events={"session"},
+    evaluator=_eval_menet_cover,
+    count_fn=None,
+))
+
+register(ConditionDef(
+    name="feladattipus_cover",
+    description="User has solved at least one task of every feladat_tipus.",
+    params={},
+    events={"answer"},
+    evaluator=_eval_feladattipus_cover,
+    count_fn=None,
+))
+
+register(ConditionDef(
+    name="pentek_matek",
+    description=(
+        "User covered every Friday of the previous calendar month"
+        " with at least one matek session."
+    ),
+    params={},
+    events={"session"},
+    evaluator=_eval_pentek_matek,
+    count_fn=None,
 ))
 
 register(ConditionDef(

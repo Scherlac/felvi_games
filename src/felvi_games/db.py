@@ -296,6 +296,7 @@ class EremRecord(Base):
     privat: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
     cel_felhasznalo: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     condition_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON dynamic condition
+    condition_valid_from: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
     )
@@ -311,10 +312,10 @@ class EremRecord(Base):
                     condition = parsed
             except Exception:
                 condition = None
-        created_at = self.created_at
-        if created_at is not None and created_at.tzinfo is None:
+        condition_valid_from = self.condition_valid_from
+        if condition_valid_from is not None and condition_valid_from.tzinfo is None:
             from datetime import timezone as _tz
-            created_at = created_at.replace(tzinfo=_tz.utc)
+            condition_valid_from = condition_valid_from.replace(tzinfo=_tz.utc)
         return Erem(
             id=self.id,
             nev=self.nev,
@@ -330,7 +331,7 @@ class EremRecord(Base):
             privat=self.privat,
             cel_felhasznalo=self.cel_felhasznalo,
             condition=condition,
-            condition_valid_from=created_at if condition else None,
+            condition_valid_from=condition_valid_from if condition else None,
         )
 
 
@@ -459,6 +460,7 @@ def _ensure_erem_columns(engine) -> None:
     """Add new columns to the eremek table on existing databases."""
     new_columns = [
         ("condition_json", "TEXT"),
+        ("condition_valid_from", "DATETIME"),
     ]
     with engine.connect() as conn:
         for col_name, col_def in new_columns:
@@ -1557,6 +1559,7 @@ class FeladatRepository:
                         privat=False,
                         cel_felhasznalo=None,
                         condition_json=condition_json,
+                        condition_valid_from=erem.condition_valid_from,
                     ))
                     new_count += 1
             session.commit()
@@ -1620,6 +1623,7 @@ class FeladatRepository:
                 existing.privat = erem.privat
                 existing.cel_felhasznalo = erem.cel_felhasznalo
                 existing.condition_json = condition_json
+                existing.condition_valid_from = erem.condition_valid_from
                 existing.updated_at = now
             else:
                 session.add(EremRecord(
@@ -1637,6 +1641,7 @@ class FeladatRepository:
                     privat=erem.privat,
                     cel_felhasznalo=erem.cel_felhasznalo,
                     condition_json=condition_json,
+                    condition_valid_from=erem.condition_valid_from,
                 ))
             session.commit()
 
