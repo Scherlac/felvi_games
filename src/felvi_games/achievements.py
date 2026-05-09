@@ -30,7 +30,9 @@ from typing import TYPE_CHECKING, Literal, TypedDict, cast
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
+from felvi_games.medal_catalog import EREM_KATALOGUS
 from felvi_games.models import Erem, FelhasznaloErem, InterakcioTipus
 
 if TYPE_CHECKING:
@@ -59,241 +61,6 @@ _REPEATABLE_COOLDOWN_HOURS: dict[str, int] = {
     "tokeletes_menet": 4,
 }
 
-
-# ---------------------------------------------------------------------------
-# Medal catalog
-# ---------------------------------------------------------------------------
-
-EREM_KATALOGUS: dict[str, Erem] = {
-    # ── Mérföldkövek ─────────────────────────────────────────────────────────
-    "elso_menet": Erem(
-        id="elso_menet",
-        nev="Első lépés",
-        leiras="Teljesítettél egy egész menetet.",
-        ikon="🏁",
-        kategoria="merfoldko",
-    ),
-    "szaz_feladat": Erem(
-        id="szaz_feladat",
-        nev="Centurion",
-        leiras="100 feladatot oldottál meg.",
-        ikon="💯",
-        kategoria="merfoldko",
-    ),
-    "otszaz_feladat": Erem(
-        id="otszaz_feladat",
-        nev="Veterán",
-        leiras="500 feladatot oldottál meg.",
-        ikon="🏆",
-        kategoria="merfoldko",
-    ),
-    "ezer_feladat": Erem(
-        id="ezer_feladat",
-        nev="Legenda",
-        leiras="1 000 feladatot oldottál meg.",
-        ikon="🌟",
-        kategoria="merfoldko",
-    ),
-
-    # ── Teljesítmény ─────────────────────────────────────────────────────────
-    "tokeletes_menet": Erem(
-        id="tokeletes_menet",
-        nev="Tökéletes menet",
-        leiras="100%-os pontszámot értél el egy menetben.",
-        ikon="💎",
-        kategoria="teljesitmeny",
-        ismetelheto=True,
-    ),
-    "sorozat_5": Erem(
-        id="sorozat_5",
-        nev="5-ös sorozat",
-        leiras="5 egymást követő helyes válasz.",
-        ikon="🔥",
-        kategoria="teljesitmeny",
-    ),
-    "sorozat_10": Erem(
-        id="sorozat_10",
-        nev="10-es sorozat",
-        leiras="10 egymást követő helyes válasz.",
-        ikon="🔥🔥",
-        kategoria="teljesitmeny",
-    ),
-    "sorozat_20": Erem(
-        id="sorozat_20",
-        nev="20-as sorozat",
-        leiras="20 egymást követő helyes válasz.",
-        ikon="⚡",
-        kategoria="teljesitmeny",
-    ),
-    "villam": Erem(
-        id="villam",
-        nev="Villámsebességű",
-        leiras="Helyes választ adtál 10 másodpercen belül.",
-        ikon="⚡",
-        kategoria="teljesitmeny",
-        ismetelheto=True,
-    ),
-    "hint_nelkul_20": Erem(
-        id="hint_nelkul_20",
-        nev="Független gondolkodó",
-        leiras="20 egymást követő feladatot tipp nélkül oldottál meg.",
-        ikon="🧠",
-        kategoria="teljesitmeny",
-    ),
-    "magas_pontossag": Erem(
-        id="magas_pontossag",
-        nev="Precíz",
-        leiras="Legalább 80%-os pontosság 50+ kísérlet után.",
-        ikon="🎯",
-        kategoria="teljesitmeny",
-    ),
-
-    # ── Rendszeresség ─────────────────────────────────────────────────────────
-    "het_egymas_utan": Erem(
-        id="het_egymas_utan",
-        nev="Egy hetes sorozat",
-        leiras="7 egymást követő napon játszottál.",
-        ikon="📅",
-        kategoria="rendszeresseg",
-        ismetelheto=True,
-    ),
-    "harom_het_egymas_utan": Erem(
-        id="harom_het_egymas_utan",
-        nev="Három hetes sorozat",
-        leiras="21 egymást követő napon játszottál.",
-        ikon="🗓️",
-        kategoria="rendszeresseg",
-    ),
-    "pentek_matek_honap": Erem(
-        id="pentek_matek_honap",
-        nev="Pénteki matekes",
-        leiras="Minden pénteken matekot oldottál meg egy naptári hónapban.",
-        ikon="📐",
-        kategoria="rendszeresseg",
-        ismetelheto=True,
-    ),
-    "heti_haromszor": Erem(
-        id="heti_haromszor",
-        nev="Szorgalmas",
-        leiras="Egy héten belül legalább 3 különböző napon játszottál.",
-        ikon="📆",
-        kategoria="rendszeresseg",
-        ismetelheto=True,
-    ),
-    "reggeli_tanulas": Erem(
-        id="reggeli_tanulas",
-        nev="Korai madár",
-        leiras="Reggel 8 előtt oldottál meg feladatot.",
-        ikon="🌅",
-        kategoria="rendszeresseg",
-        ismetelheto=True,
-    ),
-
-    # ── Felfedezés ────────────────────────────────────────────────────────────
-    "mindket_targy": Erem(
-        id="mindket_targy",
-        nev="Sokoldalú",
-        leiras="Matekot és magyart is gyakoroltál.",
-        ikon="🌈",
-        kategoria="felfedezes",
-    ),
-    "minden_szint": Erem(
-        id="minden_szint",
-        nev="Mindentudó",
-        leiras="Mindhárom szinten (4, 6, 8 osztályos) oldottál meg feladatot.",
-        ikon="🎓",
-        kategoria="felfedezes",
-    ),
-    "minden_feladattipus": Erem(
-        id="minden_feladattipus",
-        nev="Változatos",
-        leiras="Minden feladattípusból legalább egyet megoldottál.",
-        ikon="🔮",
-        kategoria="felfedezes",
-    ),
-
-    # ── Mérföldkövek (közbülső) ───────────────────────────────────────────────
-    "tiz_feladat": Erem(
-        id="tiz_feladat",
-        nev="Tíz feladat",
-        leiras="10 feladatot oldottál meg.",
-        ikon="🔟",
-        kategoria="merfoldko",
-    ),
-    "huszonot_feladat": Erem(
-        id="huszonot_feladat",
-        nev="Negyedszázad",
-        leiras="25 feladatot oldottál meg.",
-        ikon="🥈",
-        kategoria="merfoldko",
-    ),
-    "otven_feladat": Erem(
-        id="otven_feladat",
-        nev="Félszázad",
-        leiras="50 feladatot oldottál meg.",
-        ikon="🥇",
-        kategoria="merfoldko",
-    ),
-
-    # ── Teljesítmény (új) ─────────────────────────────────────────────────────
-    "szaz_pont": Erem(
-        id="szaz_pont",
-        nev="Százpontos",
-        leiras="Összesen 100 pontot gyűjtöttél.",
-        ikon="💰",
-        kategoria="teljesitmeny",
-    ),
-    "otszaz_pont": Erem(
-        id="otszaz_pont",
-        nev="Pontgyűjtő",
-        leiras="Összesen 500 pontot gyűjtöttél.",
-        ikon="💎",
-        kategoria="teljesitmeny",
-    ),
-    "esti_tanulas": Erem(
-        id="esti_tanulas",
-        nev="Éjjeli bagoly",
-        leiras="22:00 után oldottál meg feladatot.",
-        ikon="🦉",
-        kategoria="rendszeresseg",
-        ismetelheto=True,
-    ),
-
-    # ── Kitartás ──────────────────────────────────────────────────────────────
-    "visszatero": Erem(
-        id="visszatero",
-        nev="Visszatérő",
-        leiras="Legalább 3 különböző napon játszottál összesen.",
-        ikon="🔄",
-        kategoria="kitartas",
-    ),
-    "visszatero_tiz": Erem(
-        id="visszatero_tiz",
-        nev="Hűséges tanuló",
-        leiras="Legalább 10 különböző napon játszottál.",
-        ikon="🏅",
-        kategoria="kitartas",
-    ),
-    "maraton": Erem(
-        id="maraton",
-        nev="Maraton",
-        leiras="Egy menetben 30 vagy több feladatot teljesítettél.",
-        ikon="🏃",
-        kategoria="kitartas",
-    ),
-
-    # ── Ideiglenes (temporary streak shields) ────────────────────────────────
-    "heti_bajnok": Erem(
-        id="heti_bajnok",
-        nev="Heti bajnok",
-        leiras="Ezen a héten legalább 5 napot játszottál – csak a hétig érvényes!",
-        ikon="🥇",
-        kategoria="rendszeresseg",
-        ideiglenes=True,
-        ervenyes_napig=7,
-        ismetelheto=True,
-    ),
-}
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -888,7 +655,7 @@ def _query_megoldas_count(
     upper: datetime | None,
     s: Session,
     *,
-    where_clauses: tuple[object, ...] = (),
+    where_clauses: tuple[ColumnElement[bool], ...] = (),
 ) -> int:
     from felvi_games.db import MegoldasRecord
 
@@ -926,7 +693,7 @@ def _query_menet_count(
     upper: datetime | None,
     s: Session,
     *,
-    where_clauses: tuple[object, ...] = (),
+    where_clauses: tuple[ColumnElement[bool], ...] = (),
 ) -> int:
     from felvi_games.db import MenetRecord
 

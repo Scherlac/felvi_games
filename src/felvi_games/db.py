@@ -1524,12 +1524,13 @@ class FeladatRepository:
         edits made via ``upsert_erem`` are preserved.  Returns the number of
         newly inserted rows.
         """
-        from felvi_games.achievements import EREM_KATALOGUS
+        from felvi_games.medal_catalog import load_bootstrap_erem_catalog
 
         with Session(self._engine) as session:
             existing = {row[0] for row in session.execute(select(EremRecord.id))}
+            eremek = load_bootstrap_erem_catalog()
             new_count = 0
-            for erem_id, erem in EREM_KATALOGUS.items():
+            for erem_id, erem in eremek.items():
                 if erem_id not in existing:
                     session.add(EremRecord(
                         id=erem.id,
