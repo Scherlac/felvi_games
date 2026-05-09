@@ -297,6 +297,38 @@ def _count_dynamic_condition(
     return cnt, target
 
 
+def evaluate_dynamic_condition_progress(
+    user: str,
+    condition: dict | list[dict],
+    engine: Engine,
+    *,
+    valid_from: datetime | str | None = None,
+    trigger_tipus: str | None = None,
+    session_id: int | None = None,
+) -> tuple[bool, int | None, int | None, datetime | None]:
+    """Evaluate dynamic condition and return status with progress counters.
+
+    Returns (ok, current, target, normalized_valid_from). Accepts ``valid_from``
+    as datetime or ISO string to keep CLI/UI callers thin and consistent.
+    """
+    vf = valid_from
+    if isinstance(vf, str):
+        vf = datetime.fromisoformat(vf)
+    if vf is not None and vf.tzinfo is None:
+        vf = vf.replace(tzinfo=timezone.utc)
+
+    ok = _eval_dynamic_condition(
+        user,
+        condition,
+        engine,
+        valid_from=vf,
+        trigger_tipus=trigger_tipus,
+        session_id=session_id,
+    )
+    cur, target = _count_dynamic_condition(user, condition, engine, valid_from=vf)
+    return ok, cur, target, vf
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------

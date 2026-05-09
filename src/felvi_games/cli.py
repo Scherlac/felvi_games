@@ -355,8 +355,8 @@ def medals(
 
     from felvi_games.achievements import (
         EREM_KATALOGUS,
-        _count_dynamic_condition,
         _eval_dynamic_condition,
+        evaluate_dynamic_condition_progress,
         get_all_medals_for_user,
     )
     from felvi_games.config import get_db_path
@@ -555,14 +555,12 @@ def medals(
                 typer.echo(f"    condition: {_json.dumps(cond, ensure_ascii=False)}")
                 if user:
                     try:
-                        from datetime import timezone as _tz
-                        vf = r.created_at
-                        if isinstance(vf, str):
-                            vf = datetime.fromisoformat(vf)
-                        if vf is not None and vf.tzinfo is None:
-                            vf = vf.replace(tzinfo=_tz.utc)
-                        ok = _eval_dynamic_condition(user, cond, repo._engine, valid_from=vf)
-                        cur, target = _count_dynamic_condition(user, cond, repo._engine, valid_from=vf)
+                        ok, cur, target, vf = evaluate_dynamic_condition_progress(
+                            user,
+                            cond,
+                            repo._engine,
+                            valid_from=r.created_at,
+                        )
                         progress_str = ""
                         if cur is not None and target is not None:
                             bar_filled = min(cur, target)

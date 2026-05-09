@@ -1054,12 +1054,11 @@ def _load_active_challenges(user: str) -> list[dict]:
     Each item: {id, ikon, nev, leiras, created_at_str, teljesul: bool}
     """
     import json as _json
-    from datetime import datetime, timezone
 
     from sqlalchemy import text
     from sqlalchemy.orm import Session as _S
 
-    from felvi_games.achievements import _count_dynamic_condition, _eval_dynamic_condition
+    from felvi_games.achievements import evaluate_dynamic_condition_progress
 
     engine = get_repo()._engine
     earned_ids = {fe.erem_id for fe in get_repo().get_eremek(user)}
@@ -1080,13 +1079,12 @@ def _load_active_challenges(user: str) -> list[dict]:
             continue
         try:
             cond = _json.loads(r.condition_json)
-            vf = r.created_at
-            if isinstance(vf, str):
-                vf = datetime.fromisoformat(vf)
-            if vf is not None and vf.tzinfo is None:
-                vf = vf.replace(tzinfo=timezone.utc)
-            teljesul = _eval_dynamic_condition(user, cond, engine, valid_from=vf)
-            cur, target = _count_dynamic_condition(user, cond, engine, valid_from=vf)
+            teljesul, cur, target, vf = evaluate_dynamic_condition_progress(
+                user,
+                cond,
+                engine,
+                valid_from=r.created_at,
+            )
             result.append({
                 "id": r.id,
                 "ikon": r.ikon or "🏅",
