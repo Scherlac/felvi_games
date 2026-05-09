@@ -248,13 +248,14 @@ def usage(
             return
 
         typer.echo("\nPer-user summary:")
+        typer.echo("  Megjegyzés: a MenetRecord.feladat_limit mező jelenleg pont-célként működik (legacy mezőnév).")
         for row in session_rows:
             solved = int(row.solved or 0)
-            planned = int(row.planned or 0)
+            point_target = int(row.planned or 0)
             points = int(row.points or 0)
             sessions = int(row.sessions or 0)
             closed = int(row.closed or 0)
-            progress_pct = (100.0 * solved / planned) if planned else 0.0
+            point_progress_pct = (100.0 * points / point_target) if point_target else 0.0
 
             a = attempt_map.get(row.felhasznalo_nev, {"attempts": 0, "correct": 0, "avg_sec": None})
             attempts = a["attempts"]
@@ -267,8 +268,9 @@ def usage(
                 "- "
                 f"{row.felhasznalo_nev}: "
                 f"sessions={sessions}, closed={closed}, "
-                f"progress={solved}/{planned} ({progress_pct:.1f}%), "
-                f"points={points}, attempts={attempts}, accuracy={accuracy:.1f}%, avg_time={avg_sec_text}, "
+                f"tasks_solved={solved}, "
+                f"points={points}/{point_target} ({point_progress_pct:.1f}%), "
+                f"attempts={attempts}, accuracy={accuracy:.1f}%, avg_time={avg_sec_text}, "
                 f"last_started={row.last_started}"
             )
 
@@ -293,7 +295,7 @@ def usage(
                 typer.echo(
                     "    "
                     f"#{d.id} [{done_flag}] {d.targy}/{d.szint} "
-                    f"{d.megoldott}/{d.feladat_limit} pont={d.pont} "
+                    f"tasks={d.megoldott} point_target={d.feladat_limit} points={d.pont} "
                     f"start={d.started_at}"
                 )
 
@@ -553,7 +555,6 @@ def medals(
                 typer.echo(f"    condition: {_json.dumps(cond, ensure_ascii=False)}")
                 if user:
                     try:
-                        from datetime import datetime
                         from datetime import timezone as _tz
                         vf = r.created_at
                         if isinstance(vf, str):
@@ -620,6 +621,8 @@ def medals(
         typer.echo()
 
     def _handle_default_listing(db_path: Path) -> None:
+        from collections import defaultdict
+
         repo = FeladatRepository(db_path)
         engine = get_engine(db_path)
 
@@ -630,6 +633,11 @@ def medals(
                 users = list(sess.scalars(select(FelhasznaloRecord.nev).order_by(FelhasznaloRecord.nev)))
 
         typer.echo(f"\n=== Earned Medals  (DB: {db_path}) ===\n")
+        typer.echo(
+            "Megjegyzés: a 'Szerezve' időpont a kiosztás/rögzítés ideje UTC-ben. "
+            "Ez nem mindig egyezik meg a feltételt kiváltó tanulási esemény pontos idejével, "
+            "mert több érem egy menet végén vagy egy későbbi ellenőrzés során együtt kerülhet kiosztásra.\n"
+        )
         for nev in users:
             pairs = get_all_medals_for_user(nev, repo, include_expired=include_expired)
             szerzes_map = repo.get_erem_szerzesek_map(nev)
@@ -637,7 +645,9 @@ def medals(
             if not pairs:
                 typer.echo("   (még nincs érem)")
             else:
+                id_to_label: dict[str, str] = {}
                 for erem, fe in sorted(pairs, key=lambda p: p[0].kategoria):
+                    id_to_label[erem.id] = f"{erem.ikon} {erem.nev}"
                     szamlalo = f" ×{fe.szamlalo}" if fe.szamlalo > 1 else ""
                     lejarat = ""
                     if fe.lejarat:
@@ -648,8 +658,8 @@ def medals(
                     )
                     szerzesek = szerzes_map.get(erem.id, [])
                     if szerzesek:
-                        stamps = [s.strftime('%Y-%m-%d %H:%M') for s in szerzesek[:fe.szamlalo]]
-                        typer.echo(f"      Szerezve: {'; '.join(stamps)}")
+                        stamps = [s.strftime('%Y-%m-%d %H:%M:%S') for s in szerzesek[:fe.szamlalo]]
+                        typer.echo(f"      Kiosztva (UTC): {'; '.join(stamps)}")
                         if fe.szamlalo > len(stamps):
                             missing = fe.szamlalo - len(stamps)
                             plural = "alkalom" if missing == 1 else "alkalom"
@@ -657,7 +667,23 @@ def medals(
                                 f"      (+{missing} korábbi {plural}, dátum nélkül - régi adatok)"
                             )
                     else:
-                        typer.echo(f"      Szerezve: {fe.szerzett.strftime('%Y-%m-%d %H:%M')}")
+                        typer.echo(f"      Kiosztva (UTC): {fe.szerzett.strftime('%Y-%m-%d %H:%M:%S')}")
+
+                # Same-minute cluster diagnostics: helps explain "identical timestamps" in reports.
+                minute_groups: dict[str, list[str]] = defaultdict(list)
+                for erem_id, dt_list in szerzes_map.items():
+                    label = id_to_label.get(erem_id, erem_id)
+                    for ts in dt_list:
+                        minute_groups[ts.strftime('%Y-%m-%d %H:%M')].append(label)
+
+                cluster_rows = [(k, v) for k, v in sorted(minute_groups.items()) if len(v) >= 2]
+                if cluster_rows:
+                    typer.echo("      Időbélyeg-cluster (azonos grant perc):")
+                    for minute_key, labels in cluster_rows:
+                        typer.echo(
+                            f"        {minute_key}  -> {len(labels)} szerzés "
+                            f"({'; '.join(labels[:5])}{' ...' if len(labels) > 5 else ''})"
+                        )
             typer.echo()
 
     if generate and generate_dry_run:

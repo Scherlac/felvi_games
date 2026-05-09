@@ -1,6 +1,6 @@
 # Software Engineering (Process & Principles)
 
-This document captures the **software engineering process, design principles, and development workflow** used by the Japanese Lesson Generator project.
+This document captures the **software engineering process, design principles, and development workflow** used by the felvi_games project.
 
 It is intended as a companion to the living progress report (progress_report.md), focusing on how we work (not what we built).
 
@@ -8,11 +8,13 @@ It is intended as a companion to the living progress report (progress_report.md)
 
 ## Design Principles
 
-The project is guided by a small set of core engineering principles, starting with the most fundamentals:
+The project is guided by a small set of core engineering principles, starting with the most fundamental:
 
 - **High cohesion** — each module has one responsibility.
 - **Low coupling** — modules communicate via well-defined interfaces; no circular dependencies.
 - **Composition over inheritance** — prefer small, reusable components.
+- **Single source of truth (SSOT)** — each fact has exactly one authoritative representation; derived views are computed from it, never stored separately (e.g. UTC instants in DB, local-time derived for display; medal catalog as the single rule authority).
+- **Explicit over implicit** — data types, function signatures, and variable names declare intent; avoid silent coercions, ambiguous types, or context-dependent defaults (e.g. naive datetimes, unvalidated dicts).
 - **DRY** — avoid duplication; generalize patterns into cohesive modules.
 - **KISS** — keep solutions simple; use the right level of complexity to keep overall system understandable and maintainable.
 - **YAGNI** — plan with full architecture in mind, but implement only what is needed for the next incremental delivery.

@@ -2,9 +2,10 @@
 
 ## Chat language
 
-- Always respond in English, regardless of the language used in the code or documentation. 
+- Always respond in English, regardless of the language used in the code or documentation.
+- Output short outlines or summaries. Detailed explanations should be reserved for comments in the code or documentation, not the chat responses. 
 - In code, use mainly English for identifiers and comments, but dataclasses and fields can remain in Hungarian if that is the established convention. 
-Due to the project's domain language, Hungarian, it is acceptable to use Hungarian for domain-specific areas like LLM prompt engineering.
+- Due to the project's domain language, Hungarian, it is acceptable to use Hungarian for domain-specific areas like LLM prompt engineering.
 
 
 ## Shell Environment
@@ -25,6 +26,9 @@ Due to the project's domain language, Hungarian, it is acceptable to use Hungari
 - Always present the full command to me for review before execution.
 - If a command is expected to run long (like a server), do not mark it as a background task; let it occupy the terminal so I can see logs.
 - Activate the environment and reuse the terminal for subsequent commands to maintain context and visibility.
+
+## Tools insted ad hoc scripts
+- For recurring tasks (like running tests, generating reports, or starting the server), prefer creating dedicated CLI commands rather than ad hoc scripts. This promotes consistency and discoverability.
 
 ## Related documents
 

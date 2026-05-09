@@ -16,6 +16,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -634,7 +635,7 @@ _CHART_SECTIONS = {
 def generate_markdown(data: ReportData, chart_files: list[str], output_dir: Path) -> Path:
     fmt_from = data.date_from.strftime("%Y-%m-%d")
     fmt_to = (data.date_to - timedelta(seconds=1)).strftime("%Y-%m-%d")
-    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     lines: list[str] = [
         f"# Tanulási riport: {fmt_from} – {fmt_to}",
@@ -675,12 +676,42 @@ def generate_markdown(data: ReportData, chart_files: list[str], output_dir: Path
             )
         lines.append("")
 
-    lines += ["---", "", "## Új érmek az időszakban", ""]
+    lines += ["---", "", "## Érmek kiosztva az időszakban", ""]
 
     if data.achievements:
+        lines += [
+            "",
+            "_Megjegyzés: az alábbi időpontok a kiosztás/rögzítés idejét mutatják UTC-ben. "
+            "Nem feltétlenül egyeznek meg a feltételt kiváltó tanulási esemény pontos idejével, "
+            "mert több érem egy menet végén vagy egy későbbi ellenőrzés során együtt kerülhet kiosztásra._",
+            "",
+        ]
         for ach in sorted(data.achievements, key=lambda a: (a.szerzett_at, a.nev)):
-            dt_str = ach.szerzett_at.strftime("%Y-%m-%d %H:%M")
-            lines.append(f"- {ach.ikon} **{ach.nev}** → {ach.erem_nev}  _{dt_str}_")
+            dt_str = ach.szerzett_at.strftime("%Y-%m-%d %H:%M:%S")
+            lines.append(f"- {ach.ikon} **{ach.nev}** → {ach.erem_nev}  _{dt_str} UTC_")
+
+        # Diagnostics: same-minute award clusters often come from one evaluation pass.
+        minute_groups: dict[tuple[str, str], list[AchievementRow]] = defaultdict(list)
+        for ach in data.achievements:
+            minute_key = ach.szerzett_at.strftime("%Y-%m-%d %H:%M")
+            minute_groups[(ach.nev, minute_key)].append(ach)
+
+        clusters = [
+            (nev, minute, rows)
+            for (nev, minute), rows in sorted(minute_groups.items(), key=lambda item: item[0])
+            if len(rows) >= 2
+        ]
+        if clusters:
+            lines += ["", "### Időbélyeg-cluster diagnosztika", ""]
+            for nev, minute, rows in clusters:
+                medal_list = ", ".join(f"{r.ikon} {r.erem_nev}" for r in rows)
+                lines.append(
+                    f"- **{nev}** · {minute} percben {len(rows)} érem: {medal_list}"
+                )
+            lines += [
+                "",
+                "_Megjegyzés: a riport perces csoportosítása egyetlen érem-ellenőrzési futásból származó tömeges kiosztást is jelezhet._",
+            ]
     else:
         lines.append("_(Ebben az időszakban nem szerzett senki új érmet.)_")
 
