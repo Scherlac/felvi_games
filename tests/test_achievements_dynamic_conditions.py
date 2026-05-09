@@ -59,18 +59,22 @@ def test_eval_dynamic_condition_feladat_count_respects_valid_from(repo) -> None:
     _insert_attempt_at(repo, user, old_ts, pont=1)
     _insert_attempt_at(repo, user, new_ts, pont=1)
 
-    assert _eval_dynamic_condition(
-        user,
-        {"type": "feladat_count", "n": 1, "window_hours": 1},
-        repo._engine,
-        valid_from=valid_from,
-    ) is True
-    assert _eval_dynamic_condition(
-        user,
-        {"type": "feladat_count", "n": 2, "window_hours": 1},
-        repo._engine,
-        valid_from=valid_from,
-    ) is False
+    token = achievements._simulation_as_of.set(datetime(2026, 5, 2, 8, 30, tzinfo=timezone.utc))
+    try:
+        assert _eval_dynamic_condition(
+            user,
+            {"type": "feladat_count", "n": 1, "window_hours": 1},
+            repo._engine,
+            valid_from=valid_from,
+        ) is True
+        assert _eval_dynamic_condition(
+            user,
+            {"type": "feladat_count", "n": 2, "window_hours": 1},
+            repo._engine,
+            valid_from=valid_from,
+        ) is False
+    finally:
+        achievements._simulation_as_of.reset(token)
 
 
 def test_eval_dynamic_condition_interakcio_exists_with_enum_and_filters(repo) -> None:

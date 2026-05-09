@@ -57,6 +57,8 @@ class DailyInsight:
     close_medals: list[CloseModal] = field(default_factory=list)
     teaser_medal: Erem | None = None
     new_medal_created: bool = False
+    awardable_now: list[Erem] = field(default_factory=list)
+    would_repeat_now: list[Erem] = field(default_factory=list)
 
 
 # Fix typo in the field reference above
@@ -842,12 +844,13 @@ def daily_check(
     if not force and not is_first_login_today(user, repo):
         return None
 
-    from felvi_games.achievements import get_next_award_basis
+    from felvi_games.achievements import get_awardability_now, get_next_award_basis
 
     basis = get_next_award_basis(user, repo)
     stats = basis.stats
     close = basis.close_medals
     earned_count = basis.earned_count
+    awardability = get_awardability_now(user, repo)
 
     # 40% random gate: only sometimes introduce a new dynamic challenge medal
     introduce_new_medal = random.random() < 0.40
@@ -920,4 +923,6 @@ def daily_check(
         close_medals=close,
         teaser_medal=teaser,
         new_medal_created=new_medal_created,
+        awardable_now=awardability.awardable_now,
+        would_repeat_now=awardability.would_repeat_now,
     )

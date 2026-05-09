@@ -1108,6 +1108,16 @@ def _show_daily_insight_dialog(insight_data: dict) -> None:
     if greeting:
         st.markdown(f"### {greeting}")
 
+    awardable_now = insight_data.get("awardable_now", [])
+    would_repeat_now = insight_data.get("would_repeat_now", [])
+    if awardable_now or would_repeat_now:
+        st.markdown("#### ⚡ Most megszerezhető:")
+        for erem in awardable_now:
+            st.success(f"{erem.get('ikon', '🏅')} **{erem.get('nev', 'Ismeretlen érem')}**", icon=None)
+        for erem in would_repeat_now:
+            st.info(f"{erem.get('ikon', '🏅')} **{erem.get('nev', 'Ismételhető érem')}** — újra megszerezhető", icon="🔁")
+        st.markdown("---")
+
     # Active challenges — always shown
     challenges = insight_data.get("active_challenges", [])
     if challenges:
@@ -1256,6 +1266,24 @@ def main() -> None:
                      "hint": cm.hint, "progress": cm.progress}
                     for cm in insight.close_medals
                 ],
+                "awardable_now": [
+                    {
+                        "id": erem.id,
+                        "ikon": erem.ikon,
+                        "nev": erem.nev,
+                        "leiras": erem.leiras,
+                    }
+                    for erem in insight.awardable_now
+                ],
+                "would_repeat_now": [
+                    {
+                        "id": erem.id,
+                        "ikon": erem.ikon,
+                        "nev": erem.nev,
+                        "leiras": erem.leiras,
+                    }
+                    for erem in insight.would_repeat_now
+                ],
                 "teaser_medal": (
                     {"id": insight.teaser_medal.id,
                      "ikon": insight.teaser_medal.ikon,
@@ -1272,6 +1300,8 @@ def main() -> None:
             st.session_state["_napi_insight"] = {
                 "greeting": "",
                 "close_medals": [],
+                "awardable_now": [],
+                "would_repeat_now": [],
                 "teaser_medal": None,
                 "new_medal_created": False,
                 "active_challenges": active_challenges,

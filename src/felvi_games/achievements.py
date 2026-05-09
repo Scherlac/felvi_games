@@ -229,10 +229,15 @@ def _window_bounds(valid_from: datetime | None, window_h: float) -> tuple[dateti
       - ``window_h`` of 0 means "all-time" (the caller omitted window_hours)
       - any positive value means rolling window of that size
     """
+    now_utc = _sim_now()
+    rolling_cutoff = now_utc - timedelta(hours=window_h) if window_h > 0 else None
+
     if valid_from is not None:
-        cutoff = valid_from if valid_from.tzinfo else valid_from.replace(tzinfo=timezone.utc)
-    elif window_h > 0:
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=window_h)
+        vf_cutoff = valid_from if valid_from.tzinfo else valid_from.replace(tzinfo=timezone.utc)
+        # Honor both anchors: post-award/condition floor AND rolling window.
+        cutoff = max(vf_cutoff, rolling_cutoff) if rolling_cutoff is not None else vf_cutoff
+    elif rolling_cutoff is not None:
+        cutoff = rolling_cutoff
     else:
         # Use Unix epoch as a practical all-time lower bound for SQL backends.
         cutoff = datetime(1970, 1, 1, tzinfo=timezone.utc)
@@ -369,6 +374,55 @@ class NextAwardBasis:
                 }
             )
         return payload
+
+
+@_dataclass
+class AwardabilityNow:
+    """Engine-level snapshot of what can be awarded right now."""
+
+    awardable_now: list[Erem]
+    would_repeat_now: list[Erem]
+
+    def _serialize(self, medals: list[Erem]) -> list[dict[str, Any]]:
+        return [
+            {
+                "id": m.id,
+                "nev": m.nev,
+                "ikon": m.ikon,
+                "kategoria": m.kategoria,
+                "leiras": m.leiras,
+            }
+            for m in medals
+        ]
+
+    def payload(self) -> dict[str, list[dict[str, Any]]]:
+        return {
+            "awardable_now": self._serialize(self.awardable_now),
+            "would_repeat_now": self._serialize(self.would_repeat_now),
+        }
+
+
+def get_awardability_now(
+    user: str,
+    repo: FeladatRepository,
+    *,
+    trigger_tipus: str | None = None,
+    session_id: int | None = None,
+) -> AwardabilityNow:
+    """Return medals that the engine would grant right now (dry-run)."""
+    details = MedalCheckDetails()
+    awardable_now = check_new_medals(
+        user,
+        session_id,
+        repo,
+        trigger_tipus=trigger_tipus,
+        dry_run=True,
+        details=details,
+    )
+    return AwardabilityNow(
+        awardable_now=awardable_now,
+        would_repeat_now=details.would_repeat,
+    )
 
 
 def get_next_award_basis(

@@ -357,6 +357,7 @@ def medals(
         EREM_KATALOGUS,
         _eval_dynamic_condition,
         evaluate_dynamic_condition_progress,
+        get_awardability_now,
         get_next_award_basis,
         get_all_medals_for_user,
     )
@@ -371,12 +372,16 @@ def medals(
         basis=None,
     ) -> dict[str, object]:
         basis = basis or get_next_award_basis(player, repo)
+        awardability = get_awardability_now(player, repo)
+        awardability_payload = awardability.payload()
         return {
             "user": player,
             "window_hours": hours,
             "earned_count": basis.earned_count,
             "stats": basis.stats,
             "close_medals": basis.close_medals_payload(),
+            "awardable_now": awardability_payload["awardable_now"],
+            "would_repeat_now": awardability_payload["would_repeat_now"],
         }
 
     def _resolve_db_path() -> Path:
