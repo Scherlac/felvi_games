@@ -433,7 +433,7 @@ class Erem:
     privat: bool = False                    # True → only visible / earnable by cel_felhasznalo
     cel_felhasznalo: str | None = None      # specific user this private medal targets
     # --- dynamic condition (LLM-generated, machine-evaluable) ---
-    condition: dict | None = None           # structured condition dict; see achievements._eval_dynamic_condition
+    condition: dict | list[dict] | None = None  # single or compound (AND) condition; see condition_registry
     condition_valid_from: datetime | None = None  # anchor: count only events AFTER this timestamp
 
 

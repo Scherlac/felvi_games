@@ -302,11 +302,13 @@ class EremRecord(Base):
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     def to_domain(self) -> Erem:
-        condition: dict | None = None
+        condition: dict | list[dict] | None = None
         if self.condition_json:
             try:
                 import json as _json
-                condition = _json.loads(self.condition_json)
+                parsed = _json.loads(self.condition_json)
+                if isinstance(parsed, (dict, list)):
+                    condition = parsed
             except Exception:
                 condition = None
         created_at = self.created_at
