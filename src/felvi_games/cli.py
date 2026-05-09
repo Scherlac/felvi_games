@@ -1329,7 +1329,7 @@ def _medal_check_simulate(
     from sqlalchemy import update as sa_update
     from sqlalchemy.orm import Session
 
-    from felvi_games.achievements import SZABALY_REGISTRY, _eval_dynamic_condition, _simulation_as_of
+    from felvi_games.achievements import _eval_dynamic_condition, _simulation_as_of
     from felvi_games.db import FelhasznaloEremRecord, MegoldasRecord, MenetRecord
 
     SKIP_SIM = {"tokeletes_menet", "maraton", "pentek_matek_honap"}
@@ -1368,27 +1368,20 @@ def _medal_check_simulate(
             for erem_id, erem in catalog.items():
                 if erem_id in first_fire or erem_id in SKIP_SIM:
                     continue
-                if erem.condition is not None and erem.condition_valid_from is not None:
+                if not erem.condition:
+                    continue
+                if erem.condition_valid_from is not None:
                     vf = erem.condition_valid_from
                     vf = vf if vf.tzinfo else vf.replace(tzinfo=_tz.utc)
                     if ts < vf:
                         continue
-                rule_fn = SZABALY_REGISTRY.get(erem_id)
-                if rule_fn is None:
-                    if not erem.condition:
-                        continue
-                    try:
-                        earned = _eval_dynamic_condition(
-                            user, erem.condition, repo._engine,
-                            valid_from=erem.condition_valid_from,
-                        )
-                    except Exception:
-                        earned = False
-                else:
-                    try:
-                        earned = rule_fn(user, None, repo._engine)
-                    except Exception:
-                        earned = False
+                try:
+                    earned = _eval_dynamic_condition(
+                        user, erem.condition, repo._engine,
+                        valid_from=erem.condition_valid_from,
+                    )
+                except Exception:
+                    earned = False
                 if earned:
                     first_fire[erem_id] = ts
         finally:
@@ -2543,6 +2536,127 @@ def tts_clear_cmd(
     )
     scope = feladat_id or (f"targy={targy.value}" if targy else "összes")
     typer.echo(f"✓ {count} feladat tts_kerdes_szoveg törölve ({scope}).")
+
+
+# ---------------------------------------------------------------------------
+# felvi medal-diagnose  – inspect medal condition state
+# ---------------------------------------------------------------------------
+
+@app.command("medal-diagnose")
+def medal_diagnose_cmd(
+    db: Annotated[
+        Path | None, typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
+    ] = None,
+    user: Annotated[
+        str | None, typer.Option("--user", help="Csak egy felhasználó nyilvános érmei")
+    ] = None,
+) -> None:
+    """Diagnosztika: melyik érmek vannak betöltve feltétellel a DB-ben.
+    
+    Segít azonosítani, ha a bootstrap érmeket nem frissítette még a DB.
+    """
+    from felvi_games.config import get_db_path
+    from felvi_games.db import FeladatRepository
+
+    db_path = db or get_db_path()
+    if not db_path.exists():
+        typer.echo(f"[!] DB nem található: {db_path}")
+        raise typer.Exit(code=1)
+
+    repo = FeladatRepository(db_path)
+    catalog = repo.get_erem_katalogus(user)
+
+    has_condition = []
+    no_condition = []
+
+    for erem_id, erem in catalog.items():
+        if erem.condition:
+            has_condition.append((erem_id, erem.nev, erem.condition))
+        else:
+            no_condition.append((erem_id, erem.nev))
+
+    typer.echo(f"\n=== Medal Condition Diagnostic (DB: {db_path}) ===")
+    typer.echo(f"Scope: {'user=' + user if user else 'all public medals'}\n")
+    
+    typer.echo(f"✓ {len(has_condition)} érem FELTÉTELLEL betöltve:")
+    for mid, nev, cond in sorted(has_condition, key=lambda x: x[0]):
+        ctype = cond.get("type") if isinstance(cond, dict) else "list"
+        if isinstance(cond, list):
+            ctypes = ", ".join(c.get("type", "?") for c in cond)
+            typer.echo(f"  • {mid:30s}  {nev[:40]:40s}  [compound: {ctypes}]")
+        else:
+            typer.echo(f"  • {mid:30s}  {nev[:40]:40s}  [{ctype}]")
+
+    if no_condition:
+        typer.echo(f"\n✗ {len(no_condition)} érem NINCS feltétellel (manuális kiosztás vagy eljárandó):")
+        for mid, nev in sorted(no_condition, key=lambda x: x[0]):
+            typer.echo(f"  • {mid:30s}  {nev[:40]:40s}")
+        typer.echo("\nMegjegyzés: Ha az első csoport túl kicsi, a bootstrap érmeket")
+        typer.echo("újra kell tölteni: felvi medal-check <user> --clear --apply")
+    
+    typer.echo()
+
+
+# ---------------------------------------------------------------------------
+# felvi medal-resync  – update DB medals with bootstrap conditions
+# ---------------------------------------------------------------------------
+
+@app.command("medal-resync")
+def medal_resync_cmd(
+    db: Annotated[
+        Path | None, typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
+    ] = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Megmutatja mit csinálna, de nem módosít")
+    ] = False,
+) -> None:
+    """Bootstrap érmeket feltételekkel szinkronizálja a DB-re.
+    
+    Frissíti a meglévő érmeket az aktuális bootstrap JSON feltételeivel.
+    Ez szükséges, ha a DB-t egy régebbi verzió hozta létre (feltételek nélkül).
+    """
+    import json as _json
+    from sqlalchemy import update as sa_update
+    from sqlalchemy.orm import Session
+
+    from felvi_games.config import get_db_path
+    from felvi_games.db import EremRecord, FeladatRepository
+    from felvi_games.medal_catalog import load_bootstrap_erem_catalog
+
+    db_path = db or get_db_path()
+    if not db_path.exists():
+        typer.echo(f"[!] DB nem található: {db_path}")
+        raise typer.Exit(code=1)
+
+    repo = FeladatRepository(db_path)
+    bootstrap = load_bootstrap_erem_catalog()
+
+    updated_count = 0
+    with Session(repo._engine) as s:
+        for erem_id, bootstrap_erem in bootstrap.items():
+            record = s.get(EremRecord, erem_id)
+            if record is None:
+                continue
+
+            # Build condition_json and condition_valid_from
+            condition_json = _json.dumps(bootstrap_erem.condition, ensure_ascii=False) if bootstrap_erem.condition else None
+            condition_valid_from = bootstrap_erem.condition_valid_from
+
+            # Only update if the DB record is missing condition_json
+            if record.condition_json is None and condition_json is not None:
+                if dry_run:
+                    typer.echo(f"  [DRY] {erem_id:30s}  ← {bootstrap_erem.condition.get('type', '?')}")
+                else:
+                    record.condition_json = condition_json
+                    record.condition_valid_from = condition_valid_from
+                    s.commit()
+                    typer.echo(f"  ✓ {erem_id:30s}  ← {bootstrap_erem.condition.get('type', '?')}")
+                updated_count += 1
+
+    if dry_run:
+        typer.echo(f"\n[DRY-RUN] {updated_count} érem frissítésére kerülne sor (valódi futáshoz hiányzik a --dry-run flag).\n")
+    else:
+        typer.echo(f"\n✓ {updated_count} érem szinkronizálva bootstrap feltételekkel.\n")
 
 
 # ---------------------------------------------------------------------------
