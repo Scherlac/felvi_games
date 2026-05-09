@@ -39,6 +39,7 @@ from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+
 from felvi_games.models import InterakcioTipus
 
 # ---------------------------------------------------------------------------
@@ -462,7 +463,10 @@ def _eval_helyes_count(user, condition, n, cutoff, upper, s):
     ) >= n
 
 def _eval_pont_sum(user, condition, n, cutoff, upper, s):
-    return _q_megoldas_sum(user, cutoff, upper, s) >= n
+    if n <= 0:
+        return True
+    total = _q_megoldas_sum(user, cutoff, upper, s)
+    return total >= n
 
 def _eval_villam(user, condition, n, cutoff, upper, s):
     from felvi_games.db import MegoldasRecord
@@ -556,7 +560,8 @@ def _count_helyes_count(user, condition, cutoff, upper, s):
     return _q_megoldas_count(user, cutoff, upper, s, extra=(MegoldasRecord.helyes == True,))  # noqa: E712
 
 def _count_pont_sum(user, condition, cutoff, upper, s):
-    return _q_megoldas_sum(user, cutoff, upper, s)
+    total = _q_megoldas_sum(user, cutoff, upper, s)
+    return total
 
 def _count_villam(user, condition, cutoff, upper, s):
     from felvi_games.db import MegoldasRecord
@@ -822,7 +827,11 @@ def _eval_recent_play_days(user, condition, n, cutoff, upper, s):
 
 def _eval_day_streak(user, condition, n, cutoff, upper, s):
     """Current trailing consecutive play-day streak >= n."""
-    return _day_streak_current(_q_all_play_days(user, upper, s)) >= n
+    days = _q_all_play_days(user, upper, s)
+    if not days:
+        return False
+    streak = _day_streak_current(days)
+    return streak >= n
 
 def _eval_day_streak_max(user, condition, n, cutoff, upper, s):
     """All-time longest consecutive play-day streak >= n."""
@@ -936,7 +945,10 @@ def _count_recent_play_days(user, condition, cutoff, upper, s):
     return sum(1 for d in days if d >= cutoff)
 
 def _count_day_streak(user, condition, cutoff, upper, s):
-    return _day_streak_current(_q_all_play_days(user, upper, s))
+    days = _q_all_play_days(user, upper, s)
+    if not days:
+        return 0
+    return _day_streak_current(days)
 
 def _count_day_streak_max(user, condition, cutoff, upper, s):
     return _day_streak_max(_q_all_play_days(user, upper, s))

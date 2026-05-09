@@ -138,7 +138,11 @@ def normalize_medal_candidate_time_gate(medal_data: dict | None) -> tuple[dict |
     expected_type, expected_hour, label = expected
     items = _condition_items(condition)
     has_expected = any(str(c.get("type", "")) == expected_type for c in items)
-    has_opposite = any(str(c.get("type", "")) in {"before_hour", "after_hour"} and str(c.get("type", "")) != expected_type for c in items)
+    has_opposite = any(
+        str(c.get("type", "")) in {"before_hour", "after_hour"}
+        and str(c.get("type", "")) != expected_type
+        for c in items
+    )
     if has_expected and not has_opposite:
         return medal_data, {
             "time_gate_status": "ok",
@@ -172,7 +176,10 @@ def review_time_gate_alignment(user: str, repo: FeladatRepository) -> list[dict]
         has_before = any(str(c.get("type", "")) == "before_hour" for c in items)
         has_after = any(str(c.get("type", "")) == "after_hour" for c in items)
 
-        if has_expected and ((expected_type == "before_hour" and not has_after) or (expected_type == "after_hour" and not has_before)):
+        if has_expected and (
+            (expected_type == "before_hour" and not has_after)
+            or (expected_type == "after_hour" and not has_before)
+        ):
             status = "ok"
             recommendation = "none"
         elif has_expected:
@@ -498,7 +505,11 @@ def find_cross_user_medal_clusters(
         rep = cluster[0]
         reason = ""
         for m in cluster[1:]:
-            r = _dynamic_overlap_reason(m.condition, rep.condition) if isinstance(m.condition, dict) and isinstance(rep.condition, dict) else None
+            r = (
+                _dynamic_overlap_reason(m.condition, rep.condition)
+                if isinstance(m.condition, dict) and isinstance(rep.condition, dict)
+                else None
+            )
             if r:
                 reason = r
                 break

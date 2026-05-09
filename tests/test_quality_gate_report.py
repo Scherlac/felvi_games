@@ -21,9 +21,17 @@ def _load_quality_gate_module():
 qgr = _load_quality_gate_module()
 
 
-def _snapshot(*, generated_at: str = "2026-05-03T00:00:00+00:00", avg_cc: float = 5.0, p95_cc: float = 20.0,
-              d_or_worse: int = 10, f_blocks: int = 5, parse_errors: list[str] | None = None,
-              coverage_pct: float | None = 50.0, coverage_files: int = 1) -> qgr.Snapshot:
+def _snapshot(
+    *,
+    generated_at: str = "2026-05-03T00:00:00+00:00",
+    avg_cc: float = 5.0,
+    p95_cc: float = 20.0,
+    d_or_worse: int = 10,
+    f_blocks: int = 5,
+    parse_errors: list[str] | None = None,
+    coverage_pct: float | None = 50.0,
+    coverage_files: int = 1,
+) -> qgr.Snapshot:
     return qgr.Snapshot(
         schema_version=2,
         generated_at_utc=generated_at,
@@ -43,7 +51,14 @@ def _snapshot(*, generated_at: str = "2026-05-03T00:00:00+00:00", avg_cc: float 
         top_blocks=[],
         coverage_pct=coverage_pct,
         coverage_files=coverage_files,
-        low_coverage_files=[{"file": "src/a.py", "coverage_pct": coverage_pct or 0.0, "covered_lines": 1, "num_statements": 2}],
+        low_coverage_files=[
+            {
+                "file": "src/a.py",
+                "coverage_pct": coverage_pct or 0.0,
+                "covered_lines": 1,
+                "num_statements": 2,
+            }
+        ],
         coverage_error=None,
         coverage_source="test",
     )
@@ -96,9 +111,25 @@ def test_ratchet_does_not_lower_coverage_baseline() -> None:
     assert changed == []
 
 
-def test_main_auto_ratchet_writes_improved_metrics(tmp_path: Path, monkeypatch, capsys) -> None:
-    baseline = _snapshot(generated_at="2026-05-03T08:00:00+00:00", avg_cc=5.0, d_or_worse=10, f_blocks=5, coverage_pct=51.0)
-    current = _snapshot(generated_at="2026-05-03T08:40:00+00:00", avg_cc=4.8, d_or_worse=9, f_blocks=5, coverage_pct=50.9)
+def test_main_auto_ratchet_writes_improved_metrics(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    baseline = _snapshot(
+        generated_at="2026-05-03T08:00:00+00:00",
+        avg_cc=5.0,
+        d_or_worse=10,
+        f_blocks=5,
+        coverage_pct=51.0,
+    )
+    current = _snapshot(
+        generated_at="2026-05-03T08:40:00+00:00",
+        avg_cc=4.8,
+        d_or_worse=9,
+        f_blocks=5,
+        coverage_pct=50.9,
+    )
 
     baseline_path = tmp_path / "baseline.json"
     stats_path = tmp_path / "current.json"

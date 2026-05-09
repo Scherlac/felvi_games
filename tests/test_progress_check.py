@@ -37,7 +37,14 @@ def test_get_user_stats_includes_trends_patterns_and_events(repo, feladat_matek,
 
     repo.save_megoldas(matek, "42", Ertekeles(True, "OK", 5), felhasznalo_nev=user, menet_id=matek_menet_id)
     first_attempt_id = repo.get_latest_megoldas_id(matek.id, felhasznalo_nev=user)
-    repo.save_megoldas(matek, "0", Ertekeles(False, "Nem", 0), felhasznalo_nev=user, menet_id=matek_menet_id, segitseg_kert=True)
+    repo.save_megoldas(
+        matek,
+        "0",
+        Ertekeles(False, "Nem", 0),
+        felhasznalo_nev=user,
+        menet_id=matek_menet_id,
+        segitseg_kert=True,
+    )
     second_attempt_id = repo.get_latest_megoldas_id(matek.id, felhasznalo_nev=user, adott_valasz="0")
     repo.save_megoldas(magyar, "ige", Ertekeles(True, "OK", 3), felhasznalo_nev=user, menet_id=mixed_level_menet_id)
     third_attempt_id = repo.get_latest_megoldas_id(magyar.id, felhasznalo_nev=user)
@@ -160,7 +167,10 @@ def test_daily_check_rejects_overlapping_dynamic_medal(repo) -> None:
         patch("felvi_games.progress_check.random.random", return_value=0.0),
         patch("felvi_games.progress_check.random.choice", return_value=12),
         patch("felvi_games.ai.generate_daily_insight", return_value=ai_result),
-        patch("felvi_games.ai.judge_medal_novelty", return_value={"reasonably_different": False, "reason": "too similar"}),
+        patch(
+            "felvi_games.ai.judge_medal_novelty",
+            return_value={"reasonably_different": False, "reason": "too similar"},
+        ),
         patch("felvi_games.ai.refine_daily_medal", return_value=None),
     ):
         insight = daily_check(user, repo, force=True)
@@ -227,7 +237,10 @@ def test_daily_check_refines_overlapping_dynamic_medal(repo) -> None:
         patch("felvi_games.progress_check.random.random", return_value=0.0),
         patch("felvi_games.progress_check.random.choice", return_value=12),
         patch("felvi_games.ai.generate_daily_insight", return_value=ai_result),
-        patch("felvi_games.ai.judge_medal_novelty", return_value={"reasonably_different": False, "reason": "too similar"}),
+        patch(
+            "felvi_games.ai.judge_medal_novelty",
+            return_value={"reasonably_different": False, "reason": "too similar"},
+        ),
         patch("felvi_games.ai.refine_daily_medal", return_value=refined),
     ):
         insight = daily_check(user, repo, force=True)

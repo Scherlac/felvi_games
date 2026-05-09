@@ -339,16 +339,28 @@ def medals(
         bool, typer.Option("--generator-inputs", help="A dinamikus éremgenerátornak átadott bemeneti adatok kiírása")
     ] = False,
     review_time_gating: Annotated[
-        bool, typer.Option("--review-time-gating", help="Időszakot sugalló éremnevek és feltételek összhangjának ellenőrzése")
+        bool,
+        typer.Option(
+            "--review-time-gating",
+            help="Időszakot sugalló éremnevek és feltételek összhangjának ellenőrzése",
+        ),
     ] = False,
     review_time_gating_llm: Annotated[
         bool, typer.Option("--review-time-gating-llm", help="--review-time-gating eredmény rövid LLM-összegzése")
     ] = False,
     review_time_gating_fix: Annotated[
-        bool, typer.Option("--review-time-gating-fix", help="--review-time-gating során automatikusan javítja a hiányzó/ellentmondó before/after feltételeket")
+        bool,
+        typer.Option(
+            "--review-time-gating-fix",
+            help="--review-time-gating során automatikusan javítja a hiányzó/ellentmondó before/after feltételeket",
+        ),
     ] = False,
     review_time_gating_interactive: Annotated[
-        bool, typer.Option("--review-time-gating-interactive", help="Interaktív javítás: eltérésenként rákérdez a before/after feltétel javítására")
+        bool,
+        typer.Option(
+            "--review-time-gating-interactive",
+            help="Interaktív javítás: eltérésenként rákérdez a before/after feltétel javítására",
+        ),
     ] = False,
     window_hours: Annotated[
         int, typer.Option("--window-hours", help="Dry-run javaslat időablaka órában (1-18)")
@@ -370,9 +382,9 @@ def medals(
         EREM_KATALOGUS,
         _eval_dynamic_condition,
         evaluate_dynamic_condition_progress,
+        get_all_medals_for_user,
         get_awardability_now,
         get_next_award_basis,
-        get_all_medals_for_user,
     )
     from felvi_games.config import get_db_path
     from felvi_games.db import FeladatRepository, FelhasznaloRecord, get_engine
@@ -450,7 +462,7 @@ def medals(
 
         repo = FeladatRepository(db_path)
         basis = get_next_award_basis(user, repo)
-        generator_payload = _collect_generator_inputs(repo, user, window_hours, basis=basis)
+        _collect_generator_inputs(repo, user, window_hours, basis=basis)
         stats = basis.stats
         close = basis.close_medals
         earned_count = basis.earned_count
@@ -492,7 +504,12 @@ def medals(
             )
         # Check if the condition is ALREADY satisfied at creation time (bad – n should require future effort)
         try:
-            already_done = _eval_dynamic_condition(user, cond or {}, repo._engine, valid_from=datetime.now(timezone.utc))
+            already_done = _eval_dynamic_condition(
+                user,
+                cond or {},
+                repo._engine,
+                valid_from=datetime.now(timezone.utc),
+            )
             if already_done:
                 typer.echo("  ⚠️  Figyelem: a feltétel már most teljesül – nem jó kihívás!")
                 if generate:
@@ -907,7 +924,10 @@ def medal_add_cmd(
     ervenyes_napig: Annotated[int | None, typer.Option("--ervenyes-napig")] = None,
     ismetelheto: Annotated[bool, typer.Option("--ismetelheto")] = False,
     privat: Annotated[bool, typer.Option("--privat", help="Privát érem (csak a célfelhasználónak látható)")] = False,
-    cel_felhasznalo: Annotated[str | None, typer.Option("--cel-felhasznalo", help="Privát érem célfelhasználója")] = None,
+    cel_felhasznalo: Annotated[
+        str | None,
+        typer.Option("--cel-felhasznalo", help="Privát érem célfelhasználója"),
+    ] = None,
 ) -> None:
     """Új érem hozzáadása a katalógushoz (azonnal érvényes, újraindítás nélkül)."""
     from felvi_games.models import Erem
@@ -933,7 +953,7 @@ def medal_add_cmd(
 
 
 @app.command("medal-edit")
-def medal_edit_cmd(
+def _medal_edit_cmd(
     db: Annotated[Path | None, typer.Option("--db")] = None,
     id: Annotated[str, typer.Option("--id", help="Szerkesztendő érem azonosítója")] = ...,
     nev: Annotated[str | None, typer.Option("--nev")] = None,
@@ -1014,7 +1034,7 @@ def medal_grant_cmd(
     ervenyes_napig: Annotated[int | None, typer.Option("--ervenyes-napig", help="Lejárat napokban")] = None,
 ) -> None:
     """Érem manuális odaítélése egy felhasználónak (privát érmekhez hasznos)."""
-    from datetime import datetime, timezone
+    from datetime import datetime, timedelta, timezone
 
     from sqlalchemy.orm import Session as _Session
 
@@ -1034,7 +1054,6 @@ def medal_grant_cmd(
 
     expires_at = None
     if ervenyes_napig:
-        from datetime import datetime, timezone
         expires_at = datetime.now(timezone.utc) + timedelta(days=ervenyes_napig)
 
     fe = repo.grant_erem(felhasznalo, id, lejarat_at=expires_at)
@@ -1389,7 +1408,10 @@ def _medal_check_policy_fix(repo: FeladatRepository, user: str, dry_run: bool) -
         typer.echo()
 
 
-def _medal_check_collect_awards(repo: FeladatRepository, user: str) -> tuple[list[tuple[int, str, object, int]], dict[str, int], dict[str, int]]:
+def _medal_check_collect_awards(
+    repo: FeladatRepository,
+    user: str,
+) -> tuple[list[tuple[int, str, object, int]], dict[str, int], dict[str, int]]:
     from collections import Counter
 
     from sqlalchemy import select
@@ -1613,7 +1635,12 @@ def _medal_check_dry_run(
     typer.echo("\n  (Semmi nem változott – ez dry-run volt.)\n")
 
 
-def _medal_check_clear(repo: FeladatRepository, user: str, db_path: Path, awards: list[tuple[int, str, object, int]]) -> None:
+def _medal_check_clear(
+    repo: FeladatRepository,
+    user: str,
+    db_path: Path,
+    awards: list[tuple[int, str, object, int]],
+) -> None:
     from sqlalchemy import delete as sa_delete
     from sqlalchemy.orm import Session
 
@@ -1673,16 +1700,28 @@ def medal_check_cmd(
         Path | None, typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
     ] = None,
     dry_run: Annotated[
-        bool, typer.Option("--dry-run", help="Megmutatja a duplikátumokat és mit ér el a törlés+újraértékelés, de NEM ment")
+        bool,
+        typer.Option(
+            "--dry-run",
+            help="Megmutatja a duplikátumokat és mit ér el a törlés+újraértékelés, de NEM ment",
+        ),
     ] = False,
     clear: Annotated[
         bool, typer.Option("--clear", help="Törli az összes szerzett érmet és újra futtatja a check_new_medals-t")
     ] = False,
     simulate: Annotated[
-        bool, typer.Option("--simulate", help="Időrendi visszajátszás: megmutatja mikor sült volna el minden érem először")
+        bool,
+        typer.Option(
+            "--simulate",
+            help="Időrendi visszajátszás: megmutatja mikor sült volna el minden érem először",
+        ),
     ] = False,
     apply: Annotated[
-        bool, typer.Option("--apply", help="--simulate után ténylegesen törli és helyes időbélyeggel újraosztja az érmeket")
+        bool,
+        typer.Option(
+            "--apply",
+            help="--simulate után ténylegesen törli és helyes időbélyeggel újraosztja az érmeket",
+        ),
     ] = False,
     policy_fix: Annotated[
         bool,
@@ -1699,7 +1738,6 @@ def medal_check_cmd(
     --simulate --apply: clear + újraosztás helyes (első tüzelés) időbélyegekkel.
     --clear:    törli az összes szerzett érmet és nulláról értékeli újra (mai dátummal).
     """
-    from felvi_games.achievements import check_new_medals
     from felvi_games.config import get_db_path
     from felvi_games.db import FeladatRepository
 
@@ -2270,7 +2308,10 @@ def review_cmd(
         if dry_run:
             typer.echo("    [dry-run] Nem mentve.")
         elif result.versioned:
-            typer.echo(f"    ✓ Új verzió: {result.original_id}  →  {result.updated.id}  (archivált: {result.original_id})")
+            typer.echo(
+                f"    ✓ Új verzió: {result.original_id}  →  "
+                f"{result.updated.id}  (archivált: {result.original_id})"
+            )
         else:
             typer.echo(f"    ✓ In-place frissítve: {result.updated.id}")
 
@@ -2284,7 +2325,7 @@ def review_cmd(
 # ---------------------------------------------------------------------------
 
 @app.command("medal-promote-candidates")
-def medal_promote_candidates_cmd(
+def _medal_promote_candidates_cmd(
     db: Annotated[Path | None, typer.Option("--db", help="SQLite DB útvonala")] = None,
     min_users: Annotated[
         int,
@@ -2650,7 +2691,7 @@ def medal_diagnose_cmd(
 # ---------------------------------------------------------------------------
 
 @app.command("medal-compare")
-def medal_compare_cmd(
+def _medal_compare_cmd(
     user: Annotated[
         str, typer.Argument(help="Felhasználó neve")
     ],
@@ -2701,7 +2742,7 @@ def medal_compare_cmd(
             else:
                 active.append(rec)
     
-    typer.echo(f"  📊 Szétbontás:")
+    typer.echo("  📊 Szétbontás:")
     typer.echo(f"    • Aktív (nincs lejárat):        {len(active):2d}")
     typer.echo(f"    • Lejárt (ideiglenes, vége):   {len(expired):2d}")
     typer.echo(f"    • Nincs feltétel (manuális):   {len(no_condition):2d}\n")
@@ -2716,7 +2757,6 @@ def medal_compare_cmd(
                 expired_ago = (now - lejarat).total_seconds()
                 if expired_ago < 86400:
                     mins = int(expired_ago // 60)
-                    hrs = int((expired_ago % 3600) // 60)
                     typer.echo(f"  • {rec.erem_id:30s}  {label:40s}  [{mins // 60}h {mins % 60}m ezelőtt]")
                 else:
                     days = int(expired_ago // 86400)
@@ -2758,7 +2798,7 @@ def medal_resync_cmd(
     Ez szükséges, ha a DB-t egy régebbi verzió hozta létre (feltételek nélkül).
     """
     import json as _json
-    from sqlalchemy import update as sa_update
+
     from sqlalchemy.orm import Session
 
     from felvi_games.config import get_db_path
@@ -2781,7 +2821,11 @@ def medal_resync_cmd(
                 continue
 
             # Build condition_json and condition_valid_from
-            condition_json = _json.dumps(bootstrap_erem.condition, ensure_ascii=False) if bootstrap_erem.condition else None
+            condition_json = (
+                _json.dumps(bootstrap_erem.condition, ensure_ascii=False)
+                if bootstrap_erem.condition
+                else None
+            )
             condition_valid_from = bootstrap_erem.condition_valid_from
 
             # Only update if the DB record is missing condition_json
@@ -2796,7 +2840,10 @@ def medal_resync_cmd(
                 updated_count += 1
 
     if dry_run:
-        typer.echo(f"\n[DRY-RUN] {updated_count} érem frissítésére kerülne sor (valódi futáshoz hiányzik a --dry-run flag).\n")
+        typer.echo(
+            f"\n[DRY-RUN] {updated_count} érem frissítésére kerülne sor "
+            "(valódi futáshoz hiányzik a --dry-run flag).\n"
+        )
     else:
         typer.echo(f"\n✓ {updated_count} érem szinkronizálva bootstrap feltételekkel.\n")
 
@@ -2823,6 +2870,7 @@ def medal_backup_cmd(
     Hasznos a feltételek megőrzésére és verziókezelésre.
     """
     import json as _json
+
     from sqlalchemy import select
     from sqlalchemy.orm import Session
 
@@ -2855,7 +2903,11 @@ def medal_backup_cmd(
                         "ideiglenes": record.ideiglenes,
                         "ismetelheto": record.ismetelheto,
                         "condition": condition,
-                        "condition_valid_from": record.condition_valid_from.isoformat() if record.condition_valid_from else None,
+                        "condition_valid_from": (
+                            record.condition_valid_from.isoformat()
+                            if record.condition_valid_from
+                            else None
+                        ),
                     }
                     backed_up_count += 1
                 except Exception as e:
@@ -2866,7 +2918,10 @@ def medal_backup_cmd(
     
     if dry_run:
         typer.echo(f"  [DRY-RUN] Lemenne: {output}")
-        typer.echo(f"\n[DRY-RUN] {backed_up_count} érem feltételét exportálná (valódi futáshoz hiányzik a --dry-run flag).\n")
+        typer.echo(
+            f"\n[DRY-RUN] {backed_up_count} érem feltételét exportálná "
+            "(valódi futáshoz hiányzik a --dry-run flag).\n"
+        )
     else:
         # Create output directory if needed
         output.parent.mkdir(parents=True, exist_ok=True)

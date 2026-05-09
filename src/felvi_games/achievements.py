@@ -23,7 +23,8 @@ from __future__ import annotations
 
 import logging
 from contextvars import ContextVar
-from dataclasses import dataclass as _dataclass, field as _field
+from dataclasses import dataclass as _dataclass
+from dataclasses import field as _field
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
