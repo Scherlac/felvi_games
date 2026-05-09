@@ -1,6 +1,6 @@
 # Code Quality Gate Report
 
-Generated at (UTC): 2026-05-09T14:36:37+00:00
+Generated at (UTC): 2026-05-09T15:22:24+00:00
 Scope: src, tests
 
 ## Gate
@@ -12,22 +12,22 @@ Reasons:
 
 ## Current Snapshot
 
-- Python files: 29
-- LOC: 15554 (SLOC: 11889, Blank: 2340)
-- Avg MI: 40.42
-- Avg CC: 4.446
+- Python files: 30
+- LOC: 15469 (SLOC: 11793, Blank: 2351)
+- Avg MI: 41.413
+- Avg CC: 4.455
 - P95 CC: 15.0
-- Rank counts: A=498, B=67, C=32, D=11, E=5, F=1
+- Rank counts: A=500, B=69, C=32, D=11, E=5, F=1
 - D/E/F blocks: 17
 - F blocks: 1
 - Parse-error files: 0
-- Coverage: 52.354%
+- Coverage: 52.196%
 
 ## Coverage
 
-- Total line coverage: 52.354%
-- Files measured: 14
-- Coverage source: cached .coverage (3.3 min old)
+- Total line coverage: 52.196%
+- Files measured: 15
+- Coverage source: cached .coverage (2.52 min old)
 - Coverage status: OK
 
 ### Lowest Coverage Files
@@ -36,10 +36,10 @@ Reasons:
 |---:|---:|---|
 | 0.0 | 0/435 | src/felvi_games/report.py |
 | 0.0 | 0/187 | src/felvi_games/scraper.py |
-| 25.76 | 322/1250 | src/felvi_games/cli.py |
+| 25.84 | 323/1250 | src/felvi_games/cli.py |
 | 46.667 | 49/105 | src/felvi_games/ai.py |
 | 50.314 | 80/159 | src/felvi_games/review.py |
-| 66.612 | 405/608 | src/felvi_games/achievements.py |
+| 62.951 | 401/637 | src/felvi_games/achievements.py |
 | 75.0 | 54/72 | src/felvi_games/status.py |
 | 76.471 | 221/289 | src/felvi_games/pdf_parser.py |
 | 76.499 | 319/417 | src/felvi_games/progress_check.py |
@@ -51,14 +51,14 @@ Reasons:
 
 | Clones | Body Size | Location A | Location B |
 |---:|---:|---|---|
-| 3 | 34 | src/felvi_games/achievements.py:525 _make_megoldas_count_rule | src/felvi_games/achievements.py:531 _make_pont_sum_rule |
+| 3 | 34 | src/felvi_games/achievements.py:292 _make_megoldas_count_rule | src/felvi_games/achievements.py:298 _make_pont_sum_rule |
 | 3 | 31 | tests/conftest.py:28 feladat_matek | tests/test_cli_review.py:30 feladat |
 | 3 | 30 | src/felvi_games/report.py:41 accuracy_pct | src/felvi_games/report.py:55 accuracy_pct |
-| 3 | 26 | src/felvi_games/achievements.py:526 _rule | src/felvi_games/achievements.py:532 _rule |
+| 3 | 26 | src/felvi_games/achievements.py:293 _rule | src/felvi_games/achievements.py:299 _rule |
 | 3 | 26 | tests/test_pdf_parser.py:122 test_matek_feladatlap | tests/test_pdf_parser.py:126 test_magyar_utmutato |
 | 3 | 24 | tests/test_medal_assets.py:31 _asset_path | tests/test_medal_assets.py:45 _asset_path |
-| 2 | 116 | src/felvi_games/achievements.py:885 _query_megoldas_count | src/felvi_games/achievements.py:923 _query_menet_count |
-| 2 | 53 | src/felvi_games/achievements.py:549 _make_streak_rule | src/felvi_games/achievements.py:557 _make_longest_streak_rule |
+| 2 | 120 | src/felvi_games/achievements.py:686 _query_megoldas_count | src/felvi_games/achievements.py:724 _query_menet_count |
+| 2 | 53 | src/felvi_games/achievements.py:316 _make_streak_rule | src/felvi_games/achievements.py:324 _make_longest_streak_rule |
 | 2 | 51 | tests/test_db.py:225 test_save_megoldas_helyes | tests/test_db.py:232 test_save_megoldas_helytelen |
 | 2 | 46 | tests/test_pdf_parser.py:520 test_single_task_detected | tests/test_pdf_parser.py:527 test_multiple_tasks_split_correctly |
 
@@ -86,8 +86,8 @@ Reasons:
 
 ## Interface Complexity
 
-- Public functions analyzed: 397
-- Avg parameters: 1.622
+- Public functions analyzed: 398
+- Avg parameters: 1.621
 - High-parameter functions (> 5 params): 17
 - Untyped public functions (no return annotation): 179
 
@@ -116,19 +116,19 @@ Reasons:
 ## Baseline Delta
 
 - Baseline timestamp: 2026-05-09T14:32:48+00:00
-- Delta avg_cc: 0.033
+- Delta avg_cc: 0.042
 - Delta p95_cc: 0.0
 - Delta D/E/F blocks: 0
 - Delta F blocks: 0
 - Delta parse-error files: 0
-- Delta coverage_pct: -0.404
+- Delta coverage_pct: -0.562
 - Delta ruff_violations: 0
 - Delta duplicate_block_pairs: 0
 - Delta high_param_count: 0
 
 Notes:
-- ⚠️ WARNING: Avg CC +0.033 (within tolerance 0.35).
-- ⚠️ WARNING: Coverage -00.404% (within tolerance 1.0%).
+- ⚠️ WARNING: Avg CC +0.042 (within tolerance 0.35).
+- ⚠️ WARNING: Coverage -00.562% (within tolerance 1.0%).
 
 ## Gate Thresholds
 
@@ -159,8 +159,8 @@ Notes:
 | D | 26.0 | src/felvi_games/cli.py:1315 _medal_check_simulate |
 | D | 25.0 | src/felvi_games/cli.py:164 usage |
 | D | 25.0 | src/felvi_games/cli.py:1442 _medal_check_dry_run |
-| D | 23.0 | src/felvi_games/achievements.py:1322 check_new_medals |
-| D | 23.0 | src/felvi_games/app.py:849 _render_eredmeny |
+| D | 23.0 | src/felvi_games/achievements.py:1165 check_new_medals |
+| D | 23.0 | src/felvi_games/app.py:854 _render_eredmeny |
 | D | 22.0 | src/felvi_games/app.py:370 _render_settings_page |
 | D | 22.0 | src/felvi_games/cli.py:1847 user_stats_cmd |
 

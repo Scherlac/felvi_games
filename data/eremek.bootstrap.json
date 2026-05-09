@@ -13,7 +13,11 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {
+      "type": "session_count",
+      "n": 1,
+      "events": ["session"]
+    },
     "condition_valid_from": null
   },
   "szaz_feladat": {
@@ -81,7 +85,14 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {
+      "type": "tokeletes_session",
+      "n": 1,
+      "events": ["session"]
+    },
+    "policy": {
+      "repeatable_cooldown_hours": 4
+    },
     "condition_valid_from": null
   },
   "sorozat_5": {
@@ -149,7 +160,14 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {
+      "type": "villam",
+      "n": 1,
+      "events": ["answer"]
+    },
+    "policy": {
+      "repeatable_cooldown_hours": 2
+    },
     "condition_valid_from": null
   },
   "hint_nelkul_20": {
@@ -201,6 +219,9 @@
     "privat": false,
     "cel_felhasznalo": null,
     "condition": null,
+    "policy": {
+      "repeatable_cooldown_hours": 24
+    },
     "condition_valid_from": null
   },
   "harom_het_egymas_utan": {
@@ -235,6 +256,9 @@
     "privat": false,
     "cel_felhasznalo": null,
     "condition": null,
+    "policy": {
+      "repeatable_cooldown_hours": 24
+    },
     "condition_valid_from": null
   },
   "heti_haromszor": {
@@ -252,6 +276,9 @@
     "privat": false,
     "cel_felhasznalo": null,
     "condition": null,
+    "policy": {
+      "repeatable_cooldown_hours": 24
+    },
     "condition_valid_from": null
   },
   "reggeli_tanulas": {
@@ -268,7 +295,15 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {
+      "type": "before_hour",
+      "hour": 8,
+      "n": 1,
+      "events": ["answer"]
+    },
+    "policy": {
+      "repeatable_cooldown_hours": 20
+    },
     "condition_valid_from": null
   },
   "mindket_targy": {
@@ -421,7 +456,15 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {
+      "type": "after_hour",
+      "hour": 22,
+      "n": 1,
+      "events": ["answer"]
+    },
+    "policy": {
+      "repeatable_cooldown_hours": 20
+    },
     "condition_valid_from": null
   },
   "visszatero": {
@@ -472,7 +515,11 @@
     "gif_url": null,
     "privat": false,
     "cel_felhasznalo": null,
-    "condition": null,
+    "condition": {
+      "type": "maraton",
+      "n": 1,
+      "events": ["session"]
+    },
     "condition_valid_from": null
   },
   "heti_bajnok": {
@@ -490,6 +537,9 @@
     "privat": false,
     "cel_felhasznalo": null,
     "condition": null,
+    "policy": {
+      "repeatable_cooldown_hours": 24
+    },
     "condition_valid_from": null
   }
 }

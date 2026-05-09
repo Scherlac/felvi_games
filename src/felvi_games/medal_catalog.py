@@ -36,6 +36,31 @@ def _load_payload() -> dict[str, dict[str, Any]]:
 
 
 @lru_cache(maxsize=1)
+def _load_bootstrap_policies() -> dict[str, dict[str, Any]]:
+    payload = _load_payload()
+    policies: dict[str, dict[str, Any]] = {}
+    for erem_id, raw in payload.items():
+        if not isinstance(raw, dict):
+            continue
+        policy = raw.get("policy")
+        if isinstance(policy, dict):
+            policies[erem_id] = dict(policy)
+    return policies
+
+
+def get_bootstrap_repeatable_cooldown_hours(erem_id: str) -> int | None:
+    policy = _load_bootstrap_policies().get(erem_id)
+    if not policy:
+        return None
+    raw = policy.get("repeatable_cooldown_hours")
+    try:
+        hours = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return hours if hours > 0 else None
+
+
+@lru_cache(maxsize=1)
 def load_bootstrap_erem_catalog() -> dict[str, Erem]:
     payload = _load_payload()
     catalog: dict[str, Erem] = {}
@@ -43,6 +68,7 @@ def load_bootstrap_erem_catalog() -> dict[str, Erem]:
         if not isinstance(raw, dict):
             raise ValueError(f"Invalid medal entry for {erem_id!r} in {_BOOTSTRAP_FILE}")
         data = dict(raw)
+        data.pop("policy", None)
         data["condition_valid_from"] = _parse_datetime(data.get("condition_valid_from"))
         catalog[erem_id] = Erem(**data)
     return catalog

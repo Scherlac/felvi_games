@@ -800,7 +800,12 @@ def _render_kerdes(gs: GameState) -> None:
                             targy=gs.targy, szint=gs.szint, menet_id=gs.menet_id,
                         )
                         from felvi_games.achievements import check_new_medals
-                        uj_eremek = check_new_medals(gs.felhasznalo, gs.menet_id, get_repo())
+                        uj_eremek = check_new_medals(
+                            gs.felhasznalo,
+                            gs.menet_id,
+                            get_repo(),
+                            trigger_tipus=InterakcioTipus.MENET_VEGZETT.value,
+                        )
                         if uj_eremek:
                             st.session_state["_uj_eremek"] = [e.id for e in uj_eremek]
                     gs.menet_id = None

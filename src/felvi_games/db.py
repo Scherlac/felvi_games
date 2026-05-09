@@ -1005,7 +1005,12 @@ class FeladatRepository:
 
         from felvi_games.achievements import check_new_medals
 
-        awarded = check_new_medals(felhasznalo_nev, menet_id, self)
+        awarded = check_new_medals(
+            felhasznalo_nev,
+            menet_id,
+            self,
+            trigger_tipus=trigger_tipus,
+        )
         awarded_ids = [e.id for e in awarded]
 
         with Session(self._engine) as session:
@@ -1524,6 +1529,8 @@ class FeladatRepository:
         edits made via ``upsert_erem`` are preserved.  Returns the number of
         newly inserted rows.
         """
+        import json as _json
+
         from felvi_games.medal_catalog import load_bootstrap_erem_catalog
 
         with Session(self._engine) as session:
@@ -1532,6 +1539,7 @@ class FeladatRepository:
             new_count = 0
             for erem_id, erem in eremek.items():
                 if erem_id not in existing:
+                    condition_json = _json.dumps(erem.condition, ensure_ascii=False) if erem.condition else None
                     session.add(EremRecord(
                         id=erem.id,
                         nev=erem.nev,
@@ -1546,6 +1554,7 @@ class FeladatRepository:
                         gif_url=erem.gif_url,
                         privat=False,
                         cel_felhasznalo=None,
+                        condition_json=condition_json,
                     ))
                     new_count += 1
             session.commit()

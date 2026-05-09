@@ -32,7 +32,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
-from felvi_games.medal_catalog import EREM_KATALOGUS
+from felvi_games.medal_catalog import EREM_KATALOGUS, get_bootstrap_repeatable_cooldown_hours
 from felvi_games.models import Erem, FelhasznaloErem, InterakcioTipus
 
 if TYPE_CHECKING:
@@ -48,18 +48,10 @@ logger = logging.getLogger(__name__)
 _simulation_as_of: ContextVar[datetime | None] = ContextVar("_simulation_as_of", default=None)
 
 # Repeatable medals should not trigger back-to-back from historical data.
-# Cooldown is in hours, per medal id. Unlisted repeatables use the default.
+# Cooldown is in hours. Medal-specific values come from bootstrap policy.
 _REPEATABLE_COOLDOWN_DEFAULT_HOURS = 12
-_REPEATABLE_COOLDOWN_HOURS: dict[str, int] = {
-    "villam": 2,
-    "reggeli_tanulas": 20,
-    "esti_tanulas": 20,
-    "heti_haromszor": 24,
-    "het_egymas_utan": 24,
-    "heti_bajnok": 24,
-    "pentek_matek_honap": 24,
-    "tokeletes_menet": 4,
-}
+# Compatibility override hook (used by tests/experiments); leave empty in prod.
+_REPEATABLE_COOLDOWN_HOURS: dict[str, int] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -86,8 +78,26 @@ def _as_utc(dt: datetime) -> datetime:
     return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
 
 
-def _cooldown_elapsed(erem_id: str, last_award_at: datetime, now: datetime) -> bool:
-    hours = _REPEATABLE_COOLDOWN_HOURS.get(erem_id, _REPEATABLE_COOLDOWN_DEFAULT_HOURS)
+def _repeatable_cooldown_hours(erem: Erem) -> int:
+    override_hours = _REPEATABLE_COOLDOWN_HOURS.get(erem.id)
+    if override_hours is not None:
+        return override_hours
+    bootstrap_hours = get_bootstrap_repeatable_cooldown_hours(erem.id)
+    if bootstrap_hours is not None:
+        return bootstrap_hours
+    condition = erem.condition if isinstance(erem.condition, dict) else {}
+    raw = condition.get("cooldown_hours")
+    if raw is None:
+        return _REPEATABLE_COOLDOWN_DEFAULT_HOURS
+    try:
+        hours = int(str(raw))
+    except (TypeError, ValueError):
+        return _REPEATABLE_COOLDOWN_DEFAULT_HOURS
+    return hours if hours > 0 else _REPEATABLE_COOLDOWN_DEFAULT_HOURS
+
+
+def _cooldown_elapsed(erem: Erem, last_award_at: datetime, now: datetime) -> bool:
+    hours = _repeatable_cooldown_hours(erem)
     return now >= (_as_utc(last_award_at) + timedelta(hours=hours))
 
 
@@ -155,13 +165,7 @@ def _has_new_activity_after(user: str, engine: Engine, since: datetime) -> bool:
         return (s.scalar(m_stmt) or 0) > 0 or (s.scalar(n_stmt) or 0) > 0 or (s.scalar(i_stmt) or 0) > 0
 
 
-def _repeatable_has_fresh_signal(erem_id: str, user: str, engine: Engine, last_award_at: datetime) -> bool:
-    if erem_id == "villam":
-        return _has_new_attempt_after(user, engine, last_award_at, require_fast_correct=True)
-    if erem_id == "reggeli_tanulas":
-        return _has_new_attempt_after(user, engine, last_award_at, hour_cmp="lt", hour_val=8)
-    if erem_id == "esti_tanulas":
-        return _has_new_attempt_after(user, engine, last_award_at, hour_cmp="ge", hour_val=22)
+def _repeatable_has_fresh_signal(user: str, engine: Engine, last_award_at: datetime) -> bool:
     return _has_new_activity_after(user, engine, last_award_at)
 
 
@@ -353,40 +357,6 @@ def _make_menet_cover_rule(required: set[str], attr: str):
     return _rule
 
 
-def _rule_elso_menet(user: str, session_id: int | None, engine: Engine) -> bool:
-    from felvi_games.db import MenetRecord
-    _as_of = _simulation_as_of.get()
-    with Session(engine) as s:
-        stmt = (select(func.count()).select_from(MenetRecord)
-                .where(MenetRecord.felhasznalo_nev == user,
-                       MenetRecord.ended_at.is_not(None)))
-        if _as_of is not None:
-            stmt = stmt.where(MenetRecord.ended_at <= _as_of)
-        cnt = s.scalar(stmt) or 0
-    return cnt >= 1
-
-
-def _rule_tokeletes_menet(user: str, session_id: int | None, engine: Engine) -> bool:
-    """True when the current session completed all tasks fully correctly."""
-    from felvi_games.db import MegoldasRecord, MenetRecord
-    if session_id is None:
-        return False
-    with Session(engine) as s:
-        rec = s.get(MenetRecord, session_id)
-        if rec is None or rec.feladat_limit <= 0 or rec.megoldott < rec.feladat_limit:
-            return False
-        total = s.scalar(
-            select(func.count()).select_from(MegoldasRecord)
-            .where(MegoldasRecord.menet_id == session_id)
-        ) or 0
-        helyes_cnt = s.scalar(
-            select(func.count()).select_from(MegoldasRecord)
-            .where(MegoldasRecord.menet_id == session_id,
-                   MegoldasRecord.helyes == True)  # noqa: E712
-        ) or 0
-    return total > 0 and total == helyes_cnt == rec.feladat_limit
-
-
 def _max_helyes_sorozat(user: str, engine: Engine) -> int:
     from felvi_games.db import MegoldasRecord
     _as_of = _simulation_as_of.get()
@@ -516,17 +486,6 @@ def _rule_minden_feladattipus(user: str, session_id: int | None, engine: Engine)
     return _FELADAT_TIPUSOK_OSSZ.issubset({r for r in rows if r})
 
 
-def _rule_maraton(user: str, session_id: int | None, engine: Engine) -> bool:
-    from felvi_games.db import MenetRecord
-    if session_id is None:
-        return False
-    with Session(engine) as s:
-        rec = s.get(MenetRecord, session_id)
-        if rec is None:
-            return False
-        return rec.feladat_limit >= 30 and rec.megoldott >= 30
-
-
 def _rule_heti_bajnok(user: str, session_id: int | None, engine: Engine) -> bool:
     """5+ distinct play days in the current week (Mon–Sun)."""
     now = _sim_now()
@@ -592,6 +551,85 @@ def _validate_hour(value: object, *, default: int) -> int:
 
 def _condition_type(condition: dict) -> str:
     return str(condition.get("type", "")).strip()
+
+
+def _condition_events(condition: dict) -> set[str]:
+    raw_events = condition.get("events")
+    if isinstance(raw_events, str):
+        events = {raw_events.strip().lower()}
+    elif isinstance(raw_events, (list, tuple, set)):
+        events = {str(event).strip().lower() for event in raw_events if str(event).strip()}
+    else:
+        events = set()
+
+    if events:
+        return events
+
+    ctype = _condition_type(condition)
+    if ctype in {
+        "session_count",
+        "tokeletes_session",
+        "maraton",
+    }:
+        return {"session"}
+    if ctype in {
+        "feladat_count",
+        "helyes_count",
+        "pont_sum",
+        "streak",
+        "feladat_subject",
+        "before_hour",
+        "after_hour",
+        "special_date",
+        "villam",
+        "hint_nelkul_20",
+        "magas_pontossag",
+    }:
+        return {"answer"}
+    if ctype in {"interakcio_count", "interakcio_exists"}:
+        return {"interaction"}
+    if ctype in {
+        "het_egymas_utan",
+        "harom_het_egymas_utan",
+        "heti_haromszor",
+        "heti_bajnok",
+        "visszatero",
+        "visszatero_tiz",
+        "pentek_matek_honap",
+    }:
+        return {"session"}
+    return {"answer", "session", "interaction"}
+
+
+def _trigger_bucket(trigger_tipus: str | None, session_id: int | None) -> str | None:
+    if trigger_tipus is None:
+        return "session" if session_id is not None else None
+
+    trigger = trigger_tipus.strip().lower()
+    if not trigger:
+        return "session" if session_id is not None else None
+    if trigger in {"menet", "session", "menet_indul", "menet_vegzett"}:
+        return "session"
+    if trigger in {
+        "helyes_valasz",
+        "reszleges_valasz",
+        "helytelen_valasz",
+        "segitseg_kert",
+        "hibajelezes",
+        "tts_lejatszo",
+        "feladat_kihagyas",
+    }:
+        return "answer"
+    if trigger in {"ujraertekeles", "ujraertekeles_jutalom"}:
+        return "interaction"
+    return trigger
+
+
+def _condition_matches_trigger(condition: dict, trigger_tipus: str | None, session_id: int | None) -> bool:
+    trigger_bucket = _trigger_bucket(trigger_tipus, session_id)
+    if trigger_bucket is None:
+        return True
+    return trigger_bucket in _condition_events(condition)
 
 
 def _window_bounds(valid_from: datetime | None, window_h: float) -> tuple[datetime, datetime | None]:
@@ -785,6 +823,21 @@ def _query_count_ge(
     if ctype == "pont_sum":
         return _query_megoldas_sum(user, cutoff, upper, s)
 
+    if ctype == "villam":
+        from felvi_games.db import MegoldasRecord
+
+        return _query_megoldas_count(
+            user,
+            cutoff,
+            upper,
+            s,
+            where_clauses=(
+                MegoldasRecord.pont > 0,
+                MegoldasRecord.elapsed_sec.is_not(None),
+                MegoldasRecord.elapsed_sec <= 10.0,
+            ),
+        )
+
     if ctype == "feladat_subject":
         subject = str(condition.get("subject", ""))
         return _query_feladat_subject_count(user, subject, cutoff, upper, s)
@@ -825,6 +878,40 @@ def _query_condition_count(
     eliminating the query duplication between those two code paths.
     """
     return _query_count_ge(user, cutoff, upper, s, condition=condition)
+
+
+def _dyn_maraton(
+    user: str, condition: dict, n: int, cutoff: datetime, upper: datetime | None, s: Session
+) -> bool:
+    from felvi_games.db import MenetRecord
+
+    if _condition_type(condition) != "maraton":
+        return False
+    if n < 1:
+        return False
+    session_id = condition.get("session_id")
+    if session_id is not None:
+        try:
+            session_id = int(session_id)
+        except (TypeError, ValueError):
+            return False
+        rec = s.get(MenetRecord, session_id)
+        return bool(rec and rec.feladat_limit >= 30 and rec.megoldott >= 30)
+
+    stmt = (
+        select(MenetRecord.feladat_limit, MenetRecord.megoldott)
+        .where(
+            MenetRecord.felhasznalo_nev == user,
+            MenetRecord.started_at >= cutoff,
+            MenetRecord.ended_at.is_not(None),
+            MenetRecord.feladat_limit >= 30,
+            MenetRecord.megoldott >= 30,
+        )
+    )
+    if upper is not None:
+        stmt = stmt.where(MenetRecord.started_at <= upper)
+    cnt = s.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    return cnt >= n
 
 
 # ---------------------------------------------------------------------------
@@ -951,6 +1038,7 @@ def _dyn_interakcio(
 
 
 _CONDITION_EVALUATORS: dict[str, _CondEvalFn] = {
+    "maraton":          _dyn_maraton,
     "feladat_count":     _dyn_count_ge,
     "helyes_count":      _dyn_count_ge,
     "pont_sum":          _dyn_count_ge,
@@ -971,6 +1059,8 @@ def _eval_dynamic_condition(
     condition: dict,
     engine: Engine,
     valid_from: datetime | None = None,
+    trigger_tipus: str | None = None,
+    session_id: int | None = None,
 ) -> bool:
     """Evaluate a dynamic (LLM-generated) medal condition. Returns bool.
 
@@ -982,6 +1072,8 @@ def _eval_dynamic_condition(
     ctype = _condition_type(condition)
     evaluator = _CONDITION_EVALUATORS.get(ctype)
     if evaluator is None:
+        return False
+    if not _condition_matches_trigger(condition, trigger_tipus, session_id):
         return False
 
     n = int(condition.get("n", 1))
@@ -1026,14 +1118,12 @@ def _count_dynamic_condition(
 RuleFn = Callable[[str, int | None, "Engine"], bool]
 
 SZABALY_REGISTRY: dict[str, RuleFn] = {
-    "elso_menet": _rule_elso_menet,
     "tiz_feladat": _make_megoldas_count_rule(10),
     "huszonot_feladat": _make_megoldas_count_rule(25),
     "otven_feladat": _make_megoldas_count_rule(50),
     "szaz_feladat": _make_megoldas_count_rule(100),
     "otszaz_feladat": _make_megoldas_count_rule(500),
     "ezer_feladat": _make_megoldas_count_rule(1000),
-    "tokeletes_menet": _rule_tokeletes_menet,
     "sorozat_5": _make_sorozat_rule(5),
     "sorozat_10": _make_sorozat_rule(10),
     "sorozat_20": _make_sorozat_rule(20),
@@ -1051,7 +1141,6 @@ SZABALY_REGISTRY: dict[str, RuleFn] = {
     "minden_feladattipus": _rule_minden_feladattipus,
     "visszatero": _make_play_days_rule(3),
     "visszatero_tiz": _make_play_days_rule(10),
-    "maraton": _rule_maraton,
     "szaz_pont": _make_pont_sum_rule(100),
     "otszaz_pont": _make_pont_sum_rule(500),
     "heti_bajnok": _rule_heti_bajnok,
@@ -1064,6 +1153,7 @@ def _check_fresh_signal(
     user: str,
     engine: Engine,
     last_award_at: datetime,
+    trigger_tipus: str | None = None,
 ) -> bool:
     """Return True if new qualifying activity exists since the last award.
 
@@ -1076,10 +1166,16 @@ def _check_fresh_signal(
         if cond_anchor_utc is not None and cond_anchor_utc > from_anchor:
             from_anchor = cond_anchor_utc
         try:
-            return _eval_dynamic_condition(user, erem.condition, engine, valid_from=from_anchor)
+            return _eval_dynamic_condition(
+                user,
+                erem.condition,
+                engine,
+                valid_from=from_anchor,
+                trigger_tipus=trigger_tipus,
+            )
         except Exception:  # noqa: BLE001
             return False
-    return _repeatable_has_fresh_signal(erem_id, user, engine, last_award_at)
+    return _repeatable_has_fresh_signal(user, engine, last_award_at)
 
 
 # ---------------------------------------------------------------------------
@@ -1090,6 +1186,7 @@ def check_new_medals(
     user: str,
     session_id: int | None,
     repo: FeladatRepository,
+    trigger_tipus: str | None = None,
 ) -> list[Erem]:
     """Evaluate all rules and grant any newly earned medals.
 
@@ -1131,7 +1228,7 @@ def check_new_medals(
             continue
 
         # Repeatable medals need a cooldown so historical truth does not re-fire instantly.
-        if erem.ismetelheto and last_award_at is not None and not _cooldown_elapsed(erem_id, last_award_at, now):
+        if erem.ismetelheto and last_award_at is not None and not _cooldown_elapsed(erem, last_award_at, now):
             skipped_cooldown += 1
             logger.debug(
                 "skip cooldown | user=%s medal=%s last_award=%s now=%s",
@@ -1152,6 +1249,8 @@ def check_new_medals(
                     earned = _eval_dynamic_condition(
                         user, erem.condition, engine,
                         valid_from=erem.condition_valid_from,
+                        trigger_tipus=trigger_tipus,
+                        session_id=session_id,
                     )
                 except Exception as exc:  # noqa: BLE001
                     rule_errors.append(erem_id)
@@ -1182,7 +1281,14 @@ def check_new_medals(
 
         if earned:
             if erem.ismetelheto and last_award_at is not None:
-                if not _check_fresh_signal(erem_id, erem, user, engine, last_award_at):
+                if not _check_fresh_signal(
+                    erem_id,
+                    erem,
+                    user,
+                    engine,
+                    last_award_at,
+                    trigger_tipus=trigger_tipus,
+                ):
                     skipped_no_new_signal += 1
                     logger.debug(
                         "skip no_new_signal | user=%s medal=%s last_award=%s",
