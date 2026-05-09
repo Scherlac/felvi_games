@@ -2598,6 +2598,100 @@ def medal_diagnose_cmd(
 
 
 # ---------------------------------------------------------------------------
+# felvi medal-compare  – compare actual vs simulated medals
+# ---------------------------------------------------------------------------
+
+@app.command("medal-compare")
+def medal_compare_cmd(
+    user: Annotated[
+        str, typer.Argument(help="Felhasználó neve")
+    ],
+    db: Annotated[
+        Path | None, typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
+    ] = None,
+) -> None:
+    """Összehasonlítja a ténylegesen szerzett érmeket az elméleti lehetőséggel.
+    
+    Segít diagnosztizálni miért van eltérés az aktuális és szimulált érmek között.
+    Megjegyzés: a szimulált eredményt a 'felvi medal-check --simulate' futtatja.
+    """
+    from datetime import datetime
+    from datetime import timezone as _tz
+
+    from felvi_games.config import get_db_path
+    from felvi_games.db import FeladatRepository
+
+    db_path = db or get_db_path()
+    if not db_path.exists():
+        typer.echo(f"[!] DB nem található: {db_path}")
+        raise typer.Exit(code=1)
+
+    repo = FeladatRepository(db_path)
+    catalog = repo.get_erem_katalogus(user)
+    
+    # Get actual earned medals (including expired for full picture)
+    actual = repo.get_eremek(user, include_expired=True)
+    actual_ids = {e.erem_id for e in actual}
+    
+    now = datetime.now(_tz.utc)
+    
+    typer.echo(f"\n=== Érem Összevetés: {user}  (DB: {db_path}) ===\n")
+    typer.echo(f"  Ténylegesen szerzett:    {len(actual_ids):2d} érem\n")
+    
+    # Group medals by status
+    active = []      # non-expired
+    expired = []     # expired temp medals
+    no_condition = []  # no condition in catalog
+    
+    for rec in actual:
+        if not rec.aktiv:
+            expired.append(rec)
+        else:
+            erem = catalog.get(rec.erem_id)
+            if not erem or not erem.condition:
+                no_condition.append(rec)
+            else:
+                active.append(rec)
+    
+    typer.echo(f"  📊 Szétbontás:")
+    typer.echo(f"    • Aktív (nincs lejárat):        {len(active):2d}")
+    typer.echo(f"    • Lejárt (ideiglenes, vége):   {len(expired):2d}")
+    typer.echo(f"    • Nincs feltétel (manuális):   {len(no_condition):2d}\n")
+    
+    if expired:
+        typer.echo(f"⏰ Lejárt ideiglenes érmek ({len(expired)}):")
+        for rec in sorted(expired, key=lambda r: r.lejarat or datetime.now(_tz.utc), reverse=True):
+            e = catalog.get(rec.erem_id)
+            label = f"{e.ikon}  {e.nev}" if e else rec.erem_id
+            lejarat = rec.lejarat.replace(tzinfo=_tz.utc) if rec.lejarat and rec.lejarat.tzinfo is None else rec.lejarat
+            if lejarat:
+                expired_ago = (now - lejarat).total_seconds()
+                if expired_ago < 86400:
+                    mins = int(expired_ago // 60)
+                    hrs = int((expired_ago % 3600) // 60)
+                    typer.echo(f"  • {rec.erem_id:30s}  {label:40s}  [{mins // 60}h {mins % 60}m ezelőtt]")
+                else:
+                    days = int(expired_ago // 86400)
+                    typer.echo(f"  • {rec.erem_id:30s}  {label:40s}  [{days}d ezelőtt]")
+    
+    if no_condition:
+        typer.echo(f"\n🔧 Nincs feltétel betöltve ({len(no_condition)}):")
+        for rec in no_condition:
+            e = catalog.get(rec.erem_id)
+            label = f"{e.ikon}  {e.nev}" if e else rec.erem_id
+            typer.echo(f"  • {rec.erem_id:30s}  {label:40s}")
+    
+    if active:
+        typer.echo(f"\n✅ Aktív érmek feltétellel ({len(active)}):")
+        for rec in sorted(active, key=lambda r: r.szerzett):
+            e = catalog.get(rec.erem_id)
+            label = f"{e.ikon}  {e.nev}" if e else rec.erem_id
+            typer.echo(f"  • {rec.erem_id:30s}  {label:40s}  [{rec.szerzett.strftime('%Y-%m-%d %H:%M')}]")
+    
+    typer.echo()
+
+
+# ---------------------------------------------------------------------------
 # felvi medal-resync  – update DB medals with bootstrap conditions
 # ---------------------------------------------------------------------------
 
