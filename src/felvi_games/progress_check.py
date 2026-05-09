@@ -26,7 +26,7 @@ import random
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -80,6 +80,123 @@ _DYNAMIC_CONDITION_DIMENSION_KEYS: dict[str, tuple[str, ...]] = {
     "interakcio_exists": ("event_type", "targy", "szint", "feladat_id", "meta_contains"),
 }
 
+_TIME_GATE_RULES: list[tuple[tuple[str, ...], str, int, str]] = [
+    (("reggeli", "hajnali", "korai", "delelott", "délelőtt"), "before_hour", 10, "morning"),
+    (("delutani", "délutáni", "delutan", "délután"), "after_hour", 12, "afternoon"),
+    (("esti", "keso esti", "késő esti"), "after_hour", 18, "evening"),
+    (("ejjeli", "éjjeli", "ejszakai", "éjszakai"), "after_hour", 22, "night"),
+]
+
+
+def _expected_time_gate(nev: str | None, leiras: str | None) -> tuple[str, int, str] | None:
+    text = f"{nev or ''} {leiras or ''}".lower()
+    for keywords, gate_type, hour, label in _TIME_GATE_RULES:
+        if any(k in text for k in keywords):
+            return gate_type, hour, label
+    return None
+
+
+def _condition_items(condition: Any) -> list[dict]:
+    if isinstance(condition, list):
+        return [c for c in condition if isinstance(c, dict)]
+    if isinstance(condition, dict):
+        return [condition]
+    return []
+
+
+def _normalize_time_gate_condition(condition: Any, expected_type: str, expected_hour: int) -> Any:
+    items = _condition_items(condition)
+    if not items:
+        return condition
+
+    filtered = [
+        c for c in items
+        if str(c.get("type", "")) not in {"before_hour", "after_hour"}
+    ]
+    filtered.append({"type": expected_type, "hour": expected_hour})
+
+    if isinstance(condition, dict) and len(filtered) == 1:
+        return filtered[0]
+    return filtered
+
+
+def normalize_medal_candidate_time_gate(medal_data: dict | None) -> tuple[dict | None, dict | None]:
+    """Ensure time-of-day medal names carry matching before/after gating.
+
+    Returns (possibly_updated_medal_data, review_note_or_none).
+    """
+    if not isinstance(medal_data, dict):
+        return None, None
+    condition = medal_data.get("condition")
+    if not isinstance(condition, (dict, list)):
+        return medal_data, None
+
+    expected = _expected_time_gate(medal_data.get("nev"), medal_data.get("leiras"))
+    if expected is None:
+        return medal_data, None
+
+    expected_type, expected_hour, label = expected
+    items = _condition_items(condition)
+    has_expected = any(str(c.get("type", "")) == expected_type for c in items)
+    has_opposite = any(str(c.get("type", "")) in {"before_hour", "after_hour"} and str(c.get("type", "")) != expected_type for c in items)
+    if has_expected and not has_opposite:
+        return medal_data, {
+            "time_gate_status": "ok",
+            "expected_type": expected_type,
+            "expected_hour": expected_hour,
+            "label": label,
+        }
+
+    updated = dict(medal_data)
+    updated["condition"] = _normalize_time_gate_condition(condition, expected_type, expected_hour)
+    return updated, {
+        "time_gate_status": "normalized",
+        "expected_type": expected_type,
+        "expected_hour": expected_hour,
+        "label": label,
+    }
+
+
+def review_time_gate_alignment(user: str, repo: FeladatRepository) -> list[dict]:
+    """Review user-visible medal conditions for name/description time-gate alignment."""
+    findings: list[dict] = []
+    for erem in repo.get_erem_katalogus(user).values():
+        if not isinstance(erem.condition, (dict, list)):
+            continue
+        expected = _expected_time_gate(erem.nev, erem.leiras)
+        if expected is None:
+            continue
+        expected_type, expected_hour, label = expected
+        items = _condition_items(erem.condition)
+        has_expected = any(str(c.get("type", "")) == expected_type for c in items)
+        has_before = any(str(c.get("type", "")) == "before_hour" for c in items)
+        has_after = any(str(c.get("type", "")) == "after_hour" for c in items)
+
+        if has_expected and ((expected_type == "before_hour" and not has_after) or (expected_type == "after_hour" and not has_before)):
+            status = "ok"
+            recommendation = "none"
+        elif has_expected:
+            status = "conflicting"
+            recommendation = f"keep only {expected_type}(hour={expected_hour})"
+        else:
+            status = "missing"
+            recommendation = f"add {expected_type}(hour={expected_hour})"
+
+        findings.append(
+            {
+                "id": erem.id,
+                "nev": erem.nev,
+                "cel_felhasznalo": erem.cel_felhasznalo,
+                "expected_type": expected_type,
+                "expected_hour": expected_hour,
+                "label": label,
+                "status": status,
+                "recommendation": recommendation,
+                "condition": erem.condition,
+            }
+        )
+    return findings
+
 
 def _safe_int(value: object, default: int) -> int:
     try:
@@ -103,7 +220,19 @@ def _normalize_condition_value(value: object) -> object:
     return value
 
 
-def _normalize_dynamic_condition(condition: dict) -> dict:
+def _normalize_dynamic_condition(condition: dict | list[dict]) -> dict | list[dict]:
+    if isinstance(condition, list):
+        normalized_items: list[dict] = []
+        for item in condition:
+            if not isinstance(item, dict):
+                continue
+            normalized_item: dict[str, object] = {}
+            for key, value in item.items():
+                normalized_item[str(key)] = _normalize_condition_value(value)
+            normalized_items.append(normalized_item)
+        normalized_items.sort(key=lambda x: str(x.get("type", "")))
+        return normalized_items
+
     normalized: dict[str, object] = {}
     for key, value in condition.items():
         normalized[str(key)] = _normalize_condition_value(value)
@@ -126,9 +255,15 @@ def _target_ratio(candidate: dict, existing: dict) -> float:
     return _window_ratio(float(left), float(right))
 
 
-def _dynamic_overlap_reason(candidate: dict, existing: dict) -> str | None:
+def _dynamic_overlap_reason(candidate: dict | list[dict], existing: dict | list[dict]) -> str | None:
     cand = _normalize_dynamic_condition(candidate)
     prev = _normalize_dynamic_condition(existing)
+
+    if isinstance(cand, list) or isinstance(prev, list):
+        if cand == prev:
+            return "compound exact overlap"
+        return None
+
     ctype = str(cand.get("type", "")).strip()
     if not ctype or ctype != str(prev.get("type", "")).strip():
         return None
@@ -157,7 +292,7 @@ def _dynamic_medal_expiry(erem: Erem) -> datetime | None:
     return anchor_utc + timedelta(days=erem.ervenyes_napig)
 
 
-def _conflicting_dynamic_medals(user: str, repo: FeladatRepository, candidate: dict) -> list[dict]:
+def _conflicting_dynamic_medals(user: str, repo: FeladatRepository, candidate: dict | list[dict]) -> list[dict]:
     now = datetime.now(timezone.utc)
     conflicts: list[dict] = []
     for erem in repo.get_erem_katalogus(user).values():
@@ -186,7 +321,7 @@ def _conflicting_dynamic_medals(user: str, repo: FeladatRepository, candidate: d
     return conflicts
 
 
-def _find_cross_user_private_match(user: str, repo: FeladatRepository, candidate: dict) -> dict | None:
+def _find_cross_user_private_match(user: str, repo: FeladatRepository, candidate: dict | list[dict]) -> dict | None:
     """Return one matching private medal from another user, if any."""
     for erem in repo.get_all_private_dynamic_medals():
         if not isinstance(erem.condition, dict):
@@ -218,7 +353,11 @@ def _screen_dynamic_medal_candidate(
 ) -> dict | None:
     if not isinstance(medal_data, dict):
         return None
-    if not isinstance(medal_data.get("condition"), dict):
+    if not isinstance(medal_data.get("condition"), (dict, list)):
+        return None
+
+    medal_data, _ = normalize_medal_candidate_time_gate(medal_data)
+    if not isinstance(medal_data, dict):
         return None
 
     cross_user_match = _find_cross_user_private_match(user, repo, medal_data["condition"])
@@ -282,7 +421,11 @@ def _screen_dynamic_medal_candidate(
         logger.warning("dynamic_medal_refine_failed", exc_info=True)
         return None
 
-    if not isinstance(refined, dict) or not isinstance(refined.get("condition"), dict):
+    if not isinstance(refined, dict) or not isinstance(refined.get("condition"), (dict, list)):
+        return None
+
+    refined, _ = normalize_medal_candidate_time_gate(refined)
+    if not isinstance(refined, dict):
         return None
 
     refined_conflicts = _conflicting_dynamic_medals(user, repo, refined["condition"])

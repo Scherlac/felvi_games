@@ -526,3 +526,52 @@ def refine_daily_medal(
     refined = parsed.get("new_medal")
     return refined if isinstance(refined, dict) else None
 
+
+_TIME_GATE_REVIEW_SYSTEM = (
+    "You review dynamic medal condition quality. "
+    "Focus only on name/description vs time-of-day condition alignment. "
+    "Be concise, practical, and return Hungarian guidance as JSON."
+)
+
+
+def review_time_gate_findings(findings: list[dict]) -> dict:
+    """Ask LLM for concise suggestions on time-gate mismatches."""
+    if not findings:
+        return {"summary": "Nincs vizsgálandó time-gate eltérés.", "actions": []}
+
+    prompt = (
+        "Elemezd az alábbi dinamikus érem time-gate review találatokat. "
+        "Adj rövid összefoglalót és legfeljebb 8 konkrét javítási lépést.\n\n"
+        f"Találatok JSON:\n{json.dumps(findings, ensure_ascii=False, indent=2)}\n\n"
+        "Válaszolj CSAK JSON-ban:\n"
+        '{"summary":"...", "actions":["...", "..."]}'
+    )
+    response = _client.chat.completions.create(
+        model=_CHEAP_MODEL,
+        messages=[
+            {"role": "system", "content": _TIME_GATE_REVIEW_SYSTEM},
+            {"role": "user", "content": prompt},
+        ],
+        response_format={"type": "json_object"},
+        temperature=0,
+        max_completion_tokens=300,
+    )
+    raw = response.choices[0].message.content or "{}"
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        snippet = " ".join(raw.strip().split())[:300] if raw else ""
+        return {
+            "summary": (
+                f"LLM review parse hiba. Nyers válasz: {snippet}"
+                if snippet else
+                "LLM review parse hiba."
+            ),
+            "actions": [],
+        }
+    actions = parsed.get("actions")
+    return {
+        "summary": str(parsed.get("summary", "")),
+        "actions": actions if isinstance(actions, list) else [],
+    }
+

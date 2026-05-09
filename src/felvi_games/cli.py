@@ -338,6 +338,18 @@ def medals(
     generator_inputs: Annotated[
         bool, typer.Option("--generator-inputs", help="A dinamikus éremgenerátornak átadott bemeneti adatok kiírása")
     ] = False,
+    review_time_gating: Annotated[
+        bool, typer.Option("--review-time-gating", help="Időszakot sugalló éremnevek és feltételek összhangjának ellenőrzése")
+    ] = False,
+    review_time_gating_llm: Annotated[
+        bool, typer.Option("--review-time-gating-llm", help="--review-time-gating eredmény rövid LLM-összegzése")
+    ] = False,
+    review_time_gating_fix: Annotated[
+        bool, typer.Option("--review-time-gating-fix", help="--review-time-gating során automatikusan javítja a hiányzó/ellentmondó before/after feltételeket")
+    ] = False,
+    review_time_gating_interactive: Annotated[
+        bool, typer.Option("--review-time-gating-interactive", help="Interaktív javítás: eltérésenként rákérdez a before/after feltétel javítására")
+    ] = False,
     window_hours: Annotated[
         int, typer.Option("--window-hours", help="Dry-run javaslat időablaka órában (1-18)")
     ] = 18,
@@ -347,6 +359,7 @@ def medals(
 ) -> None:
     """Érmek / achievements: katalógus és felhasználói haladás."""
     import json as _json
+    import math
     import re
     from datetime import datetime, timezone
 
@@ -364,6 +377,7 @@ def medals(
     from felvi_games.config import get_db_path
     from felvi_games.db import FeladatRepository, FelhasznaloRecord, get_engine
     from felvi_games.models import Erem
+    from felvi_games.progress_check import normalize_medal_candidate_time_gate, review_time_gate_alignment
 
     def _collect_generator_inputs(
         repo: FeladatRepository,
@@ -460,6 +474,10 @@ def medals(
             typer.echo("\nJavasolt új érem: nincs (new_medal = null)\n")
             return
 
+        normalized_nm, note = normalize_medal_candidate_time_gate(nm if isinstance(nm, dict) else None)
+        if isinstance(normalized_nm, dict):
+            nm = normalized_nm
+
         cond = nm.get("condition") if isinstance(nm, dict) else None
         typer.echo("\nJavasolt új érem:")
         typer.echo(f"  Név:       {nm.get('nev', '-')}")
@@ -467,6 +485,11 @@ def medals(
         typer.echo(f"  Kategória: {nm.get('kategoria', '-')}")
         typer.echo(f"  Leírás:    {nm.get('leiras', '-')}")
         typer.echo(f"  Feltétel:  {_json.dumps(cond, ensure_ascii=False)}")
+        if isinstance(note, dict) and note.get("time_gate_status") == "normalized":
+            typer.echo(
+                "  🔧 Time-gate normalizálás: "
+                f"hozzáadva {note.get('expected_type')} (hour={note.get('expected_hour')})"
+            )
         # Check if the condition is ALREADY satisfied at creation time (bad – n should require future effort)
         try:
             already_done = _eval_dynamic_condition(user, cond or {}, repo._engine, valid_from=datetime.now(timezone.utc))
@@ -495,7 +518,7 @@ def medals(
                 ismetelheto=True,
                 privat=True,
                 cel_felhasznalo=user,
-                condition=cond if isinstance(cond, dict) else None,
+                condition=cond if isinstance(cond, (dict, list)) else None,
             )
             repo.upsert_erem(erem)
             typer.echo(f"\n✅ Mentve: id={erem.id}")
@@ -503,6 +526,83 @@ def medals(
             typer.echo()
         else:
             typer.echo("\n(Mentés nem történt, ez csak dry-run.)\n")
+
+    def _handle_review_time_gating(db_path: Path) -> None:
+        if not user:
+            typer.echo("[!] A --review-time-gating használatához add meg a --user opciót.")
+            raise typer.Exit(code=2)
+
+        repo = FeladatRepository(db_path)
+        findings = review_time_gate_alignment(user, repo)
+        findings = [f for f in findings if f.get("status") != "ok"]
+
+        typer.echo(f"\n=== Time-gate review  (DB: {db_path})  user={user}  eltérés: {len(findings)} ===\n")
+        if not findings:
+            typer.echo("  ✅ Nincs eltérés a név/leírás és az időkapu-feltétel között.\n")
+            return
+
+        for f in findings:
+            typer.echo(f"  {f.get('id')}  |  {f.get('nev')}")
+            typer.echo(
+                "    "
+                f"status={f.get('status')}  expected={f.get('expected_type')}(hour={f.get('expected_hour')})"
+            )
+            typer.echo(f"    javaslat: {f.get('recommendation')}")
+            typer.echo(f"    condition: {_json.dumps(f.get('condition'), ensure_ascii=False)}")
+
+        if review_time_gating_fix and review_time_gating_interactive:
+            typer.echo("[i] A --review-time-gating-interactive elsőbbséget élvez a --review-time-gating-fix mellett.")
+
+        if review_time_gating_fix or review_time_gating_interactive:
+            fixes = 0
+            with Session(get_engine(db_path)) as s:
+                for f in findings:
+                    candidate = {
+                        "nev": f.get("nev"),
+                        "leiras": "",
+                        "condition": f.get("condition"),
+                    }
+                    normalized, note = normalize_medal_candidate_time_gate(candidate)
+                    if not isinstance(normalized, dict):
+                        continue
+                    if not isinstance(note, dict) or note.get("time_gate_status") != "normalized":
+                        continue
+                    condition = normalized.get("condition")
+
+                    if review_time_gating_interactive:
+                        typer.echo(f"\n  ? Javítsam ezt: {f.get('id')} | {f.get('nev')}")
+                        typer.echo(f"    régi: {_json.dumps(f.get('condition'), ensure_ascii=False)}")
+                        typer.echo(f"    új:   {_json.dumps(condition, ensure_ascii=False)}")
+                        if not typer.confirm("    Alkalmazzam a javítást?", default=True):
+                            continue
+
+                    s.execute(
+                        text("UPDATE eremek SET condition_json = :cj WHERE id = :eid"),
+                        {
+                            "eid": f.get("id"),
+                            "cj": _json.dumps(condition, ensure_ascii=False),
+                        },
+                    )
+                    fixes += 1
+                s.commit()
+            typer.echo(f"\n🔧 Javítások alkalmazva: {fixes} db")
+
+        if review_time_gating_llm:
+            try:
+                from felvi_games.ai import review_time_gate_findings
+
+                llm = review_time_gate_findings(findings)
+                typer.echo("\nLLM review összegzés:")
+                typer.echo(f"  {llm.get('summary', '')}")
+                actions = llm.get("actions", [])
+                if isinstance(actions, list) and actions:
+                    typer.echo("  Javasolt lépések:")
+                    for a in actions:
+                        typer.echo(f"    - {a}")
+            except Exception as exc:  # noqa: BLE001
+                typer.echo(f"\nLLM review hiba: {exc}")
+
+        typer.echo()
 
     def _handle_conditions(db_path: Path) -> None:
         engine = get_engine(db_path)
@@ -556,8 +656,11 @@ def medals(
                         )
                         progress_str = ""
                         if cur is not None and target is not None:
-                            bar_filled = min(cur, target)
-                            bar = "█" * bar_filled + "░" * max(0, target - bar_filled)
+                            max_progress = max(int(cur), int(target), 1)
+                            bar_len = max(1, int(round(10 * math.log10(max_progress))))
+                            ratio = 0.0 if int(target) <= 0 else min(float(cur) / float(target), 1.0)
+                            bar_filled = int(round(bar_len * ratio))
+                            bar = "█" * bar_filled + "░" * max(0, bar_len - bar_filled)
                             progress_str = f"  [{bar}]  {cur}/{target}"
                         status = "✅ teljesítve" if ok else "⏳ folyamatban"
                         typer.echo(f"    haladás({user}): {status}{progress_str}")
@@ -690,6 +793,10 @@ def medals(
     if generator_inputs:
         _ensure_db_exists(db_path)
         _handle_generator_inputs(db_path)
+        return
+    if review_time_gating or review_time_gating_llm or review_time_gating_fix or review_time_gating_interactive:
+        _ensure_db_exists(db_path)
+        _handle_review_time_gating(db_path)
         return
     if generate_dry_run or generate:
         _ensure_db_exists(db_path)

@@ -9,7 +9,13 @@ from sqlalchemy.orm import Session
 
 from felvi_games.db import InterakcioRecord, MegoldasRecord, MenetRecord
 from felvi_games.models import Erem, Ertekeles, InterakcioTipus
-from felvi_games.progress_check import daily_check, find_cross_user_medal_clusters, get_user_stats
+from felvi_games.progress_check import (
+    daily_check,
+    find_cross_user_medal_clusters,
+    get_user_stats,
+    normalize_medal_candidate_time_gate,
+    review_time_gate_alignment,
+)
 
 
 def test_get_user_stats_includes_trends_patterns_and_events(repo, feladat_matek, feladat_magyar) -> None:
@@ -256,6 +262,44 @@ def _make_daily_medal(
             condition=condition,
         )
     )
+
+
+def test_normalize_medal_candidate_time_gate_adds_morning_gate() -> None:
+    medal = {
+        "nev": "Reggeli rajt",
+        "leiras": "Oldj meg 5 feladatot rövid időn belül.",
+        "condition": {"type": "feladat_count", "n": 5, "window_hours": 2},
+    }
+
+    normalized, note = normalize_medal_candidate_time_gate(medal)
+
+    assert normalized is not None
+    assert isinstance(normalized["condition"], list)
+    types = {c.get("type") for c in normalized["condition"]}
+    assert "feladat_count" in types
+    assert "before_hour" in types
+    before = [c for c in normalized["condition"] if c.get("type") == "before_hour"][0]
+    assert before.get("hour") == 10
+    assert note is not None
+    assert note.get("time_gate_status") == "normalized"
+
+
+def test_review_time_gate_alignment_flags_missing_gate(repo) -> None:
+    user = "Lori"
+    _make_daily_medal(
+        repo,
+        erem_id="daily_lori_morning_missing",
+        user=user,
+        nev="Reggeli ötös",
+        condition={"type": "feladat_count", "n": 5, "window_hours": 2},
+    )
+
+    findings = review_time_gate_alignment(user, repo)
+    flagged = [f for f in findings if f["id"] == "daily_lori_morning_missing"]
+
+    assert flagged
+    assert flagged[0]["status"] == "missing"
+    assert flagged[0]["expected_type"] == "before_hour"
 
 
 def test_find_cross_user_medal_clusters_detects_overlap(repo) -> None:
