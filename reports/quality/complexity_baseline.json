@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generated_at_utc": "2026-05-03T11:12:03+00:00",
+  "generated_at_utc": "2026-05-09T14:32:48+00:00",
   "paths": [
     "src",
     "tests"
@@ -10,7 +10,7 @@
   "total_sloc": 11796,
   "total_blank": 2278,
   "avg_mi": 40.506,
-  "avg_cc": 4.487,
+  "avg_cc": 4.413,
   "p95_cc": 15.0,
   "counts_by_rank": {
     "A": 492,
@@ -4332,14 +4332,14 @@
       "rank": "D"
     }
   ],
-  "coverage_pct": 52.605,
+  "coverage_pct": 52.758,
   "coverage_files": 14,
   "low_coverage_files": [
     {
       "file": "src/felvi_games/report.py",
       "coverage_pct": 0.0,
       "covered_lines": 0,
-      "num_statements": 410
+      "num_statements": 435
     },
     {
       "file": "src/felvi_games/scraper.py",
@@ -4349,9 +4349,9 @@
     },
     {
       "file": "src/felvi_games/cli.py",
-      "coverage_pct": 25.162,
-      "covered_lines": 311,
-      "num_statements": 1236
+      "coverage_pct": 25.76,
+      "covered_lines": 322,
+      "num_statements": 1250
     },
     {
       "file": "src/felvi_games/ai.py",
@@ -4367,9 +4367,9 @@
     },
     {
       "file": "src/felvi_games/achievements.py",
-      "coverage_pct": 66.775,
-      "covered_lines": 412,
-      "num_statements": 617
+      "coverage_pct": 68.789,
+      "covered_lines": 443,
+      "num_statements": 644
     },
     {
       "file": "src/felvi_games/status.py",
@@ -4396,13 +4396,12 @@
       "num_statements": 275
     }
   ],
-  "coverage_error": "Coverage command failed (exit=1).                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ | E   AttributeError: 'Namespace' object has no attribute 'max_ruff_violations_increase' | =============================== tests coverage ================================ | ______________ coverage: platform win32, python 3.12.13-final-0 _______________ | Coverage JSON written to file reports/quality/coverage_current.json | =========================== short test summary info =========================== | FAILED tests/test_quality_gate_report.py::test_main_auto_ratchet_writes_improved_metrics | ======================= 1 failed, 217 passed in 25.12s ========================",
-  "coverage_source": "coverage json import",
-  "ruff_violations": 46,
+  "coverage_error": null,
+  "coverage_source": "fresh test run via --coverage-command",
+  "ruff_violations": 22,
   "ruff_by_category": {
-    "E": 22,
-    "U": 22,
-    "F": 2
+    "E": 21,
+    "F": 1
   },
   "ruff_error": null,
   "duplicate_block_pairs": 20,

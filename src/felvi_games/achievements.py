@@ -26,7 +26,7 @@ from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass as _dataclass
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, TypedDict, cast
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -324,7 +324,15 @@ def _cooldown_elapsed(erem_id: str, last_award_at: datetime, now: datetime) -> b
     return now >= (_as_utc(last_award_at) + timedelta(hours=hours))
 
 
-def _has_new_attempt_after(user: str, engine: Engine, since: datetime, *, hour_cmp: str | None = None, hour_val: int | None = None, require_fast_correct: bool = False) -> bool:
+def _has_new_attempt_after(
+    user: str,
+    engine: Engine,
+    since: datetime,
+    *,
+    hour_cmp: str | None = None,
+    hour_val: int | None = None,
+    require_fast_correct: bool = False,
+) -> bool:
     from felvi_games.db import MegoldasRecord
 
     since_utc = _as_utc(since)
@@ -448,6 +456,136 @@ def _current_streak(days: list[datetime]) -> int:
 # (Each rule is: rule_fn(user, session_id, engine) → bool)
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Shared query primitives — called by multiple _rule_* factories below
+# ---------------------------------------------------------------------------
+
+def _megoldas_count_ge(user: str, engine: Engine, n: int) -> bool:
+    """True if the user has solved ≥ n tasks total (simulation-aware)."""
+    from felvi_games.db import MegoldasRecord
+    _as_of = _simulation_as_of.get()
+    with Session(engine) as s:
+        stmt = (select(func.count()).select_from(MegoldasRecord)
+                .where(MegoldasRecord.felhasznalo_nev == user))
+        if _as_of is not None:
+            stmt = stmt.where(MegoldasRecord.created_at <= _as_of)
+        return (s.scalar(stmt) or 0) >= n
+
+
+def _pont_sum_ge(user: str, engine: Engine, n: int) -> bool:
+    """True if the user has accumulated ≥ n total points (simulation-aware)."""
+    from felvi_games.db import MegoldasRecord
+    _as_of = _simulation_as_of.get()
+    with Session(engine) as s:
+        stmt = (select(func.sum(MegoldasRecord.pont))
+                .where(MegoldasRecord.felhasznalo_nev == user))
+        if _as_of is not None:
+            stmt = stmt.where(MegoldasRecord.created_at <= _as_of)
+        return (s.scalar(stmt) or 0) >= n
+
+
+def _play_days_count_ge(user: str, engine: Engine, n: int) -> bool:
+    """True if the user has played on ≥ n distinct days (simulation-aware)."""
+    with Session(engine) as s:
+        days = _distinct_play_days(s, user)
+    return len(days) >= n
+
+
+def _hour_any_exists(
+    user: str, engine: Engine, *, before: str | None = None, from_hour: str | None = None
+) -> bool:
+    """True if any answer exists before *before* or from *from_hour* (local time, HH)."""
+    from felvi_games.db import MegoldasRecord
+    _as_of = _simulation_as_of.get()
+    hour_col = func.strftime("%H", func.datetime(MegoldasRecord.created_at, "localtime"))
+    cond = hour_col < before if before is not None else hour_col >= from_hour
+    with Session(engine) as s:
+        stmt = (select(MegoldasRecord.created_at)
+                .where(MegoldasRecord.felhasznalo_nev == user, cond))
+        if _as_of is not None:
+            stmt = stmt.where(MegoldasRecord.created_at <= _as_of)
+        return s.scalars(stmt).first() is not None
+
+
+def _menet_distinct_covers(user: str, engine: Engine, col, required: set) -> bool:
+    """True if distinct values of *col* in MenetRecord cover all *required* values."""
+    from felvi_games.db import MenetRecord
+    _as_of = _simulation_as_of.get()
+    with Session(engine) as s:
+        stmt = select(col).where(MenetRecord.felhasznalo_nev == user)
+        if _as_of is not None:
+            stmt = stmt.where(MenetRecord.started_at <= _as_of)
+        return required.issubset(set(s.scalars(stmt).all()))
+
+
+# ---------------------------------------------------------------------------
+# Rule factories — produce RuleFn callables from a single threshold parameter
+# ---------------------------------------------------------------------------
+
+def _make_megoldas_count_rule(n: int):
+    def _rule(user: str, session_id: int | None, engine: Engine) -> bool:
+        return _megoldas_count_ge(user, engine, n)
+    return _rule
+
+
+def _make_pont_sum_rule(n: int):
+    def _rule(user: str, session_id: int | None, engine: Engine) -> bool:
+        return _pont_sum_ge(user, engine, n)
+    return _rule
+
+
+def _make_play_days_rule(n: int):
+    def _rule(user: str, session_id: int | None, engine: Engine) -> bool:
+        return _play_days_count_ge(user, engine, n)
+    return _rule
+
+
+def _make_sorozat_rule(n: int):
+    def _rule(user: str, session_id: int | None, engine: Engine) -> bool:
+        return _max_helyes_sorozat(user, engine) >= n
+    return _rule
+
+
+def _make_streak_rule(n: int):
+    def _rule(user: str, session_id: int | None, engine: Engine) -> bool:
+        with Session(engine) as s:
+            days = _distinct_play_days(s, user)  # _simulation_as_of applied inside
+        return _current_streak(days) >= n
+    return _rule
+
+
+def _make_longest_streak_rule(n: int):
+    def _rule(user: str, session_id: int | None, engine: Engine) -> bool:
+        with Session(engine) as s:
+            days = _distinct_play_days(s, user)  # _simulation_as_of applied inside
+        return _consecutive_days(days) >= n
+    return _rule
+
+
+def _make_recent_play_days_rule(n: int):
+    def _rule(user: str, session_id: int | None, engine: Engine) -> bool:
+        with Session(engine) as s:
+            cutoff = _sim_now() - timedelta(days=7)
+            days = _distinct_play_days(s, user, from_dt=cutoff)
+        return len(days) >= n
+    return _rule
+
+
+def _make_hour_rule(*, before: str | None = None, from_hour: str | None = None):
+    def _rule(user: str, session_id: int | None, engine: Engine) -> bool:
+        return _hour_any_exists(user, engine, before=before, from_hour=from_hour)
+    return _rule
+
+
+def _make_menet_cover_rule(required: set[str], attr: str):
+    def _rule(user: str, session_id: int | None, engine: Engine) -> bool:
+        from felvi_games.db import MenetRecord
+
+        column = getattr(MenetRecord, attr)
+        return _menet_distinct_covers(user, engine, column, required)
+    return _rule
+
+
 def _rule_elso_menet(user: str, session_id: int | None, engine: Engine) -> bool:
     from felvi_games.db import MenetRecord
     _as_of = _simulation_as_of.get()
@@ -459,42 +597,6 @@ def _rule_elso_menet(user: str, session_id: int | None, engine: Engine) -> bool:
             stmt = stmt.where(MenetRecord.ended_at <= _as_of)
         cnt = s.scalar(stmt) or 0
     return cnt >= 1
-
-
-def _rule_szaz_feladat(user: str, session_id: int | None, engine: Engine) -> bool:
-    from felvi_games.db import MegoldasRecord
-    _as_of = _simulation_as_of.get()
-    with Session(engine) as s:
-        stmt = (select(func.count()).select_from(MegoldasRecord)
-                .where(MegoldasRecord.felhasznalo_nev == user))
-        if _as_of is not None:
-            stmt = stmt.where(MegoldasRecord.created_at <= _as_of)
-        cnt = s.scalar(stmt) or 0
-    return cnt >= 100
-
-
-def _rule_otszaz_feladat(user: str, session_id: int | None, engine: Engine) -> bool:
-    from felvi_games.db import MegoldasRecord
-    _as_of = _simulation_as_of.get()
-    with Session(engine) as s:
-        stmt = (select(func.count()).select_from(MegoldasRecord)
-                .where(MegoldasRecord.felhasznalo_nev == user))
-        if _as_of is not None:
-            stmt = stmt.where(MegoldasRecord.created_at <= _as_of)
-        cnt = s.scalar(stmt) or 0
-    return cnt >= 500
-
-
-def _rule_ezer_feladat(user: str, session_id: int | None, engine: Engine) -> bool:
-    from felvi_games.db import MegoldasRecord
-    _as_of = _simulation_as_of.get()
-    with Session(engine) as s:
-        stmt = (select(func.count()).select_from(MegoldasRecord)
-                .where(MegoldasRecord.felhasznalo_nev == user))
-        if _as_of is not None:
-            stmt = stmt.where(MegoldasRecord.created_at <= _as_of)
-        cnt = s.scalar(stmt) or 0
-    return cnt >= 1000
 
 
 def _rule_tokeletes_menet(user: str, session_id: int | None, engine: Engine) -> bool:
@@ -516,18 +618,6 @@ def _rule_tokeletes_menet(user: str, session_id: int | None, engine: Engine) -> 
                    MegoldasRecord.helyes == True)  # noqa: E712
         ) or 0
     return total > 0 and total == helyes_cnt == rec.feladat_limit
-
-
-def _rule_sorozat_5(user: str, session_id: int | None, engine: Engine) -> bool:
-    return _max_helyes_sorozat(user, engine) >= 5
-
-
-def _rule_sorozat_10(user: str, session_id: int | None, engine: Engine) -> bool:
-    return _max_helyes_sorozat(user, engine) >= 10
-
-
-def _rule_sorozat_20(user: str, session_id: int | None, engine: Engine) -> bool:
-    return _max_helyes_sorozat(user, engine) >= 20
 
 
 def _max_helyes_sorozat(user: str, engine: Engine) -> int:
@@ -611,18 +701,6 @@ def _rule_magas_pontossag(user: str, session_id: int | None, engine: Engine) -> 
     return max_possible > 0 and (earned / max_possible) >= 0.80
 
 
-def _rule_het_egymas_utan(user: str, session_id: int | None, engine: Engine) -> bool:
-    with Session(engine) as s:
-        days = _distinct_play_days(s, user)  # _simulation_as_of applied inside
-    return _current_streak(days) >= 7
-
-
-def _rule_harom_het_egymas_utan(user: str, session_id: int | None, engine: Engine) -> bool:
-    with Session(engine) as s:
-        days = _distinct_play_days(s, user)  # _simulation_as_of applied inside
-    return _consecutive_days(days) >= 21
-
-
 def _rule_pentek_matek_honap(user: str, session_id: int | None, engine: Engine) -> bool:
     """All Fridays of the *previous* calendar month were covered with matek sessions."""
     from felvi_games.db import MenetRecord
@@ -658,50 +736,6 @@ def _rule_pentek_matek_honap(user: str, session_id: int | None, engine: Engine) 
     return fridays.issubset(played_fridays)
 
 
-def _rule_heti_haromszor(user: str, session_id: int | None, engine: Engine) -> bool:
-    """At least 3 distinct days in the most recent 7-day window."""
-    with Session(engine) as s:
-        cutoff = _sim_now() - timedelta(days=7)
-        days = _distinct_play_days(s, user, from_dt=cutoff)
-    return len(days) >= 3
-
-
-def _rule_reggeli_tanulas(user: str, session_id: int | None, engine: Engine) -> bool:
-    """Any answer submitted before 08:00 local time (timestamps stored as UTC)."""
-    from felvi_games.db import MegoldasRecord
-    _as_of = _simulation_as_of.get()
-    with Session(engine) as s:
-        stmt = (select(MegoldasRecord.created_at)
-                .where(MegoldasRecord.felhasznalo_nev == user,
-                       func.strftime("%H", func.datetime(MegoldasRecord.created_at, "localtime")) < "08"))
-        if _as_of is not None:
-            stmt = stmt.where(MegoldasRecord.created_at <= _as_of)
-        rows = s.scalars(stmt).all()
-    return len(rows) > 0
-
-
-def _rule_mindket_targy(user: str, session_id: int | None, engine: Engine) -> bool:
-    from felvi_games.db import MenetRecord
-    _as_of = _simulation_as_of.get()
-    with Session(engine) as s:
-        stmt = select(MenetRecord.targy).where(MenetRecord.felhasznalo_nev == user)
-        if _as_of is not None:
-            stmt = stmt.where(MenetRecord.started_at <= _as_of)
-        targyek = set(s.scalars(stmt).all())
-    return {"matek", "magyar"}.issubset(targyek)
-
-
-def _rule_minden_szint(user: str, session_id: int | None, engine: Engine) -> bool:
-    from felvi_games.db import MenetRecord
-    _as_of = _simulation_as_of.get()
-    with Session(engine) as s:
-        stmt = select(MenetRecord.szint).where(MenetRecord.felhasznalo_nev == user)
-        if _as_of is not None:
-            stmt = stmt.where(MenetRecord.started_at <= _as_of)
-        szintek = set(s.scalars(stmt).all())
-    return _SZINTEK_OSSZ.issubset(szintek)
-
-
 def _rule_minden_feladattipus(user: str, session_id: int | None, engine: Engine) -> bool:
     from felvi_games.db import FeladatRecord, MegoldasRecord
     _as_of = _simulation_as_of.get()
@@ -715,12 +749,6 @@ def _rule_minden_feladattipus(user: str, session_id: int | None, engine: Engine)
     return _FELADAT_TIPUSOK_OSSZ.issubset({r for r in rows if r})
 
 
-def _rule_visszatero(user: str, session_id: int | None, engine: Engine) -> bool:
-    with Session(engine) as s:
-        days = _distinct_play_days(s, user)  # _simulation_as_of applied inside
-    return len(days) >= 3
-
-
 def _rule_maraton(user: str, session_id: int | None, engine: Engine) -> bool:
     from felvi_games.db import MenetRecord
     if session_id is None:
@@ -730,86 +758,6 @@ def _rule_maraton(user: str, session_id: int | None, engine: Engine) -> bool:
         if rec is None:
             return False
         return rec.feladat_limit >= 30 and rec.megoldott >= 30
-
-
-def _rule_tiz_feladat(user: str, session_id: int | None, engine: Engine) -> bool:
-    from felvi_games.db import MegoldasRecord
-    _as_of = _simulation_as_of.get()
-    with Session(engine) as s:
-        stmt = (select(func.count()).select_from(MegoldasRecord)
-                .where(MegoldasRecord.felhasznalo_nev == user))
-        if _as_of is not None:
-            stmt = stmt.where(MegoldasRecord.created_at <= _as_of)
-        cnt = s.scalar(stmt) or 0
-    return cnt >= 10
-
-
-def _rule_huszonot_feladat(user: str, session_id: int | None, engine: Engine) -> bool:
-    from felvi_games.db import MegoldasRecord
-    _as_of = _simulation_as_of.get()
-    with Session(engine) as s:
-        stmt = (select(func.count()).select_from(MegoldasRecord)
-                .where(MegoldasRecord.felhasznalo_nev == user))
-        if _as_of is not None:
-            stmt = stmt.where(MegoldasRecord.created_at <= _as_of)
-        cnt = s.scalar(stmt) or 0
-    return cnt >= 25
-
-
-def _rule_otven_feladat(user: str, session_id: int | None, engine: Engine) -> bool:
-    from felvi_games.db import MegoldasRecord
-    _as_of = _simulation_as_of.get()
-    with Session(engine) as s:
-        stmt = (select(func.count()).select_from(MegoldasRecord)
-                .where(MegoldasRecord.felhasznalo_nev == user))
-        if _as_of is not None:
-            stmt = stmt.where(MegoldasRecord.created_at <= _as_of)
-        cnt = s.scalar(stmt) or 0
-    return cnt >= 50
-
-
-def _rule_szaz_pont(user: str, session_id: int | None, engine: Engine) -> bool:
-    from felvi_games.db import MegoldasRecord
-    _as_of = _simulation_as_of.get()
-    with Session(engine) as s:
-        stmt = (select(func.sum(MegoldasRecord.pont))
-                .where(MegoldasRecord.felhasznalo_nev == user))
-        if _as_of is not None:
-            stmt = stmt.where(MegoldasRecord.created_at <= _as_of)
-        total = s.scalar(stmt) or 0
-    return total >= 100
-
-
-def _rule_otszaz_pont(user: str, session_id: int | None, engine: Engine) -> bool:
-    from felvi_games.db import MegoldasRecord
-    _as_of = _simulation_as_of.get()
-    with Session(engine) as s:
-        stmt = (select(func.sum(MegoldasRecord.pont))
-                .where(MegoldasRecord.felhasznalo_nev == user))
-        if _as_of is not None:
-            stmt = stmt.where(MegoldasRecord.created_at <= _as_of)
-        total = s.scalar(stmt) or 0
-    return total >= 500
-
-
-def _rule_esti_tanulas(user: str, session_id: int | None, engine: Engine) -> bool:
-    """Any answer submitted at or after 22:00 local time (timestamps stored as UTC)."""
-    from felvi_games.db import MegoldasRecord
-    _as_of = _simulation_as_of.get()
-    with Session(engine) as s:
-        stmt = (select(MegoldasRecord.created_at)
-                .where(MegoldasRecord.felhasznalo_nev == user,
-                       func.strftime("%H", func.datetime(MegoldasRecord.created_at, "localtime")) >= "22"))
-        if _as_of is not None:
-            stmt = stmt.where(MegoldasRecord.created_at <= _as_of)
-        rows = s.scalars(stmt).all()
-    return len(rows) > 0
-
-
-def _rule_visszatero_tiz(user: str, session_id: int | None, engine: Engine) -> bool:
-    with Session(engine) as s:
-        days = _distinct_play_days(s, user)  # _simulation_as_of applied inside
-    return len(days) >= 10
 
 
 def _rule_heti_bajnok(user: str, session_id: int | None, engine: Engine) -> bool:
@@ -844,152 +792,372 @@ def _rule_heti_bajnok(user: str, session_id: int | None, engine: Engine) -> bool
 _CondEvalFn = Callable[[str, dict, int, "datetime", "datetime | None", Session], bool]
 
 
-def _dyn_feladat_count(
-    user: str, condition: dict, n: int, cutoff: "datetime", upper: "datetime | None", s: Session
-) -> bool:
+class BeforeHourCondition(TypedDict, total=False):
+    type: Literal["before_hour"]
+    hour: int
+    n: int
+    window_hours: int | float
+
+
+class AfterHourCondition(TypedDict, total=False):
+    type: Literal["after_hour"]
+    hour: int
+    n: int
+    window_hours: int | float
+
+
+def _validate_hour(value: object, *, default: int) -> int:
+    """Parse and validate an hour-of-day value (0–23).
+
+    Returns *default* only when value is missing/None. Raises ValueError when
+    a concrete value is invalid or outside the valid 0–23 range.
+    """
+    if value is None:
+        return default
+    try:
+        h = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        raise ValueError(f"hour-of-day must be an integer in 0-23, got {value!r}") from None
+    if not (0 <= h <= 23):
+        raise ValueError(f"hour-of-day must be 0-23, got {h!r}")
+    return h
+
+
+def _condition_type(condition: dict) -> str:
+    return str(condition.get("type", "")).strip()
+
+
+def _window_bounds(valid_from: datetime | None, window_h: float) -> tuple[datetime, datetime | None]:
+    """Resolve (cutoff, upper) bounds, honoring simulation context."""
+    if valid_from is not None:
+        cutoff = valid_from if valid_from.tzinfo else valid_from.replace(tzinfo=timezone.utc)
+    else:
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=window_h)
+    _as_of = _simulation_as_of.get()
+    upper = _as_of if _as_of is not None else None
+    return cutoff, upper
+
+
+def _query_interakcio_count(
+    user: str,
+    condition: dict,
+    cutoff: datetime,
+    upper: datetime | None,
+    s: Session,
+) -> int | None:
+    from felvi_games.db import InterakcioRecord
+
+    raw_event_type = condition.get("event_type", "")
+    if isinstance(raw_event_type, InterakcioTipus):
+        event_type = raw_event_type.value
+    else:
+        event_type = str(raw_event_type).strip()
+    if not event_type:
+        return None
+
+    stmt = (
+        select(func.count()).select_from(InterakcioRecord)
+        .where(
+            InterakcioRecord.felhasznalo_nev == user,
+            InterakcioRecord.tipus == event_type,
+            InterakcioRecord.created_at >= cutoff,
+        )
+    )
+    if upper is not None:
+        stmt = stmt.where(InterakcioRecord.created_at <= upper)
+
+    targy = condition.get("targy")
+    if isinstance(targy, str) and targy.strip():
+        stmt = stmt.where(InterakcioRecord.targy == targy.strip())
+    szint = condition.get("szint")
+    if isinstance(szint, str) and szint.strip():
+        stmt = stmt.where(InterakcioRecord.szint == szint.strip())
+    feladat_id = condition.get("feladat_id")
+    if isinstance(feladat_id, str) and feladat_id.strip():
+        stmt = stmt.where(InterakcioRecord.feladat_id == feladat_id.strip())
+    meta_contains = condition.get("meta_contains")
+    if isinstance(meta_contains, str) and meta_contains.strip():
+        stmt = stmt.where(InterakcioRecord.meta.contains(meta_contains.strip()))
+
+    return s.scalar(stmt) or 0
+
+
+def _query_megoldas_count(
+    user: str,
+    cutoff: datetime,
+    upper: datetime | None,
+    s: Session,
+    *,
+    where_clauses: tuple[object, ...] = (),
+) -> int:
     from felvi_games.db import MegoldasRecord
-    stmt = (select(func.count()).select_from(MegoldasRecord)
-            .where(MegoldasRecord.felhasznalo_nev == user,
-                   MegoldasRecord.created_at >= cutoff))
+
+    stmt = (
+        select(func.count()).select_from(MegoldasRecord)
+        .where(MegoldasRecord.felhasznalo_nev == user, MegoldasRecord.created_at >= cutoff)
+    )
     if upper is not None:
         stmt = stmt.where(MegoldasRecord.created_at <= upper)
-    return (s.scalar(stmt) or 0) >= n
+    if where_clauses:
+        stmt = stmt.where(*where_clauses)
+    return s.scalar(stmt) or 0
 
 
-def _dyn_helyes_count(
-    user: str, condition: dict, n: int, cutoff: "datetime", upper: "datetime | None", s: Session
-) -> bool:
+def _query_megoldas_sum(
+    user: str,
+    cutoff: datetime,
+    upper: datetime | None,
+    s: Session,
+) -> int:
     from felvi_games.db import MegoldasRecord
-    stmt = (select(func.count()).select_from(MegoldasRecord)
-            .where(MegoldasRecord.felhasznalo_nev == user,
-                   MegoldasRecord.helyes == True,  # noqa: E712
-                   MegoldasRecord.created_at >= cutoff))
+
+    stmt = (
+        select(func.sum(MegoldasRecord.pont))
+        .where(MegoldasRecord.felhasznalo_nev == user, MegoldasRecord.created_at >= cutoff)
+    )
     if upper is not None:
         stmt = stmt.where(MegoldasRecord.created_at <= upper)
-    return (s.scalar(stmt) or 0) >= n
+    return s.scalar(stmt) or 0
 
 
-def _dyn_pont_sum(
-    user: str, condition: dict, n: int, cutoff: "datetime", upper: "datetime | None", s: Session
-) -> bool:
-    from felvi_games.db import MegoldasRecord
-    stmt = (select(func.sum(MegoldasRecord.pont))
-            .where(MegoldasRecord.felhasznalo_nev == user,
-                   MegoldasRecord.created_at >= cutoff))
+def _query_menet_count(
+    user: str,
+    cutoff: datetime,
+    upper: datetime | None,
+    s: Session,
+    *,
+    where_clauses: tuple[object, ...] = (),
+) -> int:
+    from felvi_games.db import MenetRecord
+
+    stmt = (
+        select(func.count()).select_from(MenetRecord)
+        .where(MenetRecord.felhasznalo_nev == user, MenetRecord.started_at >= cutoff)
+    )
+    if upper is not None:
+        stmt = stmt.where(MenetRecord.started_at <= upper)
+    if where_clauses:
+        stmt = stmt.where(*where_clauses)
+    return s.scalar(stmt) or 0
+
+
+def _query_feladat_subject_count(
+    user: str,
+    subject: str,
+    cutoff: datetime,
+    upper: datetime | None,
+    s: Session,
+) -> int:
+    from felvi_games.db import MegoldasRecord, MenetRecord
+
+    stmt = (
+        select(func.count()).select_from(MegoldasRecord)
+        .join(MenetRecord, MenetRecord.id == MegoldasRecord.menet_id)
+        .where(
+            MegoldasRecord.felhasznalo_nev == user,
+            MenetRecord.targy == subject,
+            MegoldasRecord.created_at >= cutoff,
+        )
+    )
     if upper is not None:
         stmt = stmt.where(MegoldasRecord.created_at <= upper)
-    return (s.scalar(stmt) or 0) >= n
+    return s.scalar(stmt) or 0
 
 
-def _dyn_streak(
-    user: str, condition: dict, n: int, cutoff: "datetime", upper: "datetime | None", s: Session
-) -> bool:
+def _query_hour_count(
+    user: str,
+    cutoff: datetime,
+    upper: datetime | None,
+    s: Session,
+    *,
+    before: str | None = None,
+    from_hour: str | None = None,
+) -> int:
     from felvi_games.db import MegoldasRecord
-    stmt = (select(MegoldasRecord.helyes)
-            .where(MegoldasRecord.felhasznalo_nev == user)
-            .order_by(MegoldasRecord.created_at))
+
+    hour = before if before is not None else from_hour
+    assert hour is not None
+    hour_col = func.strftime("%H", func.datetime(MegoldasRecord.created_at, "localtime"))
+    stmt = (
+        select(func.count()).select_from(MegoldasRecord)
+        .where(
+            MegoldasRecord.felhasznalo_nev == user,
+            MegoldasRecord.created_at >= cutoff,
+            hour_col < hour if before is not None else hour_col >= hour,
+        )
+    )
     if upper is not None:
         stmt = stmt.where(MegoldasRecord.created_at <= upper)
-    rows = s.scalars(stmt).all()
+    return s.scalar(stmt) or 0
+
+
+def _query_count_ge(
+    user: str,
+    cutoff: datetime,
+    upper: datetime | None,
+    s: Session,
+    *,
+    condition: dict,
+) -> int | None:
+    ctype = _condition_type(condition)
+
+    if ctype == "feladat_count":
+        return _query_megoldas_count(user, cutoff, upper, s)
+
+    if ctype == "helyes_count":
+        from felvi_games.db import MegoldasRecord
+
+        return _query_megoldas_count(
+            user,
+            cutoff,
+            upper,
+            s,
+            where_clauses=(MegoldasRecord.helyes == True,),  # noqa: E712
+        )
+
+    if ctype == "pont_sum":
+        return _query_megoldas_sum(user, cutoff, upper, s)
+
+    if ctype == "feladat_subject":
+        subject = str(condition.get("subject", ""))
+        return _query_feladat_subject_count(user, subject, cutoff, upper, s)
+
+    if ctype == "before_hour":
+        before_condition = cast(BeforeHourCondition, condition)
+        hour = _validate_hour(before_condition.get("hour"), default=8)
+        return _query_hour_count(user, cutoff, upper, s, before=f"{hour:02d}")
+
+    if ctype == "after_hour":
+        after_condition = cast(AfterHourCondition, condition)
+        hour = _validate_hour(after_condition.get("hour"), default=22)
+        return _query_hour_count(user, cutoff, upper, s, from_hour=f"{hour:02d}")
+
+    if ctype == "session_count":
+        return _query_menet_count(user, cutoff, upper, s)
+
+    if ctype in {"interakcio_count", "interakcio_exists"}:
+        return _query_interakcio_count(user, condition, cutoff, upper, s)
+
+    return None
+
+
+def _query_condition_count(
+    user: str,
+    condition: dict,
+    cutoff: datetime,
+    upper: datetime | None,
+    s: Session,
+) -> int | None:
+    """Return the raw scalar count for countable condition types.
+
+    Returns None for condition types where a scalar count does not apply
+    (e.g. streak, tokeletes_session, special_date).
+
+    Shared between _eval_dynamic_condition (which compares count >= n) and
+    _count_dynamic_condition (which returns (count, n) for progress display),
+    eliminating the query duplication between those two code paths.
+    """
+    return _query_count_ge(user, cutoff, upper, s, condition=condition)
+
+
+# ---------------------------------------------------------------------------
+# Extractors — raw data extraction from DB
+# ---------------------------------------------------------------------------
+
+
+def _extract_helyes_sequence(user: str, s: Session, upper: datetime | None) -> list[bool]:
+    """Extract all correct/incorrect flags in chronological order (for streak calculation)."""
+    from felvi_games.db import MegoldasRecord
+
+    stmt = (
+        select(MegoldasRecord.helyes)
+        .where(MegoldasRecord.felhasznalo_nev == user)
+        .order_by(MegoldasRecord.created_at)
+    )
+    if upper is not None:
+        stmt = stmt.where(MegoldasRecord.created_at <= upper)
+    return list(s.scalars(stmt).all())
+
+
+def _extract_menet_ids(
+    user: str, s: Session, cutoff: datetime, upper: datetime | None
+) -> list[int]:
+    """Extract menet IDs for sessions within the window."""
+    from felvi_games.db import MenetRecord
+
+    stmt = (
+        select(MenetRecord.id).where(
+            MenetRecord.felhasznalo_nev == user,
+            MenetRecord.ended_at.is_not(None),
+            MenetRecord.started_at >= cutoff,
+        )
+    )
+    if upper is not None:
+        stmt = stmt.where(MenetRecord.started_at <= upper)
+    return list(s.scalars(stmt).all())
+
+
+# Processors — compute scalar values from extracted data
+
+
+def _max_streak(helyes_sequence: list[bool]) -> int:
+    """Max consecutive True values in sequence."""
     best = cur = 0
-    for h in rows:
+    for h in helyes_sequence:
         if h:
             cur += 1
             best = max(best, cur)
         else:
             cur = 0
-    return best >= n
+    return best
 
 
-def _dyn_session_count(
-    user: str, condition: dict, n: int, cutoff: "datetime", upper: "datetime | None", s: Session
-) -> bool:
-    from felvi_games.db import MenetRecord
-    stmt = (select(func.count()).select_from(MenetRecord)
-            .where(MenetRecord.felhasznalo_nev == user,
-                   MenetRecord.started_at >= cutoff))
-    if upper is not None:
-        stmt = stmt.where(MenetRecord.started_at <= upper)
-    return (s.scalar(stmt) or 0) >= n
-
-
-def _dyn_tokeletes_session(
-    user: str, condition: dict, n: int, cutoff: "datetime", upper: "datetime | None", s: Session
-) -> bool:
+def _perfect_session_count(menet_ids: list[int], s: Session) -> int:
+    """Count of perfect sessions (all answers correct)."""
     from felvi_games.db import MegoldasRecord, MenetRecord
-    menet_ids = list(s.scalars(
-        select(MenetRecord.id)
-        .where(MenetRecord.felhasznalo_nev == user,
-               MenetRecord.ended_at.is_not(None),
-               MenetRecord.started_at >= cutoff)
-    ).all())
+
+    perfect = 0
     for mid in menet_ids:
         rec = s.get(MenetRecord, mid)
         if rec is None or rec.feladat_limit <= 0 or rec.megoldott < rec.feladat_limit:
             continue
         total = s.scalar(
-            select(func.count()).select_from(MegoldasRecord)
-            .where(MegoldasRecord.menet_id == mid)
+            select(func.count()).select_from(MegoldasRecord).where(MegoldasRecord.menet_id == mid)
         ) or 0
         helyes_cnt = s.scalar(
-            select(func.count()).select_from(MegoldasRecord)
-            .where(MegoldasRecord.menet_id == mid,
-                   MegoldasRecord.helyes == True)  # noqa: E712
+            select(func.count()).select_from(MegoldasRecord).where(
+                MegoldasRecord.menet_id == mid, MegoldasRecord.helyes == True  # noqa: E712
+            )
         ) or 0
         if total > 0 and total == helyes_cnt == rec.feladat_limit:
-            return True
-    return False
+            perfect += 1
+    return perfect
 
 
-def _dyn_feladat_subject(
-    user: str, condition: dict, n: int, cutoff: "datetime", upper: "datetime | None", s: Session
+def _dyn_count_ge(
+    user: str, condition: dict, n: int, cutoff: datetime, upper: datetime | None, s: Session
 ) -> bool:
-    from felvi_games.db import MegoldasRecord, MenetRecord
-    subject = condition.get("subject", "")
-    cnt = s.scalar(
-        select(func.count()).select_from(MegoldasRecord)
-        .join(MenetRecord, MenetRecord.id == MegoldasRecord.menet_id)
-        .where(MegoldasRecord.felhasznalo_nev == user,
-               MenetRecord.targy == subject,
-               MegoldasRecord.created_at >= cutoff)
-    ) or 0
-    return cnt >= n
+    return (_query_condition_count(user, condition, cutoff, upper, s) or 0) >= n
 
 
-def _dyn_before_hour(
-    user: str, condition: dict, n: int, cutoff: "datetime", upper: "datetime | None", s: Session
+def _dyn_streak(
+    user: str, condition: dict, n: int, cutoff: datetime, upper: datetime | None, s: Session
 ) -> bool:
-    from felvi_games.db import MegoldasRecord
-    hour = int(condition.get("hour", 8))
-    cnt = s.scalar(
-        select(func.count()).select_from(MegoldasRecord)
-        .where(
-            MegoldasRecord.felhasznalo_nev == user,
-            MegoldasRecord.created_at >= cutoff,
-            func.strftime("%H", func.datetime(MegoldasRecord.created_at, "localtime")) < f"{hour:02d}",
-        )
-    ) or 0
-    return cnt >= n
+    """Max consecutive correct answers (extract → process → compare)."""
+    sequence = _extract_helyes_sequence(user, s, upper)
+    return _max_streak(sequence) >= n
 
 
-def _dyn_after_hour(
-    user: str, condition: dict, n: int, cutoff: "datetime", upper: "datetime | None", s: Session
+def _dyn_tokeletes_session(
+    user: str, condition: dict, n: int, cutoff: datetime, upper: datetime | None, s: Session
 ) -> bool:
-    from felvi_games.db import MegoldasRecord
-    hour = int(condition.get("hour", 22))
-    cnt = s.scalar(
-        select(func.count()).select_from(MegoldasRecord)
-        .where(
-            MegoldasRecord.felhasznalo_nev == user,
-            MegoldasRecord.created_at >= cutoff,
-            func.strftime("%H", func.datetime(MegoldasRecord.created_at, "localtime")) >= f"{hour:02d}",
-        )
-    ) or 0
-    return cnt >= n
+    """Count of perfect sessions (extract → process → compare)."""
+    menet_ids = _extract_menet_ids(user, s, cutoff, upper)
+    return _perfect_session_count(menet_ids, s) >= n
 
 
 def _dyn_special_date(
-    user: str, condition: dict, n: int, cutoff: "datetime", upper: "datetime | None", s: Session
+    user: str, condition: dict, n: int, cutoff: datetime, upper: datetime | None, s: Session
 ) -> bool:
     from felvi_games.db import MegoldasRecord
     date_mmdd = condition.get("date", "")  # e.g. "05-01"
@@ -1005,55 +1173,26 @@ def _dyn_special_date(
 
 
 def _dyn_interakcio(
-    user: str, condition: dict, n: int, cutoff: "datetime", upper: "datetime | None", s: Session
+    user: str, condition: dict, n: int, cutoff: datetime, upper: datetime | None, s: Session
 ) -> bool:
-    from felvi_games.db import InterakcioRecord
-    ctype = condition.get("type", "")
-    raw_event_type = condition.get("event_type", "")
-    if isinstance(raw_event_type, InterakcioTipus):
-        event_type = raw_event_type.value
-    else:
-        event_type = str(raw_event_type).strip()
-    if not event_type:
+    cnt = _query_condition_count(user, condition, cutoff, upper, s)
+    if cnt is None:
         return False
-    stmt = (
-        select(func.count()).select_from(InterakcioRecord)
-        .where(
-            InterakcioRecord.felhasznalo_nev == user,
-            InterakcioRecord.tipus == event_type,
-            InterakcioRecord.created_at >= cutoff,
-        )
-    )
-    if upper is not None:
-        stmt = stmt.where(InterakcioRecord.created_at <= upper)
-    targy = condition.get("targy")
-    if isinstance(targy, str) and targy.strip():
-        stmt = stmt.where(InterakcioRecord.targy == targy.strip())
-    szint = condition.get("szint")
-    if isinstance(szint, str) and szint.strip():
-        stmt = stmt.where(InterakcioRecord.szint == szint.strip())
-    feladat_id = condition.get("feladat_id")
-    if isinstance(feladat_id, str) and feladat_id.strip():
-        stmt = stmt.where(InterakcioRecord.feladat_id == feladat_id.strip())
-    meta_contains = condition.get("meta_contains")
-    if isinstance(meta_contains, str) and meta_contains.strip():
-        stmt = stmt.where(InterakcioRecord.meta.contains(meta_contains.strip()))
-    cnt = s.scalar(stmt) or 0
-    if ctype == "interakcio_exists":
+    if _condition_type(condition) == "interakcio_exists":
         return cnt >= 1
     return cnt >= n
 
 
 _CONDITION_EVALUATORS: dict[str, _CondEvalFn] = {
-    "feladat_count":     _dyn_feladat_count,
-    "helyes_count":      _dyn_helyes_count,
-    "pont_sum":          _dyn_pont_sum,
+    "feladat_count":     _dyn_count_ge,
+    "helyes_count":      _dyn_count_ge,
+    "pont_sum":          _dyn_count_ge,
     "streak":            _dyn_streak,
-    "session_count":     _dyn_session_count,
+    "session_count":     _dyn_count_ge,
     "tokeletes_session": _dyn_tokeletes_session,
-    "feladat_subject":   _dyn_feladat_subject,
-    "before_hour":       _dyn_before_hour,
-    "after_hour":        _dyn_after_hour,
+    "feladat_subject":   _dyn_count_ge,
+    "before_hour":       _dyn_count_ge,
+    "after_hour":        _dyn_count_ge,
     "special_date":      _dyn_special_date,
     "interakcio_count":  _dyn_interakcio,
     "interakcio_exists": _dyn_interakcio,
@@ -1073,20 +1212,14 @@ def _eval_dynamic_condition(
     so that a condition cannot already be satisfied at creation time.
     If None, falls back to the legacy ``now - window_hours`` rolling window.
     """
-    ctype = condition.get("type", "")
+    ctype = _condition_type(condition)
     evaluator = _CONDITION_EVALUATORS.get(ctype)
     if evaluator is None:
         return False
 
     n = int(condition.get("n", 1))
     window_h = float(condition.get("window_hours", 24))
-    if valid_from is not None:
-        cutoff = valid_from if valid_from.tzinfo else valid_from.replace(tzinfo=timezone.utc)
-    else:
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=window_h)
-
-    _as_of = _simulation_as_of.get()
-    upper = _as_of if _as_of is not None else None
+    cutoff, upper = _window_bounds(valid_from, window_h)
 
     with Session(engine) as s:
         return evaluator(user, condition, n, cutoff, upper, s)
@@ -1103,80 +1236,17 @@ def _count_dynamic_condition(
     Returns (None, None) for condition types where a scalar count doesn't
     make sense (e.g. tokeletes_session, special_date).
     """
-    from felvi_games.db import InterakcioRecord, MegoldasRecord, MenetRecord
-
-    ctype = condition.get("type", "")
+    ctype = _condition_type(condition)
     n = int(condition.get("n", 1))
     window_h = float(condition.get("window_hours", 24))
-    if valid_from is not None:
-        cutoff = valid_from if valid_from.tzinfo else valid_from.replace(tzinfo=timezone.utc)
-    else:
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=window_h)
+    cutoff, upper = _window_bounds(valid_from, window_h)
 
+    target = 1 if ctype == "interakcio_exists" else n
     with Session(engine) as s:
-        if ctype == "feladat_count":
-            cnt = s.scalar(
-                select(func.count()).select_from(MegoldasRecord)
-                .where(MegoldasRecord.felhasznalo_nev == user,
-                       MegoldasRecord.created_at >= cutoff)
-            ) or 0
-            return cnt, n
-
-        elif ctype == "feladat_subject":
-            subject = condition.get("subject", "")
-            from felvi_games.db import MenetRecord as MR
-            cnt = s.scalar(
-                select(func.count()).select_from(MegoldasRecord)
-                .join(MR, MR.id == MegoldasRecord.menet_id)
-                .where(MegoldasRecord.felhasznalo_nev == user,
-                       MR.targy == subject,
-                       MegoldasRecord.created_at >= cutoff)
-            ) or 0
-            return cnt, n
-
-        elif ctype == "before_hour":
-            hour = int(condition.get("hour", 8))
-            cnt = s.scalar(
-                select(func.count()).select_from(MegoldasRecord)
-                .where(MegoldasRecord.felhasznalo_nev == user,
-                       MegoldasRecord.created_at >= cutoff,
-                       func.strftime("%H", func.datetime(MegoldasRecord.created_at, "localtime")) < f"{hour:02d}")
-            ) or 0
-            return cnt, n
-
-        elif ctype == "after_hour":
-            hour = int(condition.get("hour", 22))
-            cnt = s.scalar(
-                select(func.count()).select_from(MegoldasRecord)
-                .where(MegoldasRecord.felhasznalo_nev == user,
-                       MegoldasRecord.created_at >= cutoff,
-                       func.strftime("%H", func.datetime(MegoldasRecord.created_at, "localtime")) >= f"{hour:02d}")
-            ) or 0
-            return cnt, n
-
-        elif ctype == "session_count":
-            cnt = s.scalar(
-                select(func.count()).select_from(MenetRecord)
-                .where(MenetRecord.felhasznalo_nev == user,
-                       MenetRecord.started_at >= cutoff)
-            ) or 0
-            return cnt, n
-
-        elif ctype in {"interakcio_count", "interakcio_exists"}:
-            raw_event_type = condition.get("event_type", "")
-            event_type = raw_event_type.value if isinstance(raw_event_type, InterakcioTipus) else str(raw_event_type).strip()
-            target = 1 if ctype == "interakcio_exists" else n
-            if not event_type:
-                return None, None
-            cnt = s.scalar(
-                select(func.count()).select_from(InterakcioRecord)
-                .where(InterakcioRecord.felhasznalo_nev == user,
-                       InterakcioRecord.tipus == event_type,
-                       InterakcioRecord.created_at >= cutoff)
-            ) or 0
-            return cnt, target
-
-    return None, None
+        cnt = _query_condition_count(user, condition, cutoff, upper=upper, s=s)
+        if cnt is None:
+            return None, None
+        return cnt, target
 
 
 # ---------------------------------------------------------------------------
@@ -1190,35 +1260,59 @@ RuleFn = Callable[[str, int | None, "Engine"], bool]
 
 SZABALY_REGISTRY: dict[str, RuleFn] = {
     "elso_menet": _rule_elso_menet,
-    "tiz_feladat": _rule_tiz_feladat,
-    "huszonot_feladat": _rule_huszonot_feladat,
-    "otven_feladat": _rule_otven_feladat,
-    "szaz_feladat": _rule_szaz_feladat,
-    "otszaz_feladat": _rule_otszaz_feladat,
-    "ezer_feladat": _rule_ezer_feladat,
+    "tiz_feladat": _make_megoldas_count_rule(10),
+    "huszonot_feladat": _make_megoldas_count_rule(25),
+    "otven_feladat": _make_megoldas_count_rule(50),
+    "szaz_feladat": _make_megoldas_count_rule(100),
+    "otszaz_feladat": _make_megoldas_count_rule(500),
+    "ezer_feladat": _make_megoldas_count_rule(1000),
     "tokeletes_menet": _rule_tokeletes_menet,
-    "sorozat_5": _rule_sorozat_5,
-    "sorozat_10": _rule_sorozat_10,
-    "sorozat_20": _rule_sorozat_20,
+    "sorozat_5": _make_sorozat_rule(5),
+    "sorozat_10": _make_sorozat_rule(10),
+    "sorozat_20": _make_sorozat_rule(20),
     "villam": _rule_villam,
     "hint_nelkul_20": _rule_hint_nelkul_20,
     "magas_pontossag": _rule_magas_pontossag,
-    "het_egymas_utan": _rule_het_egymas_utan,
-    "harom_het_egymas_utan": _rule_harom_het_egymas_utan,
+    "het_egymas_utan": _make_streak_rule(7),
+    "harom_het_egymas_utan": _make_longest_streak_rule(21),
     "pentek_matek_honap": _rule_pentek_matek_honap,
-    "heti_haromszor": _rule_heti_haromszor,
-    "reggeli_tanulas": _rule_reggeli_tanulas,
-    "esti_tanulas": _rule_esti_tanulas,
-    "mindket_targy": _rule_mindket_targy,
-    "minden_szint": _rule_minden_szint,
+    "heti_haromszor": _make_recent_play_days_rule(3),
+    "reggeli_tanulas": _make_hour_rule(before="08"),
+    "esti_tanulas": _make_hour_rule(from_hour="22"),
+    "mindket_targy": _make_menet_cover_rule({"matek", "magyar"}, "targy"),
+    "minden_szint": _make_menet_cover_rule(_SZINTEK_OSSZ, "szint"),
     "minden_feladattipus": _rule_minden_feladattipus,
-    "visszatero": _rule_visszatero,
-    "visszatero_tiz": _rule_visszatero_tiz,
+    "visszatero": _make_play_days_rule(3),
+    "visszatero_tiz": _make_play_days_rule(10),
     "maraton": _rule_maraton,
-    "szaz_pont": _rule_szaz_pont,
-    "otszaz_pont": _rule_otszaz_pont,
+    "szaz_pont": _make_pont_sum_rule(100),
+    "otszaz_pont": _make_pont_sum_rule(500),
     "heti_bajnok": _rule_heti_bajnok,
 }
+
+
+def _check_fresh_signal(
+    erem_id: str,
+    erem: Erem,
+    user: str,
+    engine: Engine,
+    last_award_at: datetime,
+) -> bool:
+    """Return True if new qualifying activity exists since the last award.
+
+    Used by check_new_medals() to gate repeatable medal re-grants.
+    """
+    if erem.condition:
+        cond_anchor = erem.condition_valid_from
+        cond_anchor_utc = _as_utc(cond_anchor) if cond_anchor is not None else None
+        from_anchor = last_award_at + timedelta(microseconds=1)
+        if cond_anchor_utc is not None and cond_anchor_utc > from_anchor:
+            from_anchor = cond_anchor_utc
+        try:
+            return _eval_dynamic_condition(user, erem.condition, engine, valid_from=from_anchor)
+        except Exception:  # noqa: BLE001
+            return False
+    return _repeatable_has_fresh_signal(erem_id, user, engine, last_award_at)
 
 
 # ---------------------------------------------------------------------------
@@ -1321,25 +1415,7 @@ def check_new_medals(
 
         if earned:
             if erem.ismetelheto and last_award_at is not None:
-                if erem.condition:
-                    cond_anchor = erem.condition_valid_from
-                    cond_anchor_utc = _as_utc(cond_anchor) if cond_anchor is not None else None
-                    from_anchor = last_award_at + timedelta(microseconds=1)
-                    if cond_anchor_utc is not None and cond_anchor_utc > from_anchor:
-                        from_anchor = cond_anchor_utc
-                    try:
-                        fresh_signal = _eval_dynamic_condition(
-                            user,
-                            erem.condition,
-                            engine,
-                            valid_from=from_anchor,
-                        )
-                    except Exception:
-                        fresh_signal = False
-                else:
-                    fresh_signal = _repeatable_has_fresh_signal(erem_id, user, engine, last_award_at)
-
-                if not fresh_signal:
+                if not _check_fresh_signal(erem_id, erem, user, engine, last_award_at):
                     skipped_no_new_signal += 1
                     logger.debug(
                         "skip no_new_signal | user=%s medal=%s last_award=%s",

@@ -133,7 +133,7 @@ def test_medals_shows_all_earned_dates_for_repeated_medal(tmp_path: Path) -> Non
 
     assert result.exit_code == 0
     assert "×2" in result.output
-    assert "Szerezve: 2026-05-03 08:10:00; 2026-05-01 07:20:00" in result.output
+    assert "Kiosztva (UTC): 2026-05-03 08:10:00; 2026-05-01 07:20:00" in result.output
 
 
 def test_medal_check_policy_fix_makes_temp_one_time_reearnable(tmp_path: Path) -> None:
