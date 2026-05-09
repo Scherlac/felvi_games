@@ -1,271 +1,219 @@
 # Award Evaluation Architecture Analysis
 
 **Date:** 2026-05-09  
-**File:** `src/felvi_games/achievements.py`
+**Scope:** achievements.py, condition_registry.py, progress_check.py, cli.py
 
 ---
 
 ## Overview
 
-Award (medal/érem) evaluation is **centralized but not fully modularized**, with code duplication between different code paths.
+Award evaluation is still centralized, but architecture has progressed from the original static-rule + dynamic-rule split.
 
-**Total Implementations:** 5 distinct evaluation flows in 1 file (achievements.py)
+Current model:
 
----
-
-## Current Implementations
-
-### 1. **Main Orchestration: `check_new_medals()` (Lines 1002-1174)**
-
-**Purpose:** Primary entry point; evaluates all medals, handles repeatable logic, cooldowns, and grants.
-
-**What it does:**
-- Loads catalog (static + private medals)
-- Iterates through each medal
-- For non-repeatable: checks if already earned → skip
-- For repeatable: checks last award time and cooldown (`_REPEATABLE_COOLDOWN_HOURS`)
-- Calls static rule or dynamic condition evaluator
-- On success: checks fresh signal (repeatable only)
-- Calls `repo.grant_erem()` to persist award
-
-**Complexity:** ~170 lines, heavy responsibility
-
-**Called from:** `db.py` `record_session()` after every session
+1. **Condition-driven engine** in achievements.py calling condition_registry.
+2. **Shared status/progress APIs** for CLI and UI consumers.
+3. **Shared "awardable now" dry-run API** that uses the same core decision path.
+4. **Time-of-day review and fix tooling** to align generated medal names with condition semantics.
 
 ---
 
-### 2. **Static Rules: `_rule_*()` Functions (28+ functions, Lines 421-729)**
+## What Has Been Completed
 
-**Pattern:**
-```python
-def _rule_<id>(user: str, session_id: int | None, engine: Engine) -> bool
-```
+### 1) Static rule registry split removed from runtime path
 
-**Examples:**
-- `_rule_elso_menet` — first session ever
-- `_rule_szaz_feladat` — 100 tasks solved
-- `_rule_esti_tanulas` — answer after 22:00 (local time)
-- `_rule_sorozat_5` — 5-task streak
+The older `SZABALY_REGISTRY` / `_rule_*` architecture is no longer the core runtime path.
 
-**Characteristics:**
-- Direct SQL queries via SQLAlchemy
-- Mostly isolated (one query per rule)
-- No standardized parameter structure
-- Use `_simulation_as_of` context var for time testing
+- check_new_medals() evaluates `erem.condition` with `_eval_dynamic_condition()`.
+- Condition types and SQL evaluator/count logic are delegated to condition_registry.
 
-**Issues:**
-- 28+ functions scattered sequentially (hard to navigate)
-- No TypedDict for rule definitions
-- Inconsistent query patterns
+Status: **Completed**.
 
----
+### 2) Shared dynamic progress helper added
 
-### 3. **Dynamic Condition Evaluators: `_dyn_*()` Functions (12 evaluators, Lines 755-877)**
+`evaluate_dynamic_condition_progress()` now provides:
 
-**Pattern:**
-```python
-def _dyn_<type>(user: str, condition: dict, n: int, cutoff: datetime, upper: datetime | None, s: Session) -> bool
-```
+- fulfillment (`ok`)
+- progress (`current`, `target`)
+- normalized `valid_from`
 
-**Examples:**
-- `_dyn_feladat_count` — N tasks solved in window
-- `_dyn_after_hour` — N tasks after hour H
-- `_dyn_before_hour` — N tasks before hour H
-- `_dyn_interakcio` — N interaction events of type X
+CLI and UI call this shared helper instead of duplicating parse/eval/count logic.
 
-**Characteristics:**
-- Operate on LLM-generated JSON conditions
-- Share a common signature + dispatch pattern
-- Parameterized by condition dict
+Status: **Completed**.
 
-**Issues:**
-- No input validation on condition dict keys (e.g., "hour" could be 0-23 or invalid)
-- SQL logic is duplicated across some similar conditions
+### 3) Shared "next award basis" API added
 
----
+`get_next_award_basis()` now centralizes the payload basis used for "what to advertise next":
 
-### 4. **Registry & Dispatch (Lines 880-927 and 1315-1384)**
+- stats
+- close medals
+- earned count
 
-**Static Registry (`SZABALY_REGISTRY`, Lines 970-1000):**
-```python
-SZABALY_REGISTRY: dict[str, Callable] = {
-    "elso_menet": _rule_elso_menet,
-    "szaz_feladat": _rule_szaz_feladat,
-    ...
-}
-```
+Used from CLI and daily insight path.
 
-**Dynamic Registry (`_CONDITION_EVALUATORS`, Lines 920-927):**
-```python
-_CONDITION_EVALUATORS: dict[str, _CondEvalFn] = {
-    "feladat_count": _dyn_feladat_count,
-    "before_hour": _dyn_before_hour,
-    ...
-}
-```
+Status: **Completed**.
 
-**Dispatch Functions:**
-- `_eval_dynamic_condition()` — returns bool (award eligible)
-- `_count_dynamic_condition()` — returns `(current_value, target_n)` for progress display
+### 4) Shared "awardable now" API added
 
----
+`get_awardability_now()` wraps `check_new_medals(... dry_run=True, details=...)` and returns:
 
-### 5. **Simulation Path: `simulate_medal_rules()` (Lines 1413-1461)**
+- awardable_now
+- would_repeat_now
 
-**Purpose:** Evaluate all rules without granting; used for diagnostics and AI daily insights.
+This made it explicit that "close" and "awardable now" are separate signals.
 
-**What it does:**
-- Evaluates all static rules
-- Evaluates all dynamic medals (not in registry)
-- Returns `RuleSimResult` list with error info
+Status: **Completed**.
 
-**Issues:**
-- **Incomplete:** Does NOT apply repeatable cooldowns or "fresh signal" checks
-  - A repeatable medal may show `result=True` in simulation even if cooldown not met
-  - No way to know if this is "first earn" vs "has cooldown"
-- Separate from `check_new_medals()` → code paths diverge
-- Only used by CLI `felvi medal-check --simulate`; not called during gameplay
+### 5) window_hours behavior corrected
+
+`_window_bounds()` now combines anchors correctly:
+
+- rolling window (`now - window_hours`)
+- `valid_from` floor
+
+It uses the stricter bound and is simulation-aware via `_sim_now()`.
+
+Status: **Completed**.
+
+### 6) Time-of-day normalization + review tooling
+
+Added in progress_check + CLI:
+
+- normalize_medal_candidate_time_gate()
+- review_time_gate_alignment()
+- CLI switches:
+  - `--review-time-gating`
+  - `--review-time-gating-llm`
+  - `--review-time-gating-fix`
+  - `--review-time-gating-interactive`
+
+This closes the gap where names like "Reggeli" / "Esti" had no before/after gate.
+
+Status: **Completed**.
+
+### 7) Conditions CLI progress bar improved
+
+`felvi medals --conditions` progress bars are now log-scaled to avoid extremely long terminal lines on large targets.
+
+Status: **Completed**.
 
 ---
 
-## Code Duplication Issues
+## Current Implementations (As-Is)
 
-### **Issue A: Condition Evaluation Duplicated**
+### 1) Main orchestration: check_new_medals()
 
-Same SQL queries for conditions appear in TWO places:
+Responsibilities:
 
-**Path 1:** `_eval_dynamic_condition()` (returns bool)
-- ~40 lines of dispatcher logic
-- Each `_dyn_*()` function has its query
+1. Load catalog (global + private targeted medals).
+2. Apply eligibility filters (already earned, cooldown, no-condition).
+3. Evaluate condition through `_eval_dynamic_condition()`.
+4. Grant, or in dry-run classify into awardable_now / would_repeat.
 
-**Path 2:** `_count_dynamic_condition()` (returns progress)
-- ~75 lines of DUPLICATED query logic for each condition type
-- Same SQL filters, but structured to extract counts
+Still sizable and multi-responsibility, but no longer split across static/dynamic rule systems.
 
-**Example (before_hour):**
+### 2) Condition evaluation dispatch
 
-In `_dyn_before_hour()`:
-```python
-cnt = s.scalar(
-    select(func.count()).select_from(MegoldasRecord)
-    .where(
-        MegoldasRecord.felhasznalo_nev == user,
-        MegoldasRecord.created_at >= cutoff,
-        func.strftime("%H", func.datetime(MegoldasRecord.created_at, "localtime")) < f"{hour:02d}",
-    )
-) or 0
-return cnt >= n
-```
+`_eval_dynamic_condition()` and `_count_dynamic_condition()` in achievements call into condition_registry specs.
 
-In `_count_dynamic_condition()` (almost identical):
-```python
-cnt = s.scalar(
-    select(func.count()).select_from(MegoldasRecord)
-    .where(MegoldasRecord.felhasznalo_nev == user,
-           MegoldasRecord.created_at >= cutoff,
-           func.strftime("%H", func.datetime(MegoldasRecord.created_at, "localtime")) < f"{hour:02d}")
-) or 0
-return cnt, n
-```
+condition_registry now owns:
 
-**Fix:** Extract shared query logic into helper; both paths call it.
+- condition schema (ParamSpec)
+- parameter validation/coercion
+- evaluator function
+- count function
+
+### 3) Simulation path
+
+`simulate_medal_rules()` remains available, but still differs from check_new_medals semantics.
+
+Notably, it does not apply all orchestration filters and repeatability semantics from check_new_medals.
 
 ---
 
-### **Issue B: Repeatable Logic Not Fully Modularized**
+## Open Items (Progress Check Still Open)
 
-In `check_new_medals()` (lines 1265-1285):
-```python
-if erem.ismetelheto and last_award_at is not None:
-    if erem.condition:
-        # Complex repeatable logic for dynamic
-        from_anchor = last_award_at + timedelta(microseconds=1)
-        if cond_anchor_utc is not None and cond_anchor_utc > from_anchor:
-            from_anchor = cond_anchor_utc
-        fresh_signal = _eval_dynamic_condition(user, erem.condition, engine, valid_from=from_anchor)
-    else:
-        # Separate logic for static
-        fresh_signal = _repeatable_has_fresh_signal(erem_id, user, engine, last_award_at)
-    if not fresh_signal:
-        continue
-```
+### A) Close-medal estimator remains heuristic and hard-coded
 
-**Issue:** Repeatable logic is scattered:
-1. Cooldown check in `check_new_medals()` line ~1130 (`if now - last_award_at < cooldown_hours...`)
-2. Fresh signal logic in lines 1265-1285 (complex time anchor logic)
-3. Helper `_repeatable_has_fresh_signal()` for static rules only
+`estimate_close_medals()` in progress_check is still a manually curated list of medal IDs and formulas.
 
-**Fix:** Extract repeatable cooldown + fresh signal into standalone module.
+Impact:
 
----
+- Fast and interpretable
+- But not fully data-driven from registry definitions
 
-### **Issue C: Static vs Dynamic Registries Are Separate**
+Priority: **High** for long-term maintainability.
 
-Two registry systems:
-- `SZABALY_REGISTRY` (dict) for static rules
-- `_CONDITION_EVALUATORS` (dict) for dynamic
+### B) Simulation and runtime path divergence
 
-**Consequence:**
-- `simulate_medal_rules()` has to iterate both separately
-- No unified "get evaluator for medal" function
-- Harder to add new evaluation types
+`simulate_medal_rules()` does not fully mirror check_new_medals filtering/cooldown/fresh-signal semantics.
+
+Impact:
+
+- CLI simulation can disagree with runtime grant behavior
+
+Priority: **High** if simulation is used for diagnostics or policy checks.
+
+### C) check_new_medals still does multiple concerns
+
+It still combines filtering, evaluation, dry-run classification, and grant persistence.
+
+Priority: **Medium** (refactor for readability/test isolation).
+
+### D) No fully unified registry abstraction for all external consumers
+
+Engine runtime uses condition_registry well, but "close medals" and some reporting flows are still partially custom.
+
+Priority: **Medium**.
 
 ---
 
-## Modularity Assessment
+## Updated Modularity Assessment
 
 | Aspect | Status | Notes |
 |--------|--------|-------|
-| **Single responsibility** | ❌ Poor | `check_new_medals()` does: lookup, evaluation, cooldown, grant, logging (~170 lines) |
-| **Code reuse** | ❌ Poor | Query logic duplicated between `_eval_dynamic_condition()` and `_count_dynamic_condition()` |
-| **Testability** | ⚠️ Fair | Static rules can be tested in isolation; dynamic conditions harder (need condition dict) |
-| **Registry design** | ⚠️ Fair | Two separate registries; no unified dispatch |
-| **Error handling** | ⚠️ Fair | Catches exceptions but logs, doesn't propagate; hard to debug |
-| **Type safety** | ❌ Poor | No TypedDict for rule/condition structures; "hour" in before_hour not validated as 0-23 |
-| **Simulation path** | ❌ Poor | Incomplete; doesn't apply cooldown/fresh signal logic |
+| Centralization | ✅ Good | Runtime awarding path is centralized in achievements.py |
+| Condition typing/validation | ✅ Improved | ParamSpec validation in condition_registry |
+| Shared evaluation APIs | ✅ Improved | evaluate_dynamic_condition_progress, get_next_award_basis, get_awardability_now |
+| Time-of-day policy tooling | ✅ Improved | Review/fix/interactive CLI flow implemented |
+| Code reuse | ⚠️ Mixed | Runtime paths improved, but close estimator remains heuristic |
+| Simulation fidelity | ❌ Open | simulate_medal_rules still diverges from check_new_medals semantics |
+| Single responsibility | ⚠️ Mixed | check_new_medals still broad but cleaner than before |
 
 ---
 
-## Recommendations for Refactoring
+## Recommended Next Steps
 
-### **High Priority (Blocks datetime policy work)**
+### High Priority
 
-1. **Extract condition query logic:**
-   - Create `_get_condition_count(user, condition, cutoff, upper, s) → int`
-   - Use in both `_eval_dynamic_condition()` and `_count_dynamic_condition()`
-   - Eliminates ~35 lines of duplication
+1. Align simulate_medal_rules with check_new_medals decision policy (or deprecate one path).
+2. Replace hard-coded estimate_close_medals rules with a registry-driven progress estimator where possible.
 
-2. **Extract repeatable logic into module:**
-   - `def should_award_repeatable(erem: Erem, last_award_at: datetime, now: datetime) → bool`
-   - Consolidates cooldown + fresh signal logic
-   - Used by both `check_new_medals()` and `simulate_medal_rules()`
+### Medium Priority
 
-3. **Add type validation for time-of-day conditions:**
-   - Validate `before_hour.hour` is 0-23 at condition creation
-   - Add TypedDict for `BeforeHourCondition`, `AfterHourCondition`
+3. Split check_new_medals into explicit pipeline helpers:
+   - eligibility filter
+   - condition evaluation
+   - result classification (new vs repeat)
+   - grant persistence
 
-### **Medium Priority (Code quality)**
-
-4. **Unified registry:**
-   - Combine `SZABALY_REGISTRY` + `_CONDITION_EVALUATORS` into single `MEDAL_REGISTRY`
-   - Reduces code duplication in `simulate_medal_rules()`
-
-5. **Extract `check_new_medals()` into pipeline:**
-   - Step 1: filter by eligibility (already earned, cooldown)
-   - Step 2: evaluate rule/condition
-   - Step 3: check fresh signal (repeatable)
-   - Step 4: grant and return
+4. Add targeted tests for awardability_now vs close_medals consistency contracts.
 
 ---
 
 ## Summary
 
-**Architecture Quality:** Functional but fragmented.
+The architecture is no longer in the original fragmented state described by the first draft.
 
-- **Centralization:** ✅ All award logic in `achievements.py`
-- **Modularity:** ❌ Code duplication between eval paths; repeatable logic scattered
-- **Maintainability:** ⚠️ Hard to add new condition types without duplicating query logic
-- **Testing:** ⚠️ Simulation path is incomplete; can't fully validate repeatable logic
+Big wins completed:
 
-**Recommendation:** Before implementing datetime policy refactor, extract the 3 high-priority modules above to reduce complexity. This will make time-of-day rule validation and daily window logic cleaner.
+1. Runtime condition evaluation standardized through condition_registry.
+2. CLI/UI now consume shared award/progress APIs.
+3. Time-of-day normalization and interactive review/fix workflow is in place.
+
+Remaining open work is mainly about:
+
+1. simulation fidelity,
+2. reducing hard-coded close-medal heuristics,
+3. further modularizing orchestration internals.
 

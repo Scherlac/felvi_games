@@ -3,7 +3,9 @@
 **ID:** US-AWARD-ADV-001  
 **Epic:** Motivation & Progress Feedback  
 **Priority:** P2  
-**Status:** Draft
+**Status:** Planned (with partial prerequisites in place)
+
+**Last Updated:** 2026-05-09
 
 ---
 
@@ -15,10 +17,24 @@ so that I can intentionally start the right activity in time.
 
 ---
 
+## Current Baseline (Already Implemented)
+
+The app already supports two useful but different signals:
+
+- "Most megszerezhető" style signal (engine dry-run based): medals the user can earn right now.
+- "Hamarosan megszerezheted" style signal (close-medal heuristic): medals that look near completion.
+
+What is missing today is explicit local-time window semantics for upcoming/active medal advertising.
+
+This user story defines that missing layer.
+
+---
+
 ## Scope
 
 - Advertising should be tied to each medal's active achievement window.
 - Pre-advertising window is local-time based.
+- Should work for both single-condition and compound-condition medals.
 - Core example:
   - Medal: Esti ötös
   - Active window: local 22:00-23:59
@@ -33,6 +49,8 @@ so that I can intentionally start the right activity in time.
 3. If current local time is outside both windows, do not advertise.
 4. Do not spam: once shown, suppress repeated advertising for a cooldown period (default 60 minutes).
 5. Suppress advertising if the user already earned the non-repeatable medal.
+6. For repeatable medals, only advertise when cooldown/fresh-signal policy says it is realistically earnable in the upcoming or active window.
+7. Window boundaries are local-clock boundaries; storage/evaluation internals remain UTC-safe.
 
 ---
 
@@ -50,6 +68,18 @@ so that I can intentionally start the right activity in time.
   - "Nemsokára elérhető" (upcoming)
   - "Most megszerezhető" (active)
 - [ ] Report/telemetry records ad impressions and conversions (advertised -> earned).
+
+---
+
+## Implementation Status Snapshot
+
+- [x] Shared engine API exists for "awardable now" decisions.
+- [x] Shared basis exists for "what to advertise next" payload assembly.
+- [x] Time-gating condition semantics are normalized/reviewable for generated medals.
+- [ ] No dedicated medal metadata fields yet for advertise windows.
+- [ ] No dedicated service yet for local-time advertise-window evaluation.
+- [ ] No prompt cooldown tracker yet for advertise impressions.
+- [ ] No dedicated impression/conversion telemetry model for this feature.
 
 ---
 
@@ -74,8 +104,32 @@ so that I can intentionally start the right activity in time.
    - medal id
    - state: `upcoming` or `active`
    - window boundaries in local time
-4. UI: add "Upcoming medals" card and "Active now" badge hint.
-5. Telemetry: log impression and click/engagement events for A/B tuning.
+4. Add anti-spam cooldown storage keying by `(user, medal_id, state)`.
+5. UI: add explicit "Upcoming medals" card and retain "Active now" badge hint.
+6. Telemetry: log impression and conversion events for A/B tuning and reporting.
+
+---
+
+## Suggested Delivery Slices
+
+### Slice 1: Engine/service foundation
+
+1. Add metadata fields to medal model/config parsing.
+2. Implement local-time window helper utilities.
+3. Implement `get_advertisable_achievements(...)` without UI wiring.
+4. Add deterministic tests for daytime and nighttime windows.
+
+### Slice 2: UI behavior and cooldown
+
+1. Add upcoming/active sections in insight dialog.
+2. Add cooldown suppression persistence.
+3. Verify copy and state transitions around boundary times.
+
+### Slice 3: Telemetry and reporting
+
+1. Log impression events.
+2. Log conversions (advertised medal later earned).
+3. Add CLI/report view for conversion metrics.
 
 ---
 
@@ -87,6 +141,7 @@ so that I can intentionally start the right activity in time.
 4. Repeatable vs non-repeatable suppression is respected.
 5. Tests cover at least 1 daytime medal and 1 night medal window.
 6. Report exposes advertising conversion metrics.
+7. State transitions are deterministic on boundary minutes (e.g., 15:59/16:00/22:00/00:00).
 
 ---
 
