@@ -21,6 +21,7 @@ import hashlib
 import re
 import sys
 
+import find_unused as _find_unused
 from radon.complexity import cc_visit
 from radon.metrics import mi_visit
 from radon.raw import analyze
@@ -60,6 +61,7 @@ class GateThresholds:
     max_ruff_violations_increase: int = 5
     max_duplicate_pairs_increase: int = 2
     max_high_param_increase: int = 2
+    max_unused_function_increase: int = 0
 
 
 @dataclass
@@ -107,6 +109,9 @@ class Snapshot:
     high_param_count: int = 0
     untyped_public_functions: int = 0
     high_param_functions: list[dict[str, object]] = field(default_factory=list)
+    unused_function_count: int = 0
+    unused_functions: list[dict[str, object]] = field(default_factory=list)
+    unused_error: str | None = None
 
 
 @dataclass
@@ -460,6 +465,14 @@ def build_snapshot(repo_root: Path, scan_paths: list[Path], top_n: int = 15) -> 
     snap.untyped_public_functions = untyped_ct
     snap.high_param_functions = high_param_fns
 
+    try:
+        unused_symbols, _defined = _find_unused.analyse(py_files, repo_root, prefix=None)
+        unused_functions = [s for s in unused_symbols if s.kind == "function" and s.owner is None]
+        snap.unused_function_count = len(unused_functions)
+        snap.unused_functions = [asdict(s) for s in unused_functions[:20]]
+    except Exception as exc:
+        snap.unused_error = str(exc)
+
     return snap
 
 
@@ -569,6 +582,7 @@ def decide_gate(
         "ruff_violations": (current.ruff_violations or 0) - (baseline.ruff_violations or 0),
         "duplicate_block_pairs": current.duplicate_block_pairs - baseline.duplicate_block_pairs,
         "high_param_count": current.high_param_count - baseline.high_param_count,
+        "unused_function_count": current.unused_function_count - baseline.unused_function_count,
     }
     if current.coverage_pct is not None and baseline.coverage_pct is not None:
         deltas["coverage_pct"] = round(current.coverage_pct - baseline.coverage_pct, 3)
@@ -695,7 +709,16 @@ def decide_gate(
     elif deltas["high_param_count"] > 0:
         warnings.append(f"High-param functions +{deltas['high_param_count']} (within tolerance {thresholds.max_high_param_increase}).")
 
-    notes.extend(f"⚠️ WARNING: {w}" for w in warnings)
+    if deltas["unused_function_count"] > thresholds.max_unused_function_increase:
+        reasons.append(
+            f"Unused top-level functions increased by {deltas['unused_function_count']} (> {thresholds.max_unused_function_increase})."
+        )
+    elif deltas["unused_function_count"] > 0:
+        warnings.append(
+            f"Unused top-level functions +{deltas['unused_function_count']} (within tolerance {thresholds.max_unused_function_increase})."
+        )
+
+    notes.extend(f"WARNING: {w}" for w in warnings)
 
     return GateDecision(
         status="FAIL" if reasons else "PASS",
@@ -746,6 +769,9 @@ def _snapshot_from_json(payload: dict[str, object]) -> Snapshot:
         high_param_count=int(payload.get("high_param_count", 0)),
         untyped_public_functions=int(payload.get("untyped_public_functions", 0)),
         high_param_functions=[dict(x) for x in list(payload.get("high_param_functions", []))],
+        unused_function_count=int(payload.get("unused_function_count", 0)),
+        unused_functions=[dict(x) for x in list(payload.get("unused_functions", []))],
+        unused_error=str(payload["unused_error"]) if payload.get("unused_error") else None,
     )
 
 
@@ -790,6 +816,7 @@ def render_report(current: Snapshot, baseline: Snapshot | None, gate: GateDecisi
     lines.append(f"- D/E/F blocks: {current.d_or_worse_blocks}")
     lines.append(f"- F blocks: {current.f_blocks}")
     lines.append(f"- Parse-error files: {len(current.parse_error_files)}")
+    lines.append(f"- Unused top-level functions: {current.unused_function_count}")
     lines.append(
         f"- Coverage: {current.coverage_pct if current.coverage_pct is not None else 'N/A'}%"
     )
@@ -868,6 +895,21 @@ def render_report(current: Snapshot, baseline: Snapshot | None, gate: GateDecisi
         lines.append("")
     lines.append("")
 
+    lines.append("## Unused Functions")
+    lines.append("")
+    lines.append(f"- Unused top-level functions: {current.unused_function_count}")
+    if current.unused_error:
+        lines.append(f"- Unused analysis status: ERROR ({current.unused_error})")
+    else:
+        lines.append("- Unused analysis status: OK")
+    if current.unused_functions:
+        lines.append("")
+        lines.append("| Symbol | File |")
+        lines.append("|---|---|")
+        for row in current.unused_functions[:10]:
+            lines.append(f"| {row['name']} | {row['file']}:{row['line']} |")
+    lines.append("")
+
     lines.append("## Ruff Lint")
     lines.append("")
     lines.append(f"- Total violations: {current.ruff_violations if current.ruff_violations is not None else 'N/A'}")
@@ -902,6 +944,7 @@ def render_report(current: Snapshot, baseline: Snapshot | None, gate: GateDecisi
         lines.append(f"- Delta ruff_violations: {gate.deltas['ruff_violations']}")
         lines.append(f"- Delta duplicate_block_pairs: {gate.deltas['duplicate_block_pairs']}")
         lines.append(f"- Delta high_param_count: {gate.deltas['high_param_count']}")
+        lines.append(f"- Delta unused_function_count: {gate.deltas['unused_function_count']}")
         lines.append("")
 
         if gate.notes:
@@ -926,6 +969,7 @@ def render_report(current: Snapshot, baseline: Snapshot | None, gate: GateDecisi
     lines.append(f"- max_ruff_violations_increase: {thresholds.max_ruff_violations_increase}")
     lines.append(f"- max_duplicate_pairs_increase: {thresholds.max_duplicate_pairs_increase}")
     lines.append(f"- max_high_param_increase: {thresholds.max_high_param_increase}")
+    lines.append(f"- max_unused_function_increase: {thresholds.max_unused_function_increase}")
     lines.append("")
 
     if gate and gate.significant_regressions:
@@ -952,7 +996,7 @@ def render_report(current: Snapshot, baseline: Snapshot | None, gate: GateDecisi
 
     lines.append("## Copilot Summary")
     lines.append("")
-    warnings_in_notes = gate and [n for n in gate.notes if n.startswith("⚠️")]
+    warnings_in_notes = gate and [n for n in gate.notes if n.startswith("WARNING:")]
     if gate_status == "PASS" and warnings_in_notes:
         lines.append("- Quality gate passed with warnings: small regressions detected (within tolerance).")
         lines.append("- Review warnings above; refactor if the trend continues.")
@@ -1003,6 +1047,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-ruff-violations-increase", type=int, default=_d.max_ruff_violations_increase)
     parser.add_argument("--max-duplicate-pairs-increase", type=int, default=_d.max_duplicate_pairs_increase)
     parser.add_argument("--max-high-param-increase", type=int, default=_d.max_high_param_increase)
+    parser.add_argument("--max-unused-function-increase", type=int, default=_d.max_unused_function_increase)
     parser.add_argument(
         "--coverage-command",
         default="pytest --cov=src/felvi_games --cov-report=json:reports/quality/coverage_current.json -q",
@@ -1109,6 +1154,12 @@ def _ratchet_baseline_individual_metrics(
         payload["high_param_functions"] = list(current.high_param_functions)
         changed.append("high_param_count")
 
+    if current.unused_function_count < baseline.unused_function_count:
+        payload["unused_function_count"] = current.unused_function_count
+        payload["unused_functions"] = list(current.unused_functions)
+        payload["unused_error"] = current.unused_error
+        changed.append("unused_function_count")
+
     if not changed:
         return None, []
 
@@ -1137,6 +1188,7 @@ def main() -> int:
         max_ruff_violations_increase=int(args.max_ruff_violations_increase),
         max_duplicate_pairs_increase=int(args.max_duplicate_pairs_increase),
         max_high_param_increase=int(args.max_high_param_increase),
+        max_unused_function_increase=int(args.max_unused_function_increase),
     )
 
     current = build_snapshot(repo_root, scan_paths)
@@ -1225,37 +1277,41 @@ def main() -> int:
             sign = "+" if val > 0 else ""
             indicator = ""
             if val != 0:
-                indicator = " ✓" if (val < 0) != invert else " ✗"
+                indicator = " ok" if (val < 0) != invert else " regressed"
             return f"{sign}{val:.3g}{indicator}"
         print(
             f"  avg CC    {current.avg_cc:.3g}"
-            f"  (Δ {_fmt_delta(current.avg_cc - baseline.avg_cc)})"
+            f"  (delta {_fmt_delta(current.avg_cc - baseline.avg_cc)})"
         )
         print(
             f"  F blocks  {current.f_blocks}"
-            f"  (Δ {_fmt_delta(current.f_blocks - baseline.f_blocks)})"
+            f"  (delta {_fmt_delta(current.f_blocks - baseline.f_blocks)})"
         )
         print(
             f"  D/E/F     {current.d_or_worse_blocks}"
-            f"  (Δ {_fmt_delta(current.d_or_worse_blocks - baseline.d_or_worse_blocks)})"
+            f"  (delta {_fmt_delta(current.d_or_worse_blocks - baseline.d_or_worse_blocks)})"
         )
         if current.coverage_pct is not None and baseline.coverage_pct is not None:
             print(
                 f"  coverage  {current.coverage_pct:.2f}%"
-                f"  (Δ {_fmt_delta(current.coverage_pct - baseline.coverage_pct, invert=True)})"
+                f"  (delta {_fmt_delta(current.coverage_pct - baseline.coverage_pct, invert=True)})"
             )
         if current.ruff_violations is not None and baseline.ruff_violations is not None:
             print(
                 f"  ruff      {current.ruff_violations} violations"
-                f"  (Δ {_fmt_delta(current.ruff_violations - baseline.ruff_violations)})"
+                f"  (delta {_fmt_delta(current.ruff_violations - baseline.ruff_violations)})"
             )
         print(
             f"  dup pairs {current.duplicate_block_pairs}"
-            f"  (Δ {_fmt_delta(current.duplicate_block_pairs - baseline.duplicate_block_pairs)})"
+            f"  (delta {_fmt_delta(current.duplicate_block_pairs - baseline.duplicate_block_pairs)})"
         )
         print(
             f"  hi-param  {current.high_param_count}"
-            f"  (Δ {_fmt_delta(current.high_param_count - baseline.high_param_count)})"
+            f"  (delta {_fmt_delta(current.high_param_count - baseline.high_param_count)})"
+        )
+        print(
+            f"  unused    {current.unused_function_count}"
+            f"  (delta {_fmt_delta(current.unused_function_count - baseline.unused_function_count)})"
         )
     print(f"Report written: {report_path}")
 
