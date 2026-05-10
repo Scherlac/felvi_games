@@ -254,6 +254,7 @@ def _eval_dynamic_condition(
     valid_from: datetime | None = None,
     trigger_tipus: str | None = None,
     session_id: int | None = None,
+    eval_session: Session | None = None,
 ) -> bool:
     """Evaluate one condition dict or a compound list (AND semantics).
 
@@ -270,9 +271,12 @@ def _eval_dynamic_condition(
         n = int(cond.get("n", 1))
         window_h = float(cond["window_hours"]) if "window_hours" in cond else 0.0
         cutoff, upper = _window_bounds(valid_from, window_h)
-        with Session(engine) as s:
-            if not spec.evaluator(user, cond, n, cutoff, upper, s):
-                return False
+        if eval_session is None:
+            with Session(engine) as s:
+                if not spec.evaluator(user, cond, n, cutoff, upper, s):
+                    return False
+        elif not spec.evaluator(user, cond, n, cutoff, upper, eval_session):
+            return False
     return True
 
 
@@ -281,6 +285,7 @@ def _count_dynamic_condition(
     condition: dict | list[dict],
     engine: Engine,
     valid_from: datetime | None = None,
+    eval_session: Session | None = None,
 ) -> tuple[int | None, int | None]:
     """Return (current_value, target_n) for progress display.
 
@@ -296,8 +301,11 @@ def _count_dynamic_condition(
     target = 1 if ctype == "interakcio_exists" else n
     window_h = float(first["window_hours"]) if "window_hours" in first else 0.0
     cutoff, upper = _window_bounds(valid_from, window_h)
-    with Session(engine) as s:
-        cnt = spec.count_fn(user, first, cutoff, upper, s)
+    if eval_session is None:
+        with Session(engine) as s:
+            cnt = spec.count_fn(user, first, cutoff, upper, s)
+    else:
+        cnt = spec.count_fn(user, first, cutoff, upper, eval_session)
     if cnt is None:
         return None, None
     return cnt, target
@@ -478,76 +486,78 @@ def check_new_medals(
     skipped_no_rule = 0
     rule_errors: list[str] = []
 
-    for erem_id, erem in catalog.items():
-        last_award_at = latest_award_by_id.get(erem_id)
+    with Session(engine) as eval_session:
+        for erem_id, erem in catalog.items():
+            last_award_at = latest_award_by_id.get(erem_id)
 
-        # Non-repeatable + already earned → skip
-        if not erem.ismetelheto and erem_id in earned_any_ids:
-            skipped_already_has += 1
-            logger.debug("skip already_earned | user=%s medal=%s", user, erem_id)
-            continue
-
-        # Repeatable medals need a cooldown so historical truth does not re-fire instantly.
-        if erem.ismetelheto and last_award_at is not None and not _cooldown_elapsed(erem, last_award_at, now):
-            skipped_cooldown += 1
-            logger.debug(
-                "skip cooldown | user=%s medal=%s last_award=%s now=%s",
-                user,
-                erem_id,
-                last_award_at.isoformat(),
-                now.isoformat(),
-            )
-            continue
-
-        # Medal behaviour is fully driven by its condition; no condition = manual-grant only.
-        if not erem.condition:
-            skipped_no_rule += 1
-            logger.debug("skip no_condition | user=%s medal=%s", user, erem_id)
-            continue
-        eval_valid_from = _effective_condition_valid_from(erem, last_award_at)
-
-        try:
-            earned = _eval_dynamic_condition(
-                user, erem.condition, engine,
-                valid_from=eval_valid_from,
-                trigger_tipus=trigger_tipus,
-                session_id=session_id,
-            )
-        except Exception as exc:  # noqa: BLE001 – evaluation must not crash the game
-            rule_errors.append(erem_id)
-            if details is not None:
-                details.rule_errors.append(erem_id)
-            logger.warning(
-                "condition_error | user=%s medal=%s error=%s",
-                user, erem_id, exc, exc_info=True,
-            )
-            continue
-
-        logger.debug(
-            "rule_result | user=%s medal=%s session=%s result=%s",
-            user, erem_id, session_id, earned,
-        )
-
-        if earned:
-            if dry_run:
-                if erem.ismetelheto and erem_id in earned_any_ids:
-                    if details is not None:
-                        details.would_repeat.append(erem)
-                else:
-                    newly_earned.append(erem)
+            # Non-repeatable + already earned → skip
+            if not erem.ismetelheto and erem_id in earned_any_ids:
+                skipped_already_has += 1
+                logger.debug("skip already_earned | user=%s medal=%s", user, erem_id)
                 continue
 
-            expires_at: datetime | None = None
-            # Expiry is only used for repeatable medals; one-time medals stay in history forever.
-            if erem.ideiglenes and erem.ismetelheto and erem.ervenyes_napig:
-                expires_at = now + timedelta(days=erem.ervenyes_napig)
-            repo.grant_erem(user, erem_id, lejarat_at=expires_at)
-            newly_earned.append(erem)
-            logger.info(
-                "medal_granted | user=%s medal=%s nev=%r session=%s expires=%s",
-                user, erem_id, erem.nev, session_id,
-                expires_at.isoformat() if expires_at else None,
+            # Repeatable medals need a cooldown so historical truth does not re-fire instantly.
+            if erem.ismetelheto and last_award_at is not None and not _cooldown_elapsed(erem, last_award_at, now):
+                skipped_cooldown += 1
+                logger.debug(
+                    "skip cooldown | user=%s medal=%s last_award=%s now=%s",
+                    user,
+                    erem_id,
+                    last_award_at.isoformat(),
+                    now.isoformat(),
+                )
+                continue
+
+            # Medal behaviour is fully driven by its condition; no condition = manual-grant only.
+            if not erem.condition:
+                skipped_no_rule += 1
+                logger.debug("skip no_condition | user=%s medal=%s", user, erem_id)
+                continue
+            eval_valid_from = _effective_condition_valid_from(erem, last_award_at)
+
+            try:
+                earned = _eval_dynamic_condition(
+                    user, erem.condition, engine,
+                    valid_from=eval_valid_from,
+                    trigger_tipus=trigger_tipus,
+                    session_id=session_id,
+                    eval_session=eval_session,
+                )
+            except Exception as exc:  # noqa: BLE001 – evaluation must not crash the game
+                rule_errors.append(erem_id)
+                if details is not None:
+                    details.rule_errors.append(erem_id)
+                logger.warning(
+                    "condition_error | user=%s medal=%s error=%s",
+                    user, erem_id, exc, exc_info=True,
+                )
+                continue
+
+            logger.debug(
+                "rule_result | user=%s medal=%s session=%s result=%s",
+                user, erem_id, session_id, earned,
             )
+
+            if earned:
+                if dry_run:
+                    if erem.ismetelheto and erem_id in earned_any_ids:
+                        if details is not None:
+                            details.would_repeat.append(erem)
+                    else:
+                        newly_earned.append(erem)
+                    continue
+
+                expires_at: datetime | None = None
+                # Expiry is only used for repeatable medals; one-time medals stay in history forever.
+                if erem.ideiglenes and erem.ismetelheto and erem.ervenyes_napig:
+                    expires_at = now + timedelta(days=erem.ervenyes_napig)
+                repo.grant_erem(user, erem_id, lejarat_at=expires_at)
+                newly_earned.append(erem)
+                logger.info(
+                    "medal_granted | user=%s medal=%s nev=%r session=%s expires=%s",
+                    user, erem_id, erem.nev, session_id,
+                    expires_at.isoformat() if expires_at else None,
+                )
 
     logger.info(
         "check_new_medals done | user=%s session=%s granted=%d "

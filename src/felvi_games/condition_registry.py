@@ -52,6 +52,9 @@ CondEvalFn = Callable[[str, dict, int, datetime, "datetime | None", Session], bo
 # (user, condition_dict, cutoff, upper, session) -> int | None
 CondCountFn = Callable[[str, dict, datetime, "datetime | None", Session], "int | None"]
 
+# (user, condition_dict, cutoff, upper, session) -> scalar value
+KPICalcFn = Callable[[str, dict, datetime, "datetime | None", Session], "int | float | None"]
+
 
 # ---------------------------------------------------------------------------
 # ParamSpec — single parameter schema with validation
@@ -142,6 +145,81 @@ class ConditionDef:
                 f"    {pname} ({pspec.type.__name__}){req}: {pspec.description}{suffix}"
             )
         return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# KPI parameter registry (condition building blocks)
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class KPIParamDef:
+    name: str
+    description: str
+    calc_fn: KPICalcFn
+    key_fields: tuple[str, ...] = ()
+
+
+_KPI_REGISTRY: dict[str, KPIParamDef] = {}
+
+
+def register_kpi_param(spec: KPIParamDef) -> KPIParamDef:
+    """Register one KPI calculator. Returns spec (allows chaining)."""
+    _KPI_REGISTRY[spec.name] = spec
+    return spec
+
+
+def get_kpi_param(name: str) -> KPIParamDef | None:
+    return _KPI_REGISTRY.get(name)
+
+
+def _cache_value_normalized(value: Any) -> Any:
+    if isinstance(value, list):
+        return tuple(_cache_value_normalized(v) for v in value)
+    if isinstance(value, dict):
+        return tuple(sorted((str(k), _cache_value_normalized(v)) for k, v in value.items()))
+    if isinstance(value, set):
+        return tuple(sorted(_cache_value_normalized(v) for v in value))
+    return value
+
+
+def _cache_ts_key(value: datetime | None) -> str:
+    if value is None:
+        return "none"
+    dt = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat()
+
+
+def kpi_parameter_value(
+    user: str,
+    kpi_name: str,
+    condition: dict,
+    cutoff: datetime,
+    upper: datetime | None,
+    s: Session,
+) -> int | float | None:
+    """Return one KPI value, cached per-session and parameterized by condition fields."""
+    spec = get_kpi_param(kpi_name)
+    if spec is None:
+        return None
+
+    cache = s.info.setdefault("_kpi_param_cache", {})
+    key = (
+        "kpi",
+        kpi_name,
+        user,
+        _cache_ts_key(cutoff),
+        _cache_ts_key(upper),
+        tuple(
+            (name, _cache_value_normalized(condition.get(name)))
+            for name in spec.key_fields
+        ),
+    )
+    if key in cache:
+        return cache[key]
+
+    value = spec.calc_fn(user, condition, cutoff, upper, s)
+    cache[key] = value
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -390,6 +468,64 @@ def _q_interakcio_count(
     return s.scalar(stmt) or 0
 
 
+def _kpi_attempt_count(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
+    return _q_megoldas_count(user, cutoff, upper, s)
+
+
+def _kpi_correct_count(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
+    from felvi_games.db import MegoldasRecord
+
+    return _q_megoldas_count(
+        user,
+        cutoff,
+        upper,
+        s,
+        extra=(MegoldasRecord.helyes == True,),  # noqa: E712
+    )
+
+
+def _kpi_points_sum(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
+    return _q_megoldas_sum(user, cutoff, upper, s)
+
+
+def _kpi_fast_correct_count(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
+    from felvi_games.db import MegoldasRecord
+
+    return _q_megoldas_count(
+        user,
+        cutoff,
+        upper,
+        s,
+        extra=(
+            MegoldasRecord.pont > 0,
+            MegoldasRecord.elapsed_sec.is_not(None),
+            MegoldasRecord.elapsed_sec <= 10.0,
+        ),
+    )
+
+
+def _kpi_subject_attempt_count(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
+    return _q_subject_count(user, str(condition.get("subject", "")), cutoff, upper, s)
+
+
+def _kpi_before_hour_count(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
+    h = int(condition.get("hour", 8))
+    return _q_hour_count(user, cutoff, upper, s, before_hh=f"{h:02d}")
+
+
+def _kpi_after_hour_count(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
+    h = int(condition.get("hour", 22))
+    return _q_hour_count(user, cutoff, upper, s, from_hh=f"{h:02d}")
+
+
+def _kpi_session_count(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
+    return _q_menet_count(user, cutoff, upper, s)
+
+
+def _kpi_interakcio_count(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int | None:
+    return _q_interakcio_count(user, condition, cutoff, upper, s)
+
+
 def _q_helyes_sequence(user: str, upper: datetime | None, s: Session) -> list[bool]:
     from felvi_games.db import MegoldasRecord
     stmt = (
@@ -453,45 +589,31 @@ def _perfect_session_count(menet_ids: list[int], s: Session) -> int:
 # ---------------------------------------------------------------------------
 
 def _eval_feladat_count(user, condition, n, cutoff, upper, s):
-    return _q_megoldas_count(user, cutoff, upper, s) >= n
+    return int(kpi_parameter_value(user, "attempt_count", condition, cutoff, upper, s) or 0) >= n
 
 def _eval_helyes_count(user, condition, n, cutoff, upper, s):
-    from felvi_games.db import MegoldasRecord
-    return _q_megoldas_count(
-        user, cutoff, upper, s,
-        extra=(MegoldasRecord.helyes == True,)  # noqa: E712
-    ) >= n
+    return int(kpi_parameter_value(user, "correct_count", condition, cutoff, upper, s) or 0) >= n
 
 def _eval_pont_sum(user, condition, n, cutoff, upper, s):
     if n <= 0:
         return True
-    total = _q_megoldas_sum(user, cutoff, upper, s)
+    total = int(kpi_parameter_value(user, "points_sum", condition, cutoff, upper, s) or 0)
     return total >= n
 
 def _eval_villam(user, condition, n, cutoff, upper, s):
-    from felvi_games.db import MegoldasRecord
-    return _q_megoldas_count(
-        user, cutoff, upper, s,
-        extra=(
-            MegoldasRecord.pont > 0,
-            MegoldasRecord.elapsed_sec.is_not(None),
-            MegoldasRecord.elapsed_sec <= 10.0,
-        ),
-    ) >= n
+    return int(kpi_parameter_value(user, "fast_correct_count", condition, cutoff, upper, s) or 0) >= n
 
 def _eval_feladat_subject(user, condition, n, cutoff, upper, s):
-    return _q_subject_count(user, str(condition.get("subject", "")), cutoff, upper, s) >= n
+    return int(kpi_parameter_value(user, "subject_attempt_count", condition, cutoff, upper, s) or 0) >= n
 
 def _eval_before_hour(user, condition, n, cutoff, upper, s):
-    h = int(condition.get("hour", 8))
-    return _q_hour_count(user, cutoff, upper, s, before_hh=f"{h:02d}") >= n
+    return int(kpi_parameter_value(user, "before_hour_count", condition, cutoff, upper, s) or 0) >= n
 
 def _eval_after_hour(user, condition, n, cutoff, upper, s):
-    h = int(condition.get("hour", 22))
-    return _q_hour_count(user, cutoff, upper, s, from_hh=f"{h:02d}") >= n
+    return int(kpi_parameter_value(user, "after_hour_count", condition, cutoff, upper, s) or 0) >= n
 
 def _eval_session_count(user, condition, n, cutoff, upper, s):
-    return _q_menet_count(user, cutoff, upper, s) >= n
+    return int(kpi_parameter_value(user, "session_count", condition, cutoff, upper, s) or 0) >= n
 
 def _eval_streak(user, condition, n, cutoff, upper, s):
     return _max_streak(_q_helyes_sequence(user, upper, s)) >= n
@@ -540,11 +662,11 @@ def _eval_special_date(user, condition, n, cutoff, upper, s):
     return cnt >= target
 
 def _eval_interakcio_count(user, condition, n, cutoff, upper, s):
-    cnt = _q_interakcio_count(user, condition, cutoff, upper, s)
+    cnt = kpi_parameter_value(user, "interaction_count", condition, cutoff, upper, s)
     return (cnt or 0) >= n
 
 def _eval_interakcio_exists(user, condition, n, cutoff, upper, s):
-    cnt = _q_interakcio_count(user, condition, cutoff, upper, s)
+    cnt = kpi_parameter_value(user, "interaction_count", condition, cutoff, upper, s)
     return (cnt or 0) >= 1
 
 
@@ -553,38 +675,94 @@ def _eval_interakcio_exists(user, condition, n, cutoff, upper, s):
 # ---------------------------------------------------------------------------
 
 def _count_feladat_count(user, condition, cutoff, upper, s):
-    return _q_megoldas_count(user, cutoff, upper, s)
+    return kpi_parameter_value(user, "attempt_count", condition, cutoff, upper, s)
 
 def _count_helyes_count(user, condition, cutoff, upper, s):
-    from felvi_games.db import MegoldasRecord
-    return _q_megoldas_count(user, cutoff, upper, s, extra=(MegoldasRecord.helyes == True,))  # noqa: E712
+    return kpi_parameter_value(user, "correct_count", condition, cutoff, upper, s)
 
 def _count_pont_sum(user, condition, cutoff, upper, s):
-    total = _q_megoldas_sum(user, cutoff, upper, s)
-    return total
+    return kpi_parameter_value(user, "points_sum", condition, cutoff, upper, s)
 
 def _count_villam(user, condition, cutoff, upper, s):
-    from felvi_games.db import MegoldasRecord
-    return _q_megoldas_count(user, cutoff, upper, s, extra=(
-        MegoldasRecord.pont > 0,
-        MegoldasRecord.elapsed_sec.is_not(None),
-        MegoldasRecord.elapsed_sec <= 10.0,
-    ))
+    return kpi_parameter_value(user, "fast_correct_count", condition, cutoff, upper, s)
 
 def _count_feladat_subject(user, condition, cutoff, upper, s):
-    return _q_subject_count(user, str(condition.get("subject", "")), cutoff, upper, s)
+    return kpi_parameter_value(user, "subject_attempt_count", condition, cutoff, upper, s)
 
 def _count_before_hour(user, condition, cutoff, upper, s):
-    return _q_hour_count(user, cutoff, upper, s, before_hh=f"{int(condition.get('hour', 8)):02d}")
+    return kpi_parameter_value(user, "before_hour_count", condition, cutoff, upper, s)
 
 def _count_after_hour(user, condition, cutoff, upper, s):
-    return _q_hour_count(user, cutoff, upper, s, from_hh=f"{int(condition.get('hour', 22)):02d}")
+    return kpi_parameter_value(user, "after_hour_count", condition, cutoff, upper, s)
 
 def _count_session_count(user, condition, cutoff, upper, s):
-    return _q_menet_count(user, cutoff, upper, s)
+    return kpi_parameter_value(user, "session_count", condition, cutoff, upper, s)
 
 def _count_interakcio(user, condition, cutoff, upper, s):
-    return _q_interakcio_count(user, condition, cutoff, upper, s)
+    return kpi_parameter_value(user, "interaction_count", condition, cutoff, upper, s)
+
+
+# ---------------------------------------------------------------------------
+# Built-in KPI registrations (reused by evaluators and count_fn paths)
+# ---------------------------------------------------------------------------
+
+register_kpi_param(KPIParamDef(
+    name="attempt_count",
+    description="Total attempts in the active window.",
+    calc_fn=_kpi_attempt_count,
+))
+
+register_kpi_param(KPIParamDef(
+    name="correct_count",
+    description="Correct attempts in the active window.",
+    calc_fn=_kpi_correct_count,
+))
+
+register_kpi_param(KPIParamDef(
+    name="points_sum",
+    description="Total earned points in the active window.",
+    calc_fn=_kpi_points_sum,
+))
+
+register_kpi_param(KPIParamDef(
+    name="fast_correct_count",
+    description="Fast correct attempts (elapsed<=10s, pont>0) in the active window.",
+    calc_fn=_kpi_fast_correct_count,
+))
+
+register_kpi_param(KPIParamDef(
+    name="subject_attempt_count",
+    description="Attempts in a selected subject in the active window.",
+    calc_fn=_kpi_subject_attempt_count,
+    key_fields=("subject",),
+))
+
+register_kpi_param(KPIParamDef(
+    name="before_hour_count",
+    description="Attempts before local hour in the active window.",
+    calc_fn=_kpi_before_hour_count,
+    key_fields=("hour",),
+))
+
+register_kpi_param(KPIParamDef(
+    name="after_hour_count",
+    description="Attempts after local hour in the active window.",
+    calc_fn=_kpi_after_hour_count,
+    key_fields=("hour",),
+))
+
+register_kpi_param(KPIParamDef(
+    name="session_count",
+    description="Started sessions in the active window.",
+    calc_fn=_kpi_session_count,
+))
+
+register_kpi_param(KPIParamDef(
+    name="interaction_count",
+    description="Interaction event count in the active window with optional filters.",
+    calc_fn=_kpi_interakcio_count,
+    key_fields=("event_type", "targy", "szint", "feladat_id", "meta_contains"),
+))
 
 
 # ---------------------------------------------------------------------------

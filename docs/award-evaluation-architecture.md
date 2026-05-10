@@ -1,6 +1,6 @@
 # Award Evaluation Architecture Analysis
 
-**Date:** 2026-05-09  
+**Date:** 2026-05-10  
 **Scope:** achievements.py, condition_registry.py, progress_check.py, cli.py
 
 ---
@@ -15,6 +15,13 @@ Current model:
 2. **Shared status/progress APIs** for CLI and UI consumers.
 3. **Shared "awardable now" dry-run API** that uses the same core decision path.
 4. **Time-of-day review and fix tooling** to align generated medal names with condition semantics.
+
+Target model (in progress):
+
+1. **KPI parameter-first evaluation**: condition evaluators are built on reusable parameter calculators.
+2. **Unified evaluator/count path**: the same KPI calculator feeds both `evaluator` and `count_fn` progress reporting.
+3. **Lazy relevant-only execution**: only condition branches that are reached are evaluated (AND short-circuit).
+4. **Shared cached stats during medal pass**: repeated condition fragments across medals reuse one computed KPI value.
 
 ---
 
@@ -97,6 +104,31 @@ Status: **Completed**.
 
 Status: **Completed**.
 
+### 8) KPI parameter registry + shared cache (phase 1)
+
+Implemented in `condition_registry.py` + `achievements.py`:
+
+- Added `KPIParamDef` registry with explicit parameter calculators.
+- Added `kpi_parameter_value(...)` session-local cache keyed by:
+  - user
+  - KPI name
+  - time bounds (`cutoff`, `upper`)
+  - KPI-specific condition fields (for example `hour`, `subject`, interaction filters)
+- Refactored high-traffic condition types to use KPI calculators for both evaluate and progress count paths:
+  - `feladat_count`
+  - `helyes_count`
+  - `pont_sum`
+  - `villam`
+  - `feladat_subject`
+  - `before_hour`
+  - `after_hour`
+  - `session_count`
+  - `interakcio_count`
+  - `interakcio_exists`
+- `check_new_medals()` now runs rule checks with one shared SQLAlchemy Session, so repeated KPI queries can be reused across medals.
+
+Status: **Started (Phase 1 done)**.
+
 ---
 
 ## Current Implementations (As-Is)
@@ -123,6 +155,10 @@ condition_registry now owns:
 - evaluator function
 - count function
 
+New in-progress layer:
+
+- KPI parameter definitions + cached KPI calculators used by both evaluator and count paths.
+
 ### 3) Simulation path
 
 `simulate_medal_rules()` remains available, but still differs from check_new_medals semantics.
@@ -143,6 +179,17 @@ Impact:
 - But not fully data-driven from registry definitions
 
 Priority: **High** for long-term maintainability.
+
+### A2) get_user_stats is still outside KPI parameter registry
+
+`get_user_stats()` currently computes trend/pattern/event blocks directly with dedicated queries.
+
+Impact:
+
+- Works correctly today
+- But not yet aligned with the new KPI parameter interface
+
+Priority: **High** for unification.
 
 ### B) Simulation and runtime path divergence
 
@@ -188,16 +235,19 @@ Priority: **Medium**.
 
 1. Align simulate_medal_rules with check_new_medals decision policy (or deprecate one path).
 2. Replace hard-coded estimate_close_medals rules with a registry-driven progress estimator where possible.
+3. Continue KPI migration for remaining condition types (streak/session-special cases) and route close-medal progress through the same KPI-backed path.
+4. Migrate `get_user_stats()` trend/pattern/event aggregations to named KPI parameters where practical.
 
 ### Medium Priority
 
-3. Split check_new_medals into explicit pipeline helpers:
+1. Split check_new_medals into explicit pipeline helpers:
    - eligibility filter
    - condition evaluation
    - result classification (new vs repeat)
    - grant persistence
 
-4. Add targeted tests for awardability_now vs close_medals consistency contracts.
+2. Add targeted tests for awardability_now vs close_medals consistency contracts.
+3. Add KPI-cache hit/miss telemetry for architecture validation under realistic catalogs.
 
 ---
 
@@ -214,6 +264,7 @@ Big wins completed:
 Remaining open work is mainly about:
 
 1. simulation fidelity,
-2. reducing hard-coded close-medal heuristics,
-3. further modularizing orchestration internals.
+2. completing KPI unification for stats and close-medal estimation,
+3. reducing hard-coded close-medal heuristics,
+4. further modularizing orchestration internals.
 

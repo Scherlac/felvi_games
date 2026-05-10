@@ -6,6 +6,7 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from felvi_games import achievements
+import felvi_games.condition_registry as cr
 from felvi_games.achievements import _eval_dynamic_condition
 from felvi_games.db import MegoldasRecord
 from felvi_games.models import Ertekeles, Feladat, InterakcioTipus
@@ -127,3 +128,81 @@ def test_eval_dynamic_condition_respects_simulation_upper_bound(repo) -> None:
         ) is True
     finally:
         achievements._simulation_as_of.reset(token)
+
+
+def test_eval_dynamic_condition_reuses_kpi_cache_with_shared_session(repo) -> None:
+    user = "Lori"
+    created = datetime(2026, 5, 2, 8, 0, tzinfo=timezone.utc)
+    _insert_attempt_at(repo, user, created)
+
+    original = cr.get_kpi_param("attempt_count")
+    assert original is not None
+
+    calls = {"count": 0}
+
+    def wrapped_calc(user_name, condition, cutoff, upper, session):
+        calls["count"] += 1
+        return original.calc_fn(user_name, condition, cutoff, upper, session)
+
+    cr.register_kpi_param(
+        cr.KPIParamDef(
+            name=original.name,
+            description=original.description,
+            calc_fn=wrapped_calc,
+            key_fields=original.key_fields,
+        )
+    )
+
+    try:
+        with Session(repo._engine) as shared:
+            assert _eval_dynamic_condition(
+                user,
+                {"type": "feladat_count", "n": 1, "window_hours": 24 * 365},
+                repo._engine,
+                eval_session=shared,
+            ) is True
+            assert _eval_dynamic_condition(
+                user,
+                {"type": "feladat_count", "n": 1, "window_hours": 24 * 365},
+                repo._engine,
+                eval_session=shared,
+            ) is True
+    finally:
+        cr.register_kpi_param(original)
+
+    assert calls["count"] == 1
+
+
+def test_eval_dynamic_condition_short_circuits_compound_conditions(repo) -> None:
+    user = "Lori"
+    created = datetime(2026, 5, 2, 8, 0, tzinfo=timezone.utc)
+    _insert_attempt_at(repo, user, created)
+
+    original = cr.get_kpi_param("after_hour_count")
+    assert original is not None
+
+    calls = {"count": 0}
+
+    def wrapped_calc(user_name, condition, cutoff, upper, session):
+        calls["count"] += 1
+        return original.calc_fn(user_name, condition, cutoff, upper, session)
+
+    cr.register_kpi_param(
+        cr.KPIParamDef(
+            name=original.name,
+            description=original.description,
+            calc_fn=wrapped_calc,
+            key_fields=original.key_fields,
+        )
+    )
+
+    try:
+        condition = [
+            {"type": "feladat_count", "n": 99, "window_hours": 24 * 365},
+            {"type": "after_hour", "hour": 22, "n": 1, "window_hours": 24 * 365},
+        ]
+        assert _eval_dynamic_condition(user, condition, repo._engine) is False
+    finally:
+        cr.register_kpi_param(original)
+
+    assert calls["count"] == 0

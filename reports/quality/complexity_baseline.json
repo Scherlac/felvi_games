@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generated_at_utc": "2026-05-09T14:32:48+00:00",
+  "generated_at_utc": "2026-05-09T21:48:37+00:00",
   "paths": [
     "src",
     "tests"
@@ -4398,10 +4398,9 @@
   ],
   "coverage_error": null,
   "coverage_source": "fresh test run via --coverage-command",
-  "ruff_violations": 22,
+  "ruff_violations": 7,
   "ruff_by_category": {
-    "E": 21,
-    "F": 1
+    "E": 7
   },
   "ruff_error": null,
   "duplicate_block_pairs": 20,
