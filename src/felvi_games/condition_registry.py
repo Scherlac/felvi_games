@@ -46,14 +46,26 @@ from felvi_games.models import InterakcioTipus
 # Types
 # ---------------------------------------------------------------------------
 
-# (user, condition_dict, n, cutoff, upper, session) -> bool
+# (user, condition_dict, cutoff, upper, session) -> bool
 CondEvalFn = Callable[[str, dict, int, datetime, "datetime | None", Session], bool]
 
-# (user, condition_dict, cutoff, upper, session) -> int | None
-CondCountFn = Callable[[str, dict, datetime, "datetime | None", Session], "int | None"]
+# (user, condition_dict, cutoff, upper, session) -> int | float | None
+CondCountFn = Callable[[str, dict, datetime, "datetime | None", Session], "int | float | None"]
 
-# (user, condition_dict, cutoff, upper, session) -> scalar value
-KPICalcFn = Callable[[str, dict, datetime, "datetime | None", Session], "int | float | None"]
+# (user, condition_dict, cutoff, upper, session) -> scalar or collection value
+KPICalcFn = Callable[[str, dict, datetime, "datetime | None", Session], "Any"]
+
+
+# ---------------------------------------------------------------------------
+# Utility functions
+# ---------------------------------------------------------------------------
+
+def _is_real_dimension_value(value: object) -> bool:
+    """Check if a value is a real, non-empty dimension value (not 'all', '*', etc.)."""
+    if not isinstance(value, str):
+        return False
+    normalized = value.strip().lower()
+    return bool(normalized) and normalized not in {"mind", "osszes", "összes", "all", "*"}
 
 
 # ---------------------------------------------------------------------------
@@ -157,6 +169,8 @@ class KPIParamDef:
     description: str
     calc_fn: KPICalcFn
     key_fields: tuple[str, ...] = ()
+    modes: tuple[str, ...] = ()  # e.g., ("window", "total", "daily") - modes this KPI supports
+    # When modes is non-empty, condition dict can include "mode" key to select behavior
 
 
 _KPI_REGISTRY: dict[str, KPIParamDef] = {}
@@ -468,22 +482,6 @@ def _q_interakcio_count(
     return s.scalar(stmt) or 0
 
 
-def _kpi_attempt_count(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
-    return _q_megoldas_count(user, cutoff, upper, s)
-
-
-def _kpi_correct_count(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
-    from felvi_games.db import MegoldasRecord
-
-    return _q_megoldas_count(
-        user,
-        cutoff,
-        upper,
-        s,
-        extra=(MegoldasRecord.helyes == True,),  # noqa: E712
-    )
-
-
 def _kpi_points_sum(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
     return _q_megoldas_sum(user, cutoff, upper, s)
 
@@ -508,22 +506,405 @@ def _kpi_subject_attempt_count(user: str, condition: dict, cutoff: datetime, upp
     return _q_subject_count(user, str(condition.get("subject", "")), cutoff, upper, s)
 
 
-def _kpi_before_hour_count(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
-    h = int(condition.get("hour", 8))
-    return _q_hour_count(user, cutoff, upper, s, before_hh=f"{h:02d}")
-
-
-def _kpi_after_hour_count(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
-    h = int(condition.get("hour", 22))
-    return _q_hour_count(user, cutoff, upper, s, from_hh=f"{h:02d}")
-
-
-def _kpi_session_count(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
-    return _q_menet_count(user, cutoff, upper, s)
-
-
 def _kpi_interakcio_count(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int | None:
     return _q_interakcio_count(user, condition, cutoff, upper, s)
+
+
+# ---------------------------------------------------------------------------
+# Unified KPI calculators (supporting multiple modes via condition["mode"])
+# ---------------------------------------------------------------------------
+
+def _kpi_attempt_count_unified(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int | list[dict]:
+    """
+    Unified attempt count calculator supporting three modes:
+    - "window" (default): attempts in active window
+    - "total": all-time attempt count
+    - "daily": daily breakdown for last 7 days (returns list[dict])
+    """
+    from felvi_games.db import MegoldasRecord
+    mode = condition.get("mode", "window")
+    
+    if mode == "total":
+        return s.scalar(select(func.count()).select_from(MegoldasRecord)
+                       .where(MegoldasRecord.felhasznalo_nev == user)) or 0
+    
+    elif mode == "daily":
+        cutoff_7d = datetime.now(timezone.utc) - timedelta(days=7)
+        rows = s.execute(
+            select(MegoldasRecord.created_at, MegoldasRecord.helyes, MegoldasRecord.pont)
+            .where(MegoldasRecord.felhasznalo_nev == user, MegoldasRecord.created_at >= cutoff_7d)
+            .order_by(MegoldasRecord.created_at.asc())
+        ).all()
+        daily: dict[str, dict] = {}
+        for created_at, is_correct, points in rows:
+            created_utc = created_at if created_at.tzinfo else created_at.replace(tzinfo=timezone.utc)
+            day_key = created_utc.date().isoformat()
+            if day_key not in daily:
+                daily[day_key] = {"date": day_key, "attempts": 0, "correct": 0, "points": 0, "accuracy_pct": 0.0}
+            daily[day_key]["attempts"] += 1
+            daily[day_key]["points"] += int(points or 0)
+            if is_correct:
+                daily[day_key]["correct"] += 1
+        for bucket in daily.values():
+            attempts = int(bucket["attempts"])
+            bucket["accuracy_pct"] = round(int(bucket["correct"]) / attempts * 100, 1) if attempts else 0.0
+        return [daily[key] for key in sorted(daily)]
+    
+    else:  # "window" (default)
+        return _q_megoldas_count(user, cutoff, upper, s)
+
+
+def _kpi_correct_count_unified(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int | dict:
+    """
+    Unified correct count supporting:
+    - "window" (default): correct in window
+    - "total": all-time correct
+    - "outcomes": outcome breakdown (helyes/reszleges/helytelen) for last 7d (returns dict)
+    """
+    from felvi_games.db import MegoldasRecord
+    from collections import Counter
+    mode = condition.get("mode", "window")
+    
+    if mode == "total":
+        return s.scalar(select(func.count()).select_from(MegoldasRecord)
+                       .where(MegoldasRecord.felhasznalo_nev == user,
+                              MegoldasRecord.helyes == True)) or 0  # noqa: E712
+    
+    elif mode == "outcomes":
+        cutoff_7d = datetime.now(timezone.utc) - timedelta(days=7)
+        rows = s.execute(
+            select(MegoldasRecord.helyes, MegoldasRecord.pont)
+            .where(MegoldasRecord.felhasznalo_nev == user, MegoldasRecord.created_at >= cutoff_7d)
+        ).all()
+        outcomes = Counter()
+        for is_correct, points in rows:
+            if is_correct:
+                outcomes["helyes"] += 1
+            elif int(points or 0) > 0:
+                outcomes["reszleges"] += 1
+            else:
+                outcomes["helytelen"] += 1
+        return dict(outcomes)
+    
+    else:  # "window" (default)
+        return _q_megoldas_count(
+            user, cutoff, upper, s,
+            extra=(MegoldasRecord.helyes == True,))  # noqa: E712
+
+
+def _kpi_session_count_unified(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
+    """
+    Unified session count supporting:
+    - "window" (default): sessions in active window
+    - "total": all-time sessions
+    - "completed": completed sessions (all-time)
+    """
+    from felvi_games.db import MenetRecord
+    mode = condition.get("mode", "window")
+    
+    if mode == "total":
+        return s.scalar(select(func.count()).select_from(MenetRecord)
+                       .where(MenetRecord.felhasznalo_nev == user)) or 0
+    
+    elif mode == "completed":
+        return s.scalar(select(func.count()).select_from(MenetRecord)
+                       .where(MenetRecord.felhasznalo_nev == user,
+                              MenetRecord.ended_at.is_not(None))) or 0
+    
+    else:  # "window" (default)
+        return _q_menet_count(user, cutoff, upper, s)
+
+
+def _kpi_hour_count_unified(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
+    """
+    Unified hour-based count supporting:
+    - "before" (default): before local hour (hour param required; default 8)
+    - "after": after local hour (hour param required; default 22)
+    """
+    mode = condition.get("mode", "before")
+    h = int(condition.get("hour", 8 if mode == "before" else 22))
+    
+    if mode == "before":
+        return _q_hour_count(user, cutoff, upper, s, before_hh=f"{h:02d}")
+    else:  # "after"
+        return _q_hour_count(user, cutoff, upper, s, from_hh=f"{h:02d}")
+
+
+def _kpi_dimension_session_counts_unified(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> dict:
+    """
+    Unified dimension (subject/level) session counts supporting:
+    - "dimension" (required in condition): "subject" or "level"
+    - "all_time" (default) vs "window": whether to include all sessions or just in window
+    """
+    from felvi_games.db import MenetRecord
+    from collections import Counter
+    
+    dimension = condition.get("dimension", "subject")  # "subject" or "level"
+    time_scope = condition.get("time_scope", "all_time")  # "all_time" or "window"
+    
+    col = MenetRecord.targy if dimension == "subject" else MenetRecord.szint
+    stmt = select(col).where(MenetRecord.felhasznalo_nev == user)
+    
+    if time_scope == "window":
+        stmt = stmt.where(MenetRecord.started_at >= cutoff)
+        if upper:
+            stmt = stmt.where(MenetRecord.started_at <= upper)
+    
+    values = s.scalars(stmt).all()
+    filtered = [v for v in values if _is_real_dimension_value(v)]
+    return dict(Counter(filtered))
+
+
+def _kpi_streak_unified(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
+    """
+    Unified streak supporting:
+    - "correct_current" (default): current trailing correct answer streak
+    - "correct_best": all-time best correct answer streak
+    - "play_day_current": current trailing play-day streak
+    - "play_day_best": all-time best play-day streak
+    """
+    mode = condition.get("mode", "correct_current")
+    
+    if mode == "correct_best":
+        from felvi_games.db import MegoldasRecord
+        seq = s.scalars(
+            select(MegoldasRecord.helyes)
+            .where(MegoldasRecord.felhasznalo_nev == user)
+            .order_by(MegoldasRecord.created_at)
+        ).all()
+        return _max_streak(list(seq))
+    
+    elif mode == "correct_current":
+        from felvi_games.db import MegoldasRecord
+        seq = s.scalars(
+            select(MegoldasRecord.helyes)
+            .where(MegoldasRecord.felhasznalo_nev == user)
+            .order_by(MegoldasRecord.created_at)
+        ).all()
+        if not seq:
+            return 0
+        cur = 0
+        for v in reversed(seq):
+            if v:
+                cur += 1
+            else:
+                break
+        return cur
+    
+    elif mode == "play_day_best":
+        days = _q_all_play_days(user, upper, s)
+        return _day_streak_max(days)
+    
+    else:  # "play_day_current" (default)
+        days = _q_all_play_days(user, upper, s)
+        return _day_streak_current(days)
+
+
+# ---------------------------------------------------------------------------
+# KPI calculators for get_user_stats aggregations
+# ---------------------------------------------------------------------------
+
+
+def _kpi_avg_elapsed_sec(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> float | None:
+    """Average elapsed seconds for correct answers (all-time, ignores window)."""
+    from felvi_games.db import MegoldasRecord
+    return s.scalar(
+        select(func.avg(MegoldasRecord.elapsed_sec))
+        .where(MegoldasRecord.felhasznalo_nev == user,
+               MegoldasRecord.helyes == True,  # noqa: E712
+               MegoldasRecord.elapsed_sec.is_not(None))
+    )
+
+
+def _kpi_subjects_used_all_time(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> list[str]:
+    """Distinct subjects used (all-time)."""
+    from felvi_games.db import MenetRecord
+    subjects = s.scalars(
+        select(MenetRecord.targy).where(MenetRecord.felhasznalo_nev == user).distinct()
+    ).all()
+    return sorted({s for s in subjects if _is_real_dimension_value(s)})
+
+
+def _kpi_levels_used_all_time(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> list[str]:
+    """Distinct levels used (all-time)."""
+    from felvi_games.db import MenetRecord
+    levels = s.scalars(
+        select(MenetRecord.szint).where(MenetRecord.felhasznalo_nev == user).distinct()
+    ).all()
+    return sorted({l for l in levels if _is_real_dimension_value(l)})
+
+
+def _kpi_hints_last_20_correct(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> dict:
+    """Hint statistics from last 20 correct answers (all-time)."""
+    from felvi_games.db import MegoldasRecord
+    hints = s.scalars(
+        select(MegoldasRecord.segitseg_kert)
+        .where(MegoldasRecord.felhasznalo_nev == user,
+               MegoldasRecord.helyes == True)  # noqa: E712
+        .order_by(MegoldasRecord.created_at.desc())
+        .limit(20)
+    ).all()
+    hint_free = sum(1 for h in hints if not h)
+    return {"hint_free": hint_free, "hint_used": max(0, len(hints) - hint_free), "total": len(hints)}
+
+
+def _kpi_play_days_7d(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
+    """Distinct play days in last 7 days."""
+    from felvi_games.db import MenetRecord
+    cutoff_7d = datetime.now(timezone.utc) - timedelta(days=7)
+    sessions = s.scalars(
+        select(MenetRecord.started_at)
+        .where(MenetRecord.felhasznalo_nev == user, MenetRecord.started_at >= cutoff_7d)
+    ).all()
+    return len({dt.date() for dt in sessions})
+
+
+def _kpi_hint_uses_window(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
+    """Hint uses in the specified window."""
+    from felvi_games.db import MegoldasRecord
+    stmt = (
+        select(func.count()).select_from(MegoldasRecord)
+        .where(MegoldasRecord.felhasznalo_nev == user,
+               MegoldasRecord.segitseg_kert == True,  # noqa: E712
+               MegoldasRecord.created_at >= cutoff)
+    )
+    if upper:
+        stmt = stmt.where(MegoldasRecord.created_at <= upper)
+    return s.scalar(stmt) or 0
+
+
+def _kpi_event_count_by_type(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> dict:
+    """Event counts by type in the specified window."""
+    from felvi_games.db import InterakcioRecord
+    from collections import Counter
+    stmt = (
+        select(InterakcioRecord.tipus)
+        .where(InterakcioRecord.felhasznalo_nev == user,
+               InterakcioRecord.created_at >= cutoff)
+    )
+    if upper:
+        stmt = stmt.where(InterakcioRecord.created_at <= upper)
+    rows = s.scalars(stmt).all()
+    return dict(Counter(rows))
+
+
+def _kpi_task_type_counts_all_time(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> dict:
+    """Attempt counts by task type (all-time)."""
+    from felvi_games.db import FeladatRecord, MegoldasRecord
+    from collections import Counter
+    types = s.scalars(
+        select(FeladatRecord.feladat_tipus)
+        .join(MegoldasRecord, MegoldasRecord.feladat_id == FeladatRecord.id)
+        .where(MegoldasRecord.felhasznalo_nev == user)
+    ).all()
+    filtered = [t for t in types if _is_real_dimension_value(t)]
+    return dict(Counter(filtered))
+
+
+def _kpi_reevaluations_7d(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
+    """Reevaluations in last 7 days."""
+    from felvi_games.db import MegoldasRecord
+    cutoff_7d = datetime.now(timezone.utc) - timedelta(days=7)
+    return s.scalar(
+        select(func.count()).select_from(MegoldasRecord)
+        .where(MegoldasRecord.felhasznalo_nev == user,
+               MegoldasRecord.ujraertekelt.is_(True),
+               MegoldasRecord.ujraertekelt_at.is_not(None),
+               MegoldasRecord.ujraertekelt_at >= cutoff_7d)
+    ) or 0
+
+
+def _kpi_reevaluations_improved_7d(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
+    """Reevaluations with improvement in last 7 days."""
+    from felvi_games.db import MegoldasRecord
+    cutoff_7d = datetime.now(timezone.utc) - timedelta(days=7)
+    rows = s.execute(
+        select(MegoldasRecord.eredeti_pont, MegoldasRecord.pont)
+        .where(MegoldasRecord.felhasznalo_nev == user,
+               MegoldasRecord.ujraertekelt.is_(True),
+               MegoldasRecord.ujraertekelt_at.is_not(None),
+               MegoldasRecord.ujraertekelt_at >= cutoff_7d)
+    ).all()
+    return sum(1 for old_points, new_points in rows 
+               if old_points is not None and int(new_points or 0) > int(old_points or 0))
+
+
+def _kpi_pending_rewards(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
+    """Attempts pending rewards (all-time)."""
+    from felvi_games.db import MegoldasRecord
+    return s.scalar(
+        select(func.count()).select_from(MegoldasRecord)
+        .where(MegoldasRecord.felhasznalo_nev == user,
+               MegoldasRecord.jutalom_varakozik.is_(True))
+    ) or 0
+
+
+def _kpi_daily_attempts_7d(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> list[dict]:
+    """Daily attempt breakdown for last 7 days."""
+    from felvi_games.db import MegoldasRecord
+    cutoff_7d = datetime.now(timezone.utc) - timedelta(days=7)
+    rows = s.execute(
+        select(MegoldasRecord.created_at, MegoldasRecord.helyes, MegoldasRecord.pont)
+        .where(MegoldasRecord.felhasznalo_nev == user, MegoldasRecord.created_at >= cutoff_7d)
+        .order_by(MegoldasRecord.created_at.asc())
+    ).all()
+    daily: dict[str, dict] = {}
+    for created_at, is_correct, points in rows:
+        created_utc = created_at if created_at.tzinfo else created_at.replace(tzinfo=timezone.utc)
+        day_key = created_utc.date().isoformat()
+        if day_key not in daily:
+            daily[day_key] = {"date": day_key, "attempts": 0, "correct": 0, "points": 0, "accuracy_pct": 0.0}
+        daily[day_key]["attempts"] += 1
+        daily[day_key]["points"] += int(points or 0)
+        if is_correct:
+            daily[day_key]["correct"] += 1
+    for bucket in daily.values():
+        attempts = int(bucket["attempts"])
+        bucket["accuracy_pct"] = round(int(bucket["correct"]) / attempts * 100, 1) if attempts else 0.0
+    return [daily[key] for key in sorted(daily)]
+
+
+def _kpi_answer_outcomes_7d(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> dict:
+    """Answer outcome counts (helyes/reszleges/helytelen) for last 7 days."""
+    from felvi_games.db import MegoldasRecord
+    from collections import Counter
+    cutoff_7d = datetime.now(timezone.utc) - timedelta(days=7)
+    rows = s.execute(
+        select(MegoldasRecord.helyes, MegoldasRecord.pont)
+        .where(MegoldasRecord.felhasznalo_nev == user, MegoldasRecord.created_at >= cutoff_7d)
+    ).all()
+    outcomes = Counter()
+    for is_correct, points in rows:
+        if is_correct:
+            outcomes["helyes"] += 1
+        elif int(points or 0) > 0:
+            outcomes["reszleges"] += 1
+        else:
+            outcomes["helytelen"] += 1
+    return dict(outcomes)
+
+
+def _kpi_recent_events_7d(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> list[dict]:
+    """Last 8 events from last 7 days."""
+    from felvi_games.db import InterakcioRecord
+    cutoff_7d = datetime.now(timezone.utc) - timedelta(days=7)
+    rows = s.execute(
+        select(InterakcioRecord.tipus, InterakcioRecord.created_at,
+               InterakcioRecord.targy, InterakcioRecord.szint, InterakcioRecord.feladat_id)
+        .where(InterakcioRecord.felhasznalo_nev == user, InterakcioRecord.created_at >= cutoff_7d)
+        .order_by(InterakcioRecord.created_at.desc())
+        .limit(8)
+    ).all()
+    return [
+        {
+            "type": str(tipus),
+            "created_at": (created_at if created_at.tzinfo else created_at.replace(tzinfo=timezone.utc)).isoformat(),
+            "targy": targy,
+            "szint": szint if _is_real_dimension_value(szint) else None,
+            "feladat_id": feladat_id,
+        }
+        for tipus, created_at, targy, szint, feladat_id in rows
+    ]
 
 
 def _q_helyes_sequence(user: str, upper: datetime | None, s: Session) -> list[bool]:
@@ -706,16 +1087,21 @@ def _count_interakcio(user, condition, cutoff, upper, s):
 # Built-in KPI registrations (reused by evaluators and count_fn paths)
 # ---------------------------------------------------------------------------
 
+# Unified attempt_count supporting modes: "window" (default), "total", "daily"
 register_kpi_param(KPIParamDef(
     name="attempt_count",
-    description="Total attempts in the active window.",
-    calc_fn=_kpi_attempt_count,
+    description="Attempt count with mode support: 'window' (default), 'total' (all-time), 'daily' (7d breakdown).",
+    calc_fn=_kpi_attempt_count_unified,
+    modes=("window", "total", "daily"),
+    key_fields=(),  # mode is implicit in function, not part of external cache key
 ))
 
 register_kpi_param(KPIParamDef(
     name="correct_count",
-    description="Correct attempts in the active window.",
-    calc_fn=_kpi_correct_count,
+    description="Correct count with mode support: 'window' (default), 'total' (all-time), 'outcomes' (7d breakdown).",
+    calc_fn=_kpi_correct_count_unified,
+    modes=("window", "total", "outcomes"),
+    key_fields=(),  # mode is implicit in function, not part of external cache key
 ))
 
 register_kpi_param(KPIParamDef(
@@ -737,24 +1123,36 @@ register_kpi_param(KPIParamDef(
     key_fields=("subject",),
 ))
 
+# Unified hour_count supporting modes: "before" (default, hour=8), "after" (hour=22)
+register_kpi_param(KPIParamDef(
+    name="hour_count",
+    description="Hour-based attempt count with mode: 'before' (default, hour param), 'after' (hour param).",
+    calc_fn=_kpi_hour_count_unified,
+    modes=("before", "after"),
+    key_fields=("hour",),  # mode defaults based on params, but hour distinguishes calls
+))
+
+# Backward compatibility: old evaluators still call before_hour_count/after_hour_count
 register_kpi_param(KPIParamDef(
     name="before_hour_count",
-    description="Attempts before local hour in the active window.",
-    calc_fn=_kpi_before_hour_count,
+    description="Attempts before local hour in the active window (alias for hour_count mode='before').",
+    calc_fn=lambda u, c, co, up, s: _kpi_hour_count_unified(u, {**c, "mode": "before"}, co, up, s),
     key_fields=("hour",),
 ))
 
 register_kpi_param(KPIParamDef(
     name="after_hour_count",
-    description="Attempts after local hour in the active window.",
-    calc_fn=_kpi_after_hour_count,
+    description="Attempts after local hour in the active window (alias for hour_count mode='after').",
+    calc_fn=lambda u, c, co, up, s: _kpi_hour_count_unified(u, {**c, "mode": "after"}, co, up, s),
     key_fields=("hour",),
 ))
 
 register_kpi_param(KPIParamDef(
     name="session_count",
-    description="Started sessions in the active window.",
-    calc_fn=_kpi_session_count,
+    description="Session count with mode support: 'window' (default), 'total' (all-time), 'completed' (finished sessions).",
+    calc_fn=_kpi_session_count_unified,
+    modes=("window", "total", "completed"),
+    key_fields=(),  # mode is implicit in function, not part of external cache key
 ))
 
 register_kpi_param(KPIParamDef(
@@ -762,6 +1160,183 @@ register_kpi_param(KPIParamDef(
     description="Interaction event count in the active window with optional filters.",
     calc_fn=_kpi_interakcio_count,
     key_fields=("event_type", "targy", "szint", "feladat_id", "meta_contains"),
+))
+
+# Unified dimension session counts (subject/level with time scope)
+register_kpi_param(KPIParamDef(
+    name="dimension_session_counts",
+    description="Session counts by dimension (subject/level) with time_scope (all_time/window).",
+    calc_fn=_kpi_dimension_session_counts_unified,
+    modes=("subject_all_time", "subject_window", "level_all_time", "level_window"),
+    key_fields=("dimension", "time_scope"),  # these are explicit params
+))
+
+# Unified streak counter
+register_kpi_param(KPIParamDef(
+    name="streak_count",
+    description="Streak counters with modes: correct_current, correct_best, play_day_current, play_day_best.",
+    calc_fn=_kpi_streak_unified,
+    modes=("correct_current", "correct_best", "play_day_current", "play_day_best"),
+    key_fields=(),  # mode is implicit in function, not part of external cache key
+))
+
+# Wrapper registrations for backward compatibility with get_user_stats
+# These route to unified KPIs with specific modes hardcoded
+
+register_kpi_param(KPIParamDef(
+    name="total_attempts",
+    description="All-time attempt count.",
+    calc_fn=lambda u, c, co, up, s: _kpi_attempt_count_unified(u, {**c, "mode": "total"}, co, up, s),
+))
+
+register_kpi_param(KPIParamDef(
+    name="total_correct",
+    description="All-time correct count.",
+    calc_fn=lambda u, c, co, up, s: _kpi_correct_count_unified(u, {**c, "mode": "total"}, co, up, s),
+))
+
+register_kpi_param(KPIParamDef(
+    name="total_sessions",
+    description="All-time sessions started.",
+    calc_fn=lambda u, c, co, up, s: _kpi_session_count_unified(u, {**c, "mode": "total"}, co, up, s),
+))
+
+register_kpi_param(KPIParamDef(
+    name="completed_sessions",
+    description="All-time sessions completed.",
+    calc_fn=lambda u, c, co, up, s: _kpi_session_count_unified(u, {**c, "mode": "completed"}, co, up, s),
+))
+
+register_kpi_param(KPIParamDef(
+    name="avg_elapsed_sec",
+    description="Average elapsed seconds for correct answers.",
+    calc_fn=_kpi_avg_elapsed_sec,
+))
+
+register_kpi_param(KPIParamDef(
+    name="subjects_used",
+    description="Distinct subjects used (all-time).",
+    calc_fn=_kpi_subjects_used_all_time,
+))
+
+register_kpi_param(KPIParamDef(
+    name="levels_used",
+    description="Distinct levels used (all-time).",
+    calc_fn=_kpi_levels_used_all_time,
+))
+
+register_kpi_param(KPIParamDef(
+    name="hints_last_20_correct",
+    description="Hint statistics from last 20 correct answers.",
+    calc_fn=_kpi_hints_last_20_correct,
+))
+
+register_kpi_param(KPIParamDef(
+    name="correct_streak_best",
+    description="All-time best correct answer streak.",
+    calc_fn=lambda u, c, co, up, s: _kpi_streak_unified(u, {**c, "mode": "correct_best"}, co, up, s),
+))
+
+register_kpi_param(KPIParamDef(
+    name="correct_streak_current",
+    description="Current trailing correct answer streak.",
+    calc_fn=lambda u, c, co, up, s: _kpi_streak_unified(u, {**c, "mode": "correct_current"}, co, up, s),
+))
+
+register_kpi_param(KPIParamDef(
+    name="play_days_7d",
+    description="Distinct play days in last 7 days.",
+    calc_fn=_kpi_play_days_7d,
+))
+
+register_kpi_param(KPIParamDef(
+    name="play_day_streak_current",
+    description="Current trailing play-day streak.",
+    calc_fn=lambda u, c, co, up, s: _kpi_streak_unified(u, {**c, "mode": "play_day_current"}, co, up, s),
+))
+
+register_kpi_param(KPIParamDef(
+    name="play_day_streak_best",
+    description="All-time best play-day streak.",
+    calc_fn=lambda u, c, co, up, s: _kpi_streak_unified(u, {**c, "mode": "play_day_best"}, co, up, s),
+))
+
+register_kpi_param(KPIParamDef(
+    name="hint_uses_window",
+    description="Hint uses in the specified window.",
+    calc_fn=_kpi_hint_uses_window,
+))
+
+register_kpi_param(KPIParamDef(
+    name="event_count_by_type",
+    description="Event counts by type in the specified window.",
+    calc_fn=_kpi_event_count_by_type,
+))
+
+register_kpi_param(KPIParamDef(
+    name="subject_session_counts",
+    description="Session counts by subject (all-time).",
+    calc_fn=lambda u, c, co, up, s: _kpi_dimension_session_counts_unified(u, {**c, "dimension": "subject", "time_scope": "all_time"}, co, up, s),
+))
+
+register_kpi_param(KPIParamDef(
+    name="level_session_counts",
+    description="Session counts by level (all-time).",
+    calc_fn=lambda u, c, co, up, s: _kpi_dimension_session_counts_unified(u, {**c, "dimension": "level", "time_scope": "all_time"}, co, up, s),
+))
+
+register_kpi_param(KPIParamDef(
+    name="subject_session_counts_window",
+    description="Session counts by subject within window.",
+    calc_fn=lambda u, c, co, up, s: _kpi_dimension_session_counts_unified(u, {**c, "dimension": "subject", "time_scope": "window"}, co, up, s),
+))
+
+register_kpi_param(KPIParamDef(
+    name="level_session_counts_window",
+    description="Session counts by level within window.",
+    calc_fn=lambda u, c, co, up, s: _kpi_dimension_session_counts_unified(u, {**c, "dimension": "level", "time_scope": "window"}, co, up, s),
+))
+
+register_kpi_param(KPIParamDef(
+    name="task_type_counts",
+    description="Attempt counts by task type (all-time).",
+    calc_fn=_kpi_task_type_counts_all_time,
+))
+
+register_kpi_param(KPIParamDef(
+    name="reevaluations_7d",
+    description="Reevaluations in last 7 days.",
+    calc_fn=_kpi_reevaluations_7d,
+))
+
+register_kpi_param(KPIParamDef(
+    name="reevaluations_improved_7d",
+    description="Reevaluations with improvement in last 7 days.",
+    calc_fn=_kpi_reevaluations_improved_7d,
+))
+
+register_kpi_param(KPIParamDef(
+    name="pending_rewards",
+    description="Attempts pending rewards (all-time).",
+    calc_fn=_kpi_pending_rewards,
+))
+
+register_kpi_param(KPIParamDef(
+    name="daily_attempts_7d",
+    description="Daily attempt breakdown for last 7 days.",
+    calc_fn=_kpi_daily_attempts_7d,
+))
+
+register_kpi_param(KPIParamDef(
+    name="answer_outcomes_7d",
+    description="Answer outcome counts for last 7 days.",
+    calc_fn=_kpi_answer_outcomes_7d,
+))
+
+register_kpi_param(KPIParamDef(
+    name="recent_events_7d",
+    description="Last 8 events from last 7 days.",
+    calc_fn=_kpi_recent_events_7d,
 ))
 
 
