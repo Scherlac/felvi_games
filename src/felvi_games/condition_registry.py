@@ -215,16 +215,18 @@ def _attempt_before_hour(row: Any, ctx: KPIQueryContext) -> bool:
     ts = _attempt_timestamp(row)
     if ts is None:
         return False
+    ts_local = (ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts).astimezone()
     hour = int(ctx.condition.get("hour", 8))
-    return ts.astimezone().hour < hour
+    return ts_local.hour < hour
 
 
 def _attempt_after_hour(row: Any, ctx: KPIQueryContext) -> bool:
     ts = _attempt_timestamp(row)
     if ts is None:
         return False
+    ts_local = (ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts).astimezone()
     hour = int(ctx.condition.get("hour", 22))
-    return ts.astimezone().hour >= hour
+    return ts_local.hour >= hour
 
 
 def _session_query(ctx: KPIQueryContext, s: Session) -> list[Any]:

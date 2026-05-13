@@ -248,7 +248,9 @@ def _window_bounds(
         # Use Unix epoch as a practical all-time lower bound for SQL backends.
         cutoff = datetime(1970, 1, 1, tzinfo=timezone.utc)
     _as_of = _simulation_as_of.get()
-    upper = _as_of if _as_of is not None else now_utc
+    # In live mode keep upper effectively open; repeatable freshness is anchored
+    # by last_award_at and tests may inject post-award timestamps.
+    upper = _as_of if _as_of is not None else datetime.max.replace(tzinfo=timezone.utc)
     return cutoff, upper
 
 
