@@ -44,15 +44,11 @@ from felvi_games.kpi_definitions import KPI_ENGINE as _KPI_ENGINE
 from felvi_games.kpi_registry import (
     _kpi_total_count,
     _kpi_total_sum,
-    _attempt_rows,
-    _session_rows,
-    _helyes_sequence,
-    _max_streak,
-    _perfect_session_count,
-    _play_days,
+    _kpi_play_days,
+    _kpi_max_correct_streak,
+    _kpi_perfect_session_count,
     _day_streak_current,
     _day_streak_max,
-
 )
 from felvi_games.models import InterakcioTipus
 
@@ -315,11 +311,10 @@ def _eval_session_count(user, condition, n, cutoff, upper, s):
     return _kpi_total_count("session_items", user, condition, cutoff, upper, s) >= n
 
 def _eval_streak(user, condition, n, cutoff, upper, s):
-    return _max_streak(_helyes_sequence(_attempt_rows(user, None, upper, s))) >= n
+    return _kpi_max_correct_streak(user, upper, s) >= n
 
 def _eval_tokeletes_session(user, condition, n, cutoff, upper, s):
-    session_rows = [row for row in _session_rows(user, cutoff, upper, s) if getattr(row, "ended_at", None) is not None]
-    return _perfect_session_count(session_rows) >= n
+    return _kpi_perfect_session_count(user, cutoff, upper, s) >= n
 
 def _eval_maraton(user, condition, n, cutoff, upper, s):
     if n < 1:
@@ -540,24 +535,19 @@ register(ConditionDef(
 
 def _eval_play_days(user, condition, n, cutoff, upper, s):
     """Total distinct play days (all-time, ignores cutoff)."""
-    return len(_play_days(_session_rows(user, None, upper, s))) >= n
+    return len(_kpi_play_days(user, upper, s)) >= n
 
 def _eval_recent_play_days(user, condition, n, cutoff, upper, s):
     """Distinct play days within the rolling window (uses cutoff)."""
-    days = _play_days(_session_rows(user, None, upper, s))
-    return sum(1 for d in days if d >= cutoff) >= n
+    return sum(1 for d in _kpi_play_days(user, upper, s) if d >= cutoff) >= n
 
 def _eval_day_streak(user, condition, n, cutoff, upper, s):
     """Current trailing consecutive play-day streak >= n."""
-    days = _play_days(_session_rows(user, None, upper, s))
-    if not days:
-        return False
-    streak = _day_streak_current(days)
-    return streak >= n
+    return _day_streak_current(_kpi_play_days(user, upper, s)) >= n
 
 def _eval_day_streak_max(user, condition, n, cutoff, upper, s):
     """All-time longest consecutive play-day streak >= n."""
-    return _day_streak_max(_play_days(_session_rows(user, None, upper, s))) >= n
+    return _day_streak_max(_kpi_play_days(user, upper, s)) >= n
 
 def _eval_hint_nelkul(user, condition, n, cutoff, upper, s):
     """Last N answers contain no hint requests."""
@@ -587,20 +577,16 @@ def _eval_pentek_matek(user, condition, n, cutoff, upper, s):
 # ---------------------------------------------------------------------------
 
 def _count_play_days(user, condition, cutoff, upper, s):
-    return len(_play_days(_session_rows(user, None, upper, s)))
+    return len(_kpi_play_days(user, upper, s))
 
 def _count_recent_play_days(user, condition, cutoff, upper, s):
-    days = _play_days(_session_rows(user, None, upper, s))
-    return sum(1 for d in days if d >= cutoff)
+    return sum(1 for d in _kpi_play_days(user, upper, s) if d >= cutoff)
 
 def _count_day_streak(user, condition, cutoff, upper, s):
-    days = _play_days(_session_rows(user, None, upper, s))
-    if not days:
-        return 0
-    return _day_streak_current(days)
+    return _day_streak_current(_kpi_play_days(user, upper, s))
 
 def _count_day_streak_max(user, condition, cutoff, upper, s):
-    return _day_streak_max(_play_days(_session_rows(user, None, upper, s)))
+    return _day_streak_max(_kpi_play_days(user, upper, s))
 
 def _count_hint_nelkul(user, condition, cutoff, upper, s):
     """Returns how many of the last n answers have no hint (for progress display)."""

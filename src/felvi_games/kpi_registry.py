@@ -778,3 +778,27 @@ _FELADAT_TIPUSOK_COVER = frozenset({
     "nyilt_valasz", "tobbvalasztos", "parositas", "igaz_hamis", "fogalmazas", "kitoltes",
 })
 
+
+def _kpi_play_days(user: str, upper: "datetime | None", s: "Session") -> "list[datetime]":
+    """Sorted list of distinct play-day datetimes (UTC midnight) for the user."""
+    return _play_days(_session_rows(user, None, upper, s))
+
+
+def _kpi_max_correct_streak(user: str, upper: "datetime | None", s: "Session") -> int:
+    """All-time best consecutive correct answer streak for the user."""
+    return _max_streak(_helyes_sequence(_attempt_rows(user, None, upper, s)))
+
+
+def _kpi_perfect_session_count(
+    user: str,
+    cutoff: "datetime | None",
+    upper: "datetime | None",
+    s: "Session",
+) -> int:
+    """Number of perfect (all-correct) completed sessions within the window."""
+    rows = [
+        row for row in _session_rows(user, cutoff, upper, s)
+        if getattr(row, "ended_at", None) is not None
+    ]
+    return _perfect_session_count(rows)
+

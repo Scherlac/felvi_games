@@ -32,6 +32,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 import felvi_games.condition_registry as cr
+from felvi_games.kpi_registry import _day_streak_current, _kpi_play_days
 from felvi_games.models import Erem
 
 if TYPE_CHECKING:
@@ -558,7 +559,6 @@ def get_user_stats(user: str, repo: FeladatRepository) -> dict:
     engine = repo._engine
     now_utc = datetime.now(timezone.utc)
     cutoff_24h = now_utc - timedelta(hours=24)
-    cutoff_48h = now_utc - timedelta(hours=48)
     cutoff_7d = now_utc - timedelta(days=7)
 
     with Session(engine) as s:
@@ -580,20 +580,19 @@ def get_user_stats(user: str, repo: FeladatRepository) -> dict:
             session=s,
             upper=now_utc,
         )
+        hint_attempts = cr._KPI_ENGINE.kpi_parameter(
+            "hint_attempts",
+            user=user,
+            session=s,
+            upper=now_utc,
+        )
 
-        attempts_24h = _kpi_last(attempt_items.count_24h)
-        attempts_48h = _kpi_last(attempt_items.count_48h)
-        correct_24h = _kpi_last(helyes_attempts.count_24h)
-        correct_48h = _kpi_last(helyes_attempts.count_48h)
-        points_24h = _kpi_last(attempt_points.sum_24h)
-        points_48h = _kpi_last(attempt_points.sum_48h)
-
-        attempts_last_24h = int(attempts_24h)
-        attempts_prev_24h = int(max(0.0, attempts_48h - attempts_24h))
-        correct_last_24h = int(correct_24h)
-        correct_prev_24h = int(max(0.0, correct_48h - correct_24h))
-        points_last_24h = int(points_24h)
-        points_prev_24h = int(max(0.0, points_48h - points_24h))
+        attempts_last_24h = int(_kpi_last(attempt_items.count_24h))
+        attempts_prev_24h = int(max(0.0, _kpi_last(attempt_items.count_48h) - _kpi_last(attempt_items.count_24h)))
+        correct_last_24h = int(_kpi_last(helyes_attempts.count_24h))
+        correct_prev_24h = int(max(0.0, _kpi_last(helyes_attempts.count_48h) - _kpi_last(helyes_attempts.count_24h)))
+        points_last_24h = int(_kpi_last(attempt_points.sum_24h))
+        points_prev_24h = int(max(0.0, _kpi_last(attempt_points.sum_48h) - _kpi_last(attempt_points.sum_24h)))
 
         total_attempts = int(attempt_items.total_count or 0)
         correct = int(helyes_attempts.total_count or 0)
@@ -602,13 +601,6 @@ def get_user_stats(user: str, repo: FeladatRepository) -> dict:
             "attempt_items",
             user=user,
             session=s,
-            upper=now_utc,
-        )
-        attempt_rows_48h_all = cr._KPI_ENGINE.kpi_rows(
-            "attempt_items",
-            user=user,
-            session=s,
-            cutoff=cutoff_48h,
             upper=now_utc,
         )
         attempt_rows_7d_all = cr._KPI_ENGINE.kpi_rows(
@@ -654,25 +646,9 @@ def get_user_stats(user: str, repo: FeladatRepository) -> dict:
         level_rows = [getattr(row, "szint", None) for row in session_rows_all]
         levels_used = {value for value in level_rows if _is_real_dimension_value(value)}
 
-        # last 7 days play days
-        recent_sessions = [
-            _as_utc(ts)
-            for row in session_rows_7d_all
-            for ts in [getattr(row, "started_at", None)]
-            if isinstance(ts, datetime)
-        ]
-        recent_days = len({dt.date() for dt in recent_sessions})
-
-        # current streak
-        all_session_dates = sorted(
-            {
-                _as_utc(ts).date()
-                for row in session_rows_all
-                for ts in [getattr(row, "started_at", None)]
-                if isinstance(ts, datetime)
-            }
-        )
-        current_streak = _trailing_streak(all_session_dates)
+        play_days_all = _kpi_play_days(user, now_utc, s)
+        recent_days = sum(1 for d in play_days_all if d >= cutoff_7d)
+        current_streak = _day_streak_current(play_days_all)
 
         # current best/curr correct streak from existing KPI rows
         best_correct_streak = helyes_attempts.max_streak()
@@ -752,20 +728,8 @@ def get_user_stats(user: str, repo: FeladatRepository) -> dict:
 
         pending_rewards_count = sum(1 for row in attempt_rows_all if bool(getattr(row, "jutalom_varakozik", False)))
 
-        hint_uses_last_24h = sum(
-            1
-            for row in attempt_rows_48h_all
-            if isinstance(getattr(row, "created_at", None), datetime)
-            and _as_utc(getattr(row, "created_at")) >= cutoff_24h
-            and bool(getattr(row, "segitseg_kert", False))
-        )
-        hint_uses_prev_24h = sum(
-            1
-            for row in attempt_rows_48h_all
-            if isinstance(getattr(row, "created_at", None), datetime)
-            and cutoff_48h <= _as_utc(getattr(row, "created_at")) < cutoff_24h
-            and bool(getattr(row, "segitseg_kert", False))
-        )
+        hint_uses_last_24h = int(_kpi_last(hint_attempts.count_24h))
+        hint_uses_prev_24h = int(max(0.0, _kpi_last(hint_attempts.count_48h) - _kpi_last(hint_attempts.count_24h)))
 
         reevaluation_rows_7d = [
             (getattr(row, "eredeti_pont", None), getattr(row, "pont", None))
@@ -924,45 +888,6 @@ def _trend_label(current: float | int | None, previous: float | int | None) -> s
     if current_value > previous_value:
         return "javul"
     return "csökken"
-
-
-def _trailing_streak(dates: list) -> int:
-    """How many consecutive days ending today-or-yesterday."""
-    if not dates:
-        return 0
-    today = datetime.now(timezone.utc).date()
-    streak = 0
-    prev = today
-    for d in reversed(dates):
-        if isinstance(d, datetime):
-            d = d.date()
-        if (prev - d).days <= 1:
-            streak += 1
-            prev = d
-        else:
-            break
-    return streak
-
-
-def _max_streak(seq: list[bool]) -> int:
-    best = cur = 0
-    for v in seq:
-        if v:
-            cur += 1
-            best = max(best, cur)
-        else:
-            cur = 0
-    return best
-
-
-def _current_correct_streak(seq: list[bool]) -> int:
-    cur = 0
-    for v in reversed(seq):
-        if v:
-            cur += 1
-        else:
-            break
-    return cur
 
 
 # ---------------------------------------------------------------------------

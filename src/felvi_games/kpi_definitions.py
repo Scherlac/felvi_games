@@ -338,6 +338,17 @@ KPI_ENGINE.register(
 )
 
 KPI_ENGINE.register(
+    name="hint_attempts",
+    type="value",
+    base="attempt_items",
+    property_fn=lambda row, ctx: _attempt_count_if(
+        row, lambda r, c: bool(getattr(r, "segitseg_kert", False)), ctx
+    ),
+    description="Attempts where a hint was requested.",
+    metric_name="count",
+)
+
+KPI_ENGINE.register(
     name="subject_attempts",
     type="value",
     base="attempt_items",
