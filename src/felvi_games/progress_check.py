@@ -659,7 +659,7 @@ def get_user_stats(user: str, repo: FeladatRepository) -> dict:
             bool(getattr(row, "segitseg_kert", False))
             for row in sorted(
                 helyes_rows_all,
-                key=lambda r: (_as_utc(getattr(r, "created_at")), int(getattr(r, "id", 0))),
+                key=lambda r: (_as_utc(r.created_at), int(getattr(r, "id", 0))),
                 reverse=True,
             )[:20]
         ]
@@ -676,7 +676,7 @@ def get_user_stats(user: str, repo: FeladatRepository) -> dict:
 
         attempt_rows_7d = [
             (
-                getattr(row, "created_at"),
+                row.created_at,
                 bool(getattr(row, "helyes", False)),
                 getattr(row, "pont", 0),
                 bool(getattr(row, "segitseg_kert", False)),
@@ -687,7 +687,7 @@ def get_user_stats(user: str, repo: FeladatRepository) -> dict:
                     for row in attempt_rows_7d_all
                     if isinstance(getattr(row, "created_at", None), datetime)
                 ),
-                key=lambda r: (_as_utc(getattr(r, "created_at")), int(getattr(r, "id", 0))),
+                key=lambda r: (_as_utc(r.created_at), int(getattr(r, "id", 0))),
             )
         ]
 
@@ -714,14 +714,14 @@ def get_user_stats(user: str, repo: FeladatRepository) -> dict:
         event_rows_7d = [
             (
                 getattr(row, "tipus", ""),
-                getattr(row, "created_at"),
+                row.created_at,
                 getattr(row, "targy", None),
                 getattr(row, "szint", None),
                 getattr(row, "feladat_id", None),
             )
             for row in sorted(
                 interaction_rows_7d_all,
-                key=lambda r: (_as_utc(getattr(r, "created_at")), int(getattr(r, "id", 0))),
+                key=lambda r: (_as_utc(r.created_at), int(getattr(r, "id", 0))),
                 reverse=True,
             )
         ]
@@ -736,7 +736,7 @@ def get_user_stats(user: str, repo: FeladatRepository) -> dict:
             for row in attempt_rows_7d_all
             if bool(getattr(row, "ujraertekelt", False))
             and getattr(row, "ujraertekelt_at", None) is not None
-            and _as_utc(getattr(row, "ujraertekelt_at")) >= cutoff_7d
+            and _as_utc(row.ujraertekelt_at) >= cutoff_7d
         ]
 
     accuracy = round(correct / total_attempts * 100, 1) if total_attempts else 0.0
@@ -744,7 +744,7 @@ def get_user_stats(user: str, repo: FeladatRepository) -> dict:
     daily_attempts_7d: dict[str, dict[str, int | float | str]] = {}
     answer_outcomes_7d = Counter()
 
-    for created_at, is_correct, points, segitseg_kert in attempt_rows_7d:
+    for created_at, is_correct, points, _segitseg_kert in attempt_rows_7d:
         created_utc = _as_utc(created_at)
         day_key = created_utc.date().isoformat()
         if day_key not in daily_attempts_7d:

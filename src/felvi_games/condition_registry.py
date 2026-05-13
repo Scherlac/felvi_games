@@ -37,18 +37,17 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from felvi_games.kpi_definitions import KPI_ENGINE as _KPI_ENGINE
+from felvi_games.kpi_definitions import KPI_ENGINE as _KPI_ENGINE  # noqa: F401
 from felvi_games.kpi_registry import (
-    _kpi_total_count,
-    _kpi_total_sum,
-    _kpi_play_days,
-    _kpi_max_correct_streak,
-    _kpi_perfect_session_count,
     _day_streak_current,
     _day_streak_max,
+    _kpi_max_correct_streak,
+    _kpi_perfect_session_count,
+    _kpi_play_days,
+    _kpi_total_count,
+    _kpi_total_sum,
 )
 from felvi_games.models import InterakcioTipus
 

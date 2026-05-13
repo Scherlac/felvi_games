@@ -59,12 +59,6 @@ _REPEATABLE_COOLDOWN_HOURS: dict[str, int] = {}
 # ---------------------------------------------------------------------------
 
 
-def _nap(dt: datetime) -> datetime:
-    """Truncate to calendar date (UTC)."""
-    d = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
-    return d.replace(hour=0, minute=0, second=0, microsecond=0)
-
-
 def _sim_now() -> datetime:
     """Return the simulation reference time, or actual now."""
     t = _simulation_as_of.get()
@@ -98,45 +92,6 @@ def _cooldown_elapsed(erem: Erem, last_award_at: datetime, now: datetime) -> boo
     return now >= (_as_utc(last_award_at) + timedelta(hours=hours))
 
 
-def _has_new_attempt_after(
-    user: str,
-    engine: Engine,
-    since: datetime,
-    *,
-    hour_cmp: str | None = None,
-    hour_val: int | None = None,
-    require_fast_correct: bool = False,
-) -> bool:
-    from felvi_games.db import MegoldasRecord
-
-    since_utc = _as_utc(since)
-    _as_of = _simulation_as_of.get()
-    with Session(engine) as s:
-        stmt = (
-            select(func.count()).select_from(MegoldasRecord)
-            .where(
-                MegoldasRecord.felhasznalo_nev == user,
-                MegoldasRecord.created_at > since_utc,
-            )
-        )
-        if _as_of is not None:
-            stmt = stmt.where(MegoldasRecord.created_at <= _as_of)
-        if require_fast_correct:
-            stmt = stmt.where(
-                MegoldasRecord.helyes.is_(True),
-                MegoldasRecord.elapsed_sec.is_not(None),
-                MegoldasRecord.elapsed_sec <= 10.0,
-            )
-        if hour_cmp is not None and hour_val is not None:
-            hh = f"{hour_val:02d}"
-            local_h = func.strftime("%H", func.datetime(MegoldasRecord.created_at, "localtime"))
-            if hour_cmp == "lt":
-                stmt = stmt.where(local_h < hh)
-            elif hour_cmp == "ge":
-                stmt = stmt.where(local_h >= hh)
-        return (s.scalar(stmt) or 0) > 0
-
-
 def _has_new_activity_after(user: str, engine: Engine, since: datetime) -> bool:
     from felvi_games.db import InterakcioRecord, MegoldasRecord, MenetRecord
 
@@ -160,10 +115,6 @@ def _has_new_activity_after(user: str, engine: Engine, since: datetime) -> bool:
             n_stmt = n_stmt.where(MenetRecord.started_at <= _as_of)
             i_stmt = i_stmt.where(InterakcioRecord.created_at <= _as_of)
         return (s.scalar(m_stmt) or 0) > 0 or (s.scalar(n_stmt) or 0) > 0 or (s.scalar(i_stmt) or 0) > 0
-
-
-def _repeatable_has_fresh_signal(user: str, engine: Engine, last_award_at: datetime) -> bool:
-    return _has_new_activity_after(user, engine, last_award_at)
 
 
 def _effective_condition_valid_from(erem: Erem, last_award_at: datetime | None) -> datetime | None:

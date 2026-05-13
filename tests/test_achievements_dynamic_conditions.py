@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
-from felvi_games import achievements
 import felvi_games.condition_registry as cr
+from felvi_games import achievements
 from felvi_games.achievements import _eval_dynamic_condition
 from felvi_games.db import MegoldasRecord
 from felvi_games.models import Ertekeles, Feladat, InterakcioTipus

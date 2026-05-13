@@ -14,11 +14,10 @@ import argparse
 import ast
 import json
 import sys
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable
-
 
 DEFAULT_SCAN_PATHS: list[str] = ["src/felvi_games", "tests", "tools"]
 SKIP_DIRS: frozenset[str] = frozenset(

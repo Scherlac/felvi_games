@@ -11,14 +11,14 @@ Usage:
 from __future__ import annotations
 
 import ast
+import io
 import re
 import sys
 import textwrap
 import tokenize
-import io
-from pathlib import Path
-from itertools import combinations
 from difflib import SequenceMatcher
+from itertools import combinations
+from pathlib import Path
 
 TARGET = Path("src/felvi_games/achievements.py")
 

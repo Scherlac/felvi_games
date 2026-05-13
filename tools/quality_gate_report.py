@@ -8,20 +8,29 @@ It allows improvements and small fluctuations, but fails on significant regressi
 from __future__ import annotations
 
 import argparse
+import ast as _ast_mod
+import hashlib
+import importlib.util
 import json
+import re
 import statistics
 import subprocess
+import sys
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterable
 
-import ast as _ast_mod
-import hashlib
-import re
-import sys
-
-import find_unused as _find_unused
+try:
+    import find_unused as _find_unused
+except ModuleNotFoundError:
+    _find_unused_path = Path(__file__).with_name("find_unused.py")
+    _spec = importlib.util.spec_from_file_location("find_unused", _find_unused_path)
+    if _spec is None or _spec.loader is None:
+        raise
+    _find_unused = importlib.util.module_from_spec(_spec)
+    sys.modules[_spec.name] = _find_unused
+    _spec.loader.exec_module(_find_unused)
 from radon.complexity import cc_visit
 from radon.metrics import mi_visit
 from radon.raw import analyze
@@ -458,7 +467,14 @@ def build_snapshot(repo_root: Path, scan_paths: list[Path], top_n: int = 15) -> 
     snap.avg_lcom = avg_lcom
     snap.low_cohesion_classes = low_coh
 
-    pub_analyzed, avg_params, high_param_ct, untyped_ct, high_param_fns, _iface_err = _interface_metrics(py_files, repo_root)
+    (
+        pub_analyzed,
+        avg_params,
+        high_param_ct,
+        untyped_ct,
+        high_param_fns,
+        _iface_err,
+    ) = _interface_metrics(py_files, repo_root)
     snap.public_functions_analyzed = pub_analyzed
     snap.avg_params = avg_params
     snap.high_param_count = high_param_ct
@@ -645,7 +661,11 @@ def decide_gate(
             f"{deltas['d_or_worse_blocks']} (> {thresholds.max_d_or_worse_increase})."
         )
     elif deltas["d_or_worse_blocks"] > 0:
-        warnings.append(f"D/E/F block count +{deltas['d_or_worse_blocks']} (within tolerance {thresholds.max_d_or_worse_increase}).")
+        warnings.append(
+            "D/E/F block count "
+            f"+{deltas['d_or_worse_blocks']} "
+            f"(within tolerance {thresholds.max_d_or_worse_increase})."
+        )
 
     if deltas["f_blocks"] > thresholds.max_f_increase:
         reasons.append(
@@ -660,7 +680,11 @@ def decide_gate(
             f"{len(significant_regressions)} (> {thresholds.max_significant_block_regressions})."
         )
     elif significant_regressions:
-        warnings.append(f"Per-block regressions: {len(significant_regressions)} (within tolerance {thresholds.max_significant_block_regressions}).")
+        warnings.append(
+            "Per-block regressions: "
+            f"{len(significant_regressions)} "
+            f"(within tolerance {thresholds.max_significant_block_regressions})."
+        )
 
     if deltas["parse_error_files"] > 0:
         reasons.append(
@@ -693,29 +717,46 @@ def decide_gate(
             f"Ruff violations increased by {deltas['ruff_violations']} (> {thresholds.max_ruff_violations_increase})."
         )
     elif deltas["ruff_violations"] > 0:
-        warnings.append(f"Ruff +{deltas['ruff_violations']} violations (within tolerance {thresholds.max_ruff_violations_increase}).")
+        warnings.append(
+            f"Ruff +{deltas['ruff_violations']} violations "
+            f"(within tolerance {thresholds.max_ruff_violations_increase})."
+        )
 
     if deltas["duplicate_block_pairs"] > thresholds.max_duplicate_pairs_increase:
         reasons.append(
-            f"Duplicate code pairs increased by {deltas['duplicate_block_pairs']} (> {thresholds.max_duplicate_pairs_increase})."
+            "Duplicate code pairs increased by "
+            f"{deltas['duplicate_block_pairs']} "
+            f"(> {thresholds.max_duplicate_pairs_increase})."
         )
     elif deltas["duplicate_block_pairs"] > 0:
-        warnings.append(f"Duplicate pairs +{deltas['duplicate_block_pairs']} (within tolerance {thresholds.max_duplicate_pairs_increase}).")
+        warnings.append(
+            f"Duplicate pairs +{deltas['duplicate_block_pairs']} "
+            f"(within tolerance {thresholds.max_duplicate_pairs_increase})."
+        )
 
     if deltas["high_param_count"] > thresholds.max_high_param_increase:
         reasons.append(
-            f"High-parameter functions increased by {deltas['high_param_count']} (> {thresholds.max_high_param_increase})."
+            "High-parameter functions increased by "
+            f"{deltas['high_param_count']} "
+            f"(> {thresholds.max_high_param_increase})."
         )
     elif deltas["high_param_count"] > 0:
-        warnings.append(f"High-param functions +{deltas['high_param_count']} (within tolerance {thresholds.max_high_param_increase}).")
+        warnings.append(
+            f"High-param functions +{deltas['high_param_count']} "
+            f"(within tolerance {thresholds.max_high_param_increase})."
+        )
 
     if deltas["unused_function_count"] > thresholds.max_unused_function_increase:
         reasons.append(
-            f"Unused top-level functions increased by {deltas['unused_function_count']} (> {thresholds.max_unused_function_increase})."
+            "Unused top-level functions increased by "
+            f"{deltas['unused_function_count']} "
+            f"(> {thresholds.max_unused_function_increase})."
         )
     elif deltas["unused_function_count"] > 0:
         warnings.append(
-            f"Unused top-level functions +{deltas['unused_function_count']} (within tolerance {thresholds.max_unused_function_increase})."
+            "Unused top-level functions "
+            f"+{deltas['unused_function_count']} "
+            f"(within tolerance {thresholds.max_unused_function_increase})."
         )
 
     notes.extend(f"WARNING: {w}" for w in warnings)
@@ -775,7 +816,12 @@ def _snapshot_from_json(payload: dict[str, object]) -> Snapshot:
     )
 
 
-def render_report(current: Snapshot, baseline: Snapshot | None, gate: GateDecision | None, thresholds: GateThresholds) -> str:
+def render_report(
+    current: Snapshot,
+    baseline: Snapshot | None,
+    gate: GateDecision | None,
+    thresholds: GateThresholds,
+) -> str:
     gate_status = gate.status if gate else "NO_BASELINE"
     lines: list[str] = []
     lines.append("# Code Quality Gate Report")
@@ -1169,6 +1215,7 @@ def _ratchet_baseline_individual_metrics(
 
 def main() -> int:
     args = parse_args()
+    defaults = GateThresholds()
 
     repo_root = Path(args.repo_root).resolve()
     scan_paths = [(repo_root / p).resolve() for p in args.paths]
@@ -1188,7 +1235,9 @@ def main() -> int:
         max_ruff_violations_increase=int(args.max_ruff_violations_increase),
         max_duplicate_pairs_increase=int(args.max_duplicate_pairs_increase),
         max_high_param_increase=int(args.max_high_param_increase),
-        max_unused_function_increase=int(args.max_unused_function_increase),
+        max_unused_function_increase=int(
+            getattr(args, "max_unused_function_increase", defaults.max_unused_function_increase)
+        ),
     )
 
     current = build_snapshot(repo_root, scan_paths)

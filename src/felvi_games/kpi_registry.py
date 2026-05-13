@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Literal, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 
 from sqlalchemy.orm import Session
-
 
 JSONScalar = int | float | str | bool | None
 JSONValue = JSONScalar | list["JSONValue"] | dict[str, "JSONValue"]
@@ -66,7 +66,7 @@ class KPIParameter:
       - count_custom_h / sum_custom_h
     """
 
-    registry: "KPIRegistry"
+    registry: KPIRegistry
     name: str
     user: str
     session: Any
@@ -621,28 +621,6 @@ def _kpi_total_count(
     )
     return int(param.total_count or 0)
 
-def _kpi_total_count_gt(
-    kpi_name: str,
-    threshold: int,
-    user: str,
-    condition: dict,
-    cutoff: datetime | None,
-    upper: datetime | None,
-    s: Session,
-) -> bool:
-    return _kpi_total_count(kpi_name, user, condition, cutoff, upper, s) > threshold
-
-def _kpi_total_count_gte(
-    kpi_name: str,
-    threshold: int,
-    user: str,
-    condition: dict,
-    cutoff: datetime | None,
-    upper: datetime | None,
-    s: Session,
-) -> bool:
-    return _kpi_total_count(kpi_name, user, condition, cutoff, upper, s) >= threshold
-
 def _kpi_total_sum(
     kpi_name: str,
     user: str,
@@ -779,21 +757,21 @@ _FELADAT_TIPUSOK_COVER = frozenset({
 })
 
 
-def _kpi_play_days(user: str, upper: "datetime | None", s: "Session") -> "list[datetime]":
+def _kpi_play_days(user: str, upper: datetime | None, s: Session) -> list[datetime]:
     """Sorted list of distinct play-day datetimes (UTC midnight) for the user."""
     return _play_days(_session_rows(user, None, upper, s))
 
 
-def _kpi_max_correct_streak(user: str, upper: "datetime | None", s: "Session") -> int:
+def _kpi_max_correct_streak(user: str, upper: datetime | None, s: Session) -> int:
     """All-time best consecutive correct answer streak for the user."""
     return _max_streak(_helyes_sequence(_attempt_rows(user, None, upper, s)))
 
 
 def _kpi_perfect_session_count(
     user: str,
-    cutoff: "datetime | None",
-    upper: "datetime | None",
-    s: "Session",
+    cutoff: datetime | None,
+    upper: datetime | None,
+    s: Session,
 ) -> int:
     """Number of perfect (all-correct) completed sessions within the window."""
     rows = [
