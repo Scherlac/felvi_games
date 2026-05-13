@@ -370,6 +370,44 @@ Remaining regression causes (for next iteration):
 - **hi-param +5**: functions with >5 params — requires interface simplification
 - **unused +102**: 102 symbols above baseline count — mostly false positives (CLI command handlers, test functions, public API helpers); real removals require per-file review
 
+### Iteration 3 Result (2026-05-13)
+
+Applied:
+
+1. Improved `tools/find_unused.py` false-positive handling:
+  - decorator-registered functions are now treated as implicitly referenced
+  - supported decorator attrs: `command`, `callback`, `fixture`, `mark`
+  - dunder methods are skipped from candidate definitions
+2. Removed 2 confirmed dead helpers:
+  - `src/felvi_games/achievements.py`: `_has_new_activity_after`
+  - `src/felvi_games/scraper.py`: `ev_szam`
+3. Cleaned resulting import fallout in `achievements.py` (unused `func`/`select` imports)
+
+Validation:
+
+1. `ruff check src/felvi_games/achievements.py tools/find_unused.py` -> passed
+2. `pytest tests/test_achievements_dynamic_conditions.py tests/test_achievements_repeatable_gating.py tests/test_achievements_expiry_policy.py tests/test_db.py tests/test_quality_gate_report.py -q` -> 104 passed
+3. `python tools/quality_gate_report.py` -> gate still FAIL, but unused regression reduced
+
+Gate delta after Iteration 3:
+
+| Metric | Iteration 2 | Iteration 3 | Delta trend |
+|--------|-------------|-------------|-------------|
+| avg CC | -0.037 | -0.037 | stable ✅ |
+| F blocks | 0 | 0 | stable ✅ |
+| D/E/F | 0 | 0 | stable ✅ |
+| ruff | 0 | 0 | stable ✅ |
+| coverage | +1.53 | +1.68 | improved ✅ |
+| dup pairs | +5 | +5 | unchanged ❌ |
+| hi-param | +5 | +5 | unchanged ❌ |
+| unused | +102 | +76 | improved ✅ (still failing) |
+
+Interpretation:
+
+- The unused regression was partially reduced by improving detection quality plus two real removals.
+- Remaining gate failures are now concentrated in structural duplication and high-parameter interfaces.
+- Unused still fails relative to baseline because baseline predates the unused metric and effectively stores 0.
+
 ### Incremental Fix Plan (Do Not Batch)
 
 1. **Fix tooling/runtime first**
