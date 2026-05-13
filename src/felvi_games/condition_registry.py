@@ -38,9 +38,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session
 
-from felvi_games.kpi_registry import KPIRegistry, KPIQueryContext
+from felvi_games.kpi_definitions import KPI_ENGINE as _KPI_ENGINE
 from felvi_games.models import InterakcioTipus
 
 # ---------------------------------------------------------------------------
@@ -52,10 +52,6 @@ CondEvalFn = Callable[[str, dict, int, datetime, "datetime | None", Session], bo
 
 # (user, condition_dict, cutoff, upper, session) -> int | None
 CondCountFn = Callable[[str, dict, datetime, "datetime | None", Session], "int | None"]
-
-# (user, condition_dict, cutoff, upper, session) -> scalar value
-KPICalcFn = Callable[[str, dict, datetime, "datetime | None", Session], "int | float | None"]
-
 
 # ---------------------------------------------------------------------------
 # ParamSpec — single parameter schema with validation
@@ -146,308 +142,6 @@ class ConditionDef:
                 f"    {pname} ({pspec.type.__name__}){req}: {pspec.description}{suffix}"
             )
         return "\n".join(lines)
-
-
-# ---------------------------------------------------------------------------
-# KPI parameter registry (condition building blocks)
-# ---------------------------------------------------------------------------
-
-@dataclass(frozen=True)
-class KPIParamDef:
-    name: str
-    description: str
-    calc_fn: KPICalcFn
-    key_fields: tuple[str, ...] = ()
-
-
-_KPI_REGISTRY: dict[str, KPIParamDef] = {}
-_KPI_ENGINE = KPIRegistry()
-
-
-def _attempt_query(ctx: KPIQueryContext, s: Session) -> list[Any]:
-    """Return attempt rows for the user up to upper bound; KPIRegistry applies windows."""
-    from felvi_games.db import MegoldasRecord
-
-    stmt = (
-        select(MegoldasRecord)
-        .options(selectinload(MegoldasRecord.menet))
-        .where(
-            MegoldasRecord.felhasznalo_nev == ctx.user,
-            MegoldasRecord.created_at <= ctx.upper,
-        )
-        .order_by(MegoldasRecord.created_at)
-    )
-    return list(s.scalars(stmt).all())
-
-
-def _attempt_timestamp(row: Any) -> datetime | None:
-    """Extract created_at from an attempt row for KPI window filtering."""
-    return getattr(row, "created_at", None)
-
-
-def _attempt_points(row: Any, ctx: KPIQueryContext) -> int | float | None:
-    """Return earned points for one attempt row."""
-    value = getattr(row, "pont", None)
-    return float(value) if isinstance(value, (int, float)) else None
-
-
-def _attempt_count_if(row: Any, predicate: Callable[[Any, KPIQueryContext], bool], ctx: KPIQueryContext) -> int | None:
-    return 1 if predicate(row, ctx) else None
-
-
-def _attempt_is_correct(row: Any, ctx: KPIQueryContext) -> bool:
-    return bool(getattr(row, "helyes", False))
-
-
-def _attempt_is_fast_correct(row: Any, ctx: KPIQueryContext) -> bool:
-    points = getattr(row, "pont", None)
-    elapsed = getattr(row, "elapsed_sec", None)
-    return isinstance(points, (int, float)) and points > 0 and isinstance(elapsed, (int, float)) and elapsed <= 10.0
-
-
-def _attempt_matches_subject(row: Any, ctx: KPIQueryContext) -> bool:
-    subject = str(ctx.condition.get("subject", "")).strip()
-    menet = getattr(row, "menet", None)
-    return bool(subject) and getattr(menet, "targy", None) == subject
-
-
-def _attempt_before_hour(row: Any, ctx: KPIQueryContext) -> bool:
-    ts = _attempt_timestamp(row)
-    if ts is None:
-        return False
-    ts_local = (ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts).astimezone()
-    hour = int(ctx.condition.get("hour", 8))
-    return ts_local.hour < hour
-
-
-def _attempt_after_hour(row: Any, ctx: KPIQueryContext) -> bool:
-    ts = _attempt_timestamp(row)
-    if ts is None:
-        return False
-    ts_local = (ts.replace(tzinfo=timezone.utc) if ts.tzinfo is None else ts).astimezone()
-    hour = int(ctx.condition.get("hour", 22))
-    return ts_local.hour >= hour
-
-
-def _session_query(ctx: KPIQueryContext, s: Session) -> list[Any]:
-    """Return session rows for the user up to upper bound; KPIRegistry applies windows."""
-    from felvi_games.db import MenetRecord
-
-    stmt = (
-        select(MenetRecord)
-        .options(selectinload(MenetRecord.megoldasok))
-        .where(
-            MenetRecord.felhasznalo_nev == ctx.user,
-            MenetRecord.started_at <= ctx.upper,
-        )
-        .order_by(MenetRecord.started_at)
-    )
-    return list(s.scalars(stmt).all())
-
-
-def _session_timestamp(row: Any) -> datetime | None:
-    return getattr(row, "started_at", None)
-
-
-def _interaction_query(ctx: KPIQueryContext, s: Session) -> list[Any]:
-    """Return interaction rows for the user up to upper bound; KPIRegistry applies windows."""
-    from felvi_games.db import InterakcioRecord
-
-    stmt = (
-        select(InterakcioRecord)
-        .where(
-            InterakcioRecord.felhasznalo_nev == ctx.user,
-            InterakcioRecord.created_at <= ctx.upper,
-        )
-        .order_by(InterakcioRecord.created_at)
-    )
-    return list(s.scalars(stmt).all())
-
-
-def _interaction_timestamp(row: Any) -> datetime | None:
-    return getattr(row, "created_at", None)
-
-
-def _interaction_matches(row: Any, ctx: KPIQueryContext) -> int | None:
-    from felvi_games.models import InterakcioTipus
-
-    raw = ctx.condition.get("event_type", "")
-    event_type = raw.value if isinstance(raw, InterakcioTipus) else str(raw).strip()
-    if not event_type or getattr(row, "tipus", None) != event_type:
-        return None
-
-    for col in ("targy", "szint", "feladat_id"):
-        val = ctx.condition.get(col)
-        if isinstance(val, str) and val.strip() and getattr(row, col, None) != val.strip():
-            return None
-
-    meta_filter = ctx.condition.get("meta_contains")
-    if isinstance(meta_filter, str) and meta_filter.strip():
-        meta_value = getattr(row, "meta", None)
-        if not isinstance(meta_value, str) or meta_filter.strip() not in meta_value:
-            return None
-    return 1
-
-
-_KPI_ENGINE.register(
-    name="attempt_items",
-    type="item",
-    query_fn=_attempt_query,
-    timestamp_fn=_attempt_timestamp,
-    description="Attempt rows up to upper bound.",
-    metric_name="count",
-)
-
-_KPI_ENGINE.register(
-    name="attempt_points",
-    type="value",
-    base="attempt_items",
-    property_fn=_attempt_points,
-    description="Points earned over attempt rows.",
-    metric_name="sum",
-)
-
-_KPI_ENGINE.register(
-    name="correct_attempts",
-    type="value",
-    base="attempt_items",
-    property_fn=lambda row, ctx: _attempt_count_if(row, _attempt_is_correct, ctx),
-    description="Correct attempts over attempt rows.",
-    metric_name="count",
-)
-
-_KPI_ENGINE.register(
-    name="helyes_attempts",
-    type="value",
-    base="attempt_items",
-    property_fn=lambda row, ctx: _attempt_count_if(row, _attempt_is_correct, ctx),
-    description="Correct attempts over attempt rows (alias).",
-    metric_name="count",
-)
-
-_KPI_ENGINE.register(
-    name="fast_correct_attempts",
-    type="value",
-    base="attempt_items",
-    property_fn=lambda row, ctx: _attempt_count_if(row, _attempt_is_fast_correct, ctx),
-    description="Fast correct attempts over attempt rows.",
-    metric_name="count",
-)
-
-_KPI_ENGINE.register(
-    name="subject_attempts",
-    type="value",
-    base="attempt_items",
-    property_fn=lambda row, ctx: _attempt_count_if(row, _attempt_matches_subject, ctx),
-    description="Subject-filtered attempts over attempt rows.",
-    metric_name="count",
-)
-
-_KPI_ENGINE.register(
-    name="before_hour_attempts",
-    type="value",
-    base="attempt_items",
-    property_fn=lambda row, ctx: _attempt_count_if(row, _attempt_before_hour, ctx),
-    description="Attempts before the configured local hour.",
-    metric_name="count",
-)
-
-_KPI_ENGINE.register(
-    name="after_hour_attempts",
-    type="value",
-    base="attempt_items",
-    property_fn=lambda row, ctx: _attempt_count_if(row, _attempt_after_hour, ctx),
-    description="Attempts at or after the configured local hour.",
-    metric_name="count",
-)
-
-_KPI_ENGINE.register(
-    name="session_items",
-    type="item",
-    query_fn=_session_query,
-    timestamp_fn=_session_timestamp,
-    description="Session rows up to upper bound.",
-    metric_name="count",
-)
-
-_KPI_ENGINE.register(
-    name="interaction_items",
-    type="item",
-    query_fn=_interaction_query,
-    timestamp_fn=_interaction_timestamp,
-    description="Interaction rows up to upper bound.",
-    metric_name="count",
-)
-
-_KPI_ENGINE.register(
-    name="matching_interactions",
-    type="value",
-    base="interaction_items",
-    property_fn=_interaction_matches,
-    description="Interaction rows matching the configured filters.",
-    metric_name="count",
-)
-
-
-def register_kpi_param(spec: KPIParamDef) -> KPIParamDef:
-    """Register one KPI calculator. Returns spec (allows chaining)."""
-    _KPI_REGISTRY[spec.name] = spec
-    return spec
-
-
-def get_kpi_param(name: str) -> KPIParamDef | None:
-    return _KPI_REGISTRY.get(name)
-
-
-def _cache_value_normalized(value: Any) -> Any:
-    if isinstance(value, list):
-        return tuple(_cache_value_normalized(v) for v in value)
-    if isinstance(value, dict):
-        return tuple(sorted((str(k), _cache_value_normalized(v)) for k, v in value.items()))
-    if isinstance(value, set):
-        return tuple(sorted(_cache_value_normalized(v) for v in value))
-    return value
-
-
-def _cache_ts_key(value: datetime | None) -> str:
-    if value is None:
-        return "none"
-    dt = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc).isoformat()
-
-
-def kpi_parameter_value(
-    user: str,
-    kpi_name: str,
-    condition: dict,
-    cutoff: datetime,
-    upper: datetime | None,
-    s: Session,
-) -> int | float | None:
-    """Return one KPI value, cached per-session and parameterized by condition fields."""
-    spec = get_kpi_param(kpi_name)
-    if spec is None:
-        return None
-
-    cache = s.info.setdefault("_kpi_param_cache", {})
-    key = (
-        "kpi",
-        kpi_name,
-        user,
-        _cache_ts_key(cutoff),
-        _cache_ts_key(upper),
-        tuple(
-            (name, _cache_value_normalized(condition.get(name)))
-            for name in spec.key_fields
-        ),
-    )
-    if key in cache:
-        return cache[key]
-
-    value = spec.calc_fn(user, condition, cutoff, upper, s)
-
-    cache[key] = value
-    return value
 
 
 # ---------------------------------------------------------------------------
@@ -579,24 +273,16 @@ def condition_count(
 # ---------------------------------------------------------------------------
 
 
-def _kpi_attempt_count(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
-    """Use KPIRegistry for attempt_count decomposition."""
+def _kpi_total_count(
+    kpi_name: str,
+    user: str,
+    condition: dict,
+    cutoff: datetime,
+    upper: datetime | None,
+    s: Session,
+) -> int:
     param = _KPI_ENGINE.kpi_parameter(
-        "attempt_items",
-        user=user,
-        session=s,
-        condition=condition,
-        cutoff=cutoff,
-        upper=upper,
-        requested_stats={"total"},
-    )
-    # Access total_count property to trigger lazy evaluation
-    return int(param.total_count or 0)
-
-
-def _kpi_correct_count(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
-    param = _KPI_ENGINE.kpi_parameter(
-        "correct_attempts",
+        kpi_name,
         user=user,
         session=s,
         condition=condition,
@@ -607,9 +293,16 @@ def _kpi_correct_count(user: str, condition: dict, cutoff: datetime, upper: date
     return int(param.total_count or 0)
 
 
-def _kpi_points_sum(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
+def _kpi_total_sum(
+    kpi_name: str,
+    user: str,
+    condition: dict,
+    cutoff: datetime,
+    upper: datetime | None,
+    s: Session,
+) -> int:
     param = _KPI_ENGINE.kpi_parameter(
-        "attempt_points",
+        kpi_name,
         user=user,
         session=s,
         condition=condition,
@@ -618,84 +311,6 @@ def _kpi_points_sum(user: str, condition: dict, cutoff: datetime, upper: datetim
         requested_stats={"total"},
     )
     return int(param.total_sum or 0)
-
-
-def _kpi_fast_correct_count(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
-    param = _KPI_ENGINE.kpi_parameter(
-        "fast_correct_attempts",
-        user=user,
-        session=s,
-        condition=condition,
-        cutoff=cutoff,
-        upper=upper,
-        requested_stats={"total"},
-    )
-    return int(param.total_count or 0)
-
-
-def _kpi_subject_attempt_count(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
-    param = _KPI_ENGINE.kpi_parameter(
-        "subject_attempts",
-        user=user,
-        session=s,
-        condition=condition,
-        cutoff=cutoff,
-        upper=upper,
-        requested_stats={"total"},
-    )
-    return int(param.total_count or 0)
-
-
-def _kpi_before_hour_count(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
-    param = _KPI_ENGINE.kpi_parameter(
-        "before_hour_attempts",
-        user=user,
-        session=s,
-        condition=condition,
-        cutoff=cutoff,
-        upper=upper,
-        requested_stats={"total"},
-    )
-    return int(param.total_count or 0)
-
-
-def _kpi_after_hour_count(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
-    param = _KPI_ENGINE.kpi_parameter(
-        "after_hour_attempts",
-        user=user,
-        session=s,
-        condition=condition,
-        cutoff=cutoff,
-        upper=upper,
-        requested_stats={"total"},
-    )
-    return int(param.total_count or 0)
-
-
-def _kpi_session_count(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int:
-    param = _KPI_ENGINE.kpi_parameter(
-        "session_items",
-        user=user,
-        session=s,
-        condition=condition,
-        cutoff=cutoff,
-        upper=upper,
-        requested_stats={"total"},
-    )
-    return int(param.total_count or 0)
-
-
-def _kpi_interakcio_count(user: str, condition: dict, cutoff: datetime, upper: datetime | None, s: Session) -> int | None:
-    param = _KPI_ENGINE.kpi_parameter(
-        "matching_interactions",
-        user=user,
-        session=s,
-        condition=condition,
-        cutoff=cutoff,
-        upper=upper,
-        requested_stats={"total"},
-    )
-    return int(param.total_count or 0)
 
 
 def _attempt_rows(
@@ -767,31 +382,31 @@ def _perfect_session_count(session_rows: list[Any]) -> int:
 # ---------------------------------------------------------------------------
 
 def _eval_feladat_count(user, condition, n, cutoff, upper, s):
-    return int(kpi_parameter_value(user, "attempt_count", condition, cutoff, upper, s) or 0) >= n
+    return _kpi_total_count("attempt_items", user, condition, cutoff, upper, s) >= n
 
 def _eval_helyes_count(user, condition, n, cutoff, upper, s):
-    return int(kpi_parameter_value(user, "correct_count", condition, cutoff, upper, s) or 0) >= n
+    return _kpi_total_count("correct_attempts", user, condition, cutoff, upper, s) >= n
 
 def _eval_pont_sum(user, condition, n, cutoff, upper, s):
     if n <= 0:
         return True
-    total = int(kpi_parameter_value(user, "points_sum", condition, cutoff, upper, s) or 0)
+    total = _kpi_total_sum("attempt_points", user, condition, cutoff, upper, s)
     return total >= n
 
 def _eval_villam(user, condition, n, cutoff, upper, s):
-    return int(kpi_parameter_value(user, "fast_correct_count", condition, cutoff, upper, s) or 0) >= n
+    return _kpi_total_count("fast_correct_attempts", user, condition, cutoff, upper, s) >= n
 
 def _eval_feladat_subject(user, condition, n, cutoff, upper, s):
-    return int(kpi_parameter_value(user, "subject_attempt_count", condition, cutoff, upper, s) or 0) >= n
+    return _kpi_total_count("subject_attempts", user, condition, cutoff, upper, s) >= n
 
 def _eval_before_hour(user, condition, n, cutoff, upper, s):
-    return int(kpi_parameter_value(user, "before_hour_count", condition, cutoff, upper, s) or 0) >= n
+    return _kpi_total_count("before_hour_attempts", user, condition, cutoff, upper, s) >= n
 
 def _eval_after_hour(user, condition, n, cutoff, upper, s):
-    return int(kpi_parameter_value(user, "after_hour_count", condition, cutoff, upper, s) or 0) >= n
+    return _kpi_total_count("after_hour_attempts", user, condition, cutoff, upper, s) >= n
 
 def _eval_session_count(user, condition, n, cutoff, upper, s):
-    return int(kpi_parameter_value(user, "session_count", condition, cutoff, upper, s) or 0) >= n
+    return _kpi_total_count("session_items", user, condition, cutoff, upper, s) >= n
 
 def _eval_streak(user, condition, n, cutoff, upper, s):
     return _max_streak(_helyes_sequence(_attempt_rows(user, None, upper, s))) >= n
@@ -841,11 +456,11 @@ def _eval_special_date(user, condition, n, cutoff, upper, s):
     return cnt >= target
 
 def _eval_interakcio_count(user, condition, n, cutoff, upper, s):
-    cnt = kpi_parameter_value(user, "interaction_count", condition, cutoff, upper, s)
+    cnt = _kpi_total_count("matching_interactions", user, condition, cutoff, upper, s)
     return (cnt or 0) >= n
 
 def _eval_interakcio_exists(user, condition, n, cutoff, upper, s):
-    cnt = kpi_parameter_value(user, "interaction_count", condition, cutoff, upper, s)
+    cnt = _kpi_total_count("matching_interactions", user, condition, cutoff, upper, s)
     return (cnt or 0) >= 1
 
 
@@ -854,96 +469,31 @@ def _eval_interakcio_exists(user, condition, n, cutoff, upper, s):
 # ---------------------------------------------------------------------------
 
 def _count_feladat_count(user, condition, cutoff, upper, s):
-    return kpi_parameter_value(user, "attempt_count", condition, cutoff, upper, s)
+    return _kpi_total_count("attempt_items", user, condition, cutoff, upper, s)
 
 def _count_helyes_count(user, condition, cutoff, upper, s):
-    return kpi_parameter_value(user, "correct_count", condition, cutoff, upper, s)
+    return _kpi_total_count("correct_attempts", user, condition, cutoff, upper, s)
 
 def _count_pont_sum(user, condition, cutoff, upper, s):
-    return kpi_parameter_value(user, "points_sum", condition, cutoff, upper, s)
+    return _kpi_total_sum("attempt_points", user, condition, cutoff, upper, s)
 
 def _count_villam(user, condition, cutoff, upper, s):
-    return kpi_parameter_value(user, "fast_correct_count", condition, cutoff, upper, s)
+    return _kpi_total_count("fast_correct_attempts", user, condition, cutoff, upper, s)
 
 def _count_feladat_subject(user, condition, cutoff, upper, s):
-    return kpi_parameter_value(user, "subject_attempt_count", condition, cutoff, upper, s)
+    return _kpi_total_count("subject_attempts", user, condition, cutoff, upper, s)
 
 def _count_before_hour(user, condition, cutoff, upper, s):
-    return kpi_parameter_value(user, "before_hour_count", condition, cutoff, upper, s)
+    return _kpi_total_count("before_hour_attempts", user, condition, cutoff, upper, s)
 
 def _count_after_hour(user, condition, cutoff, upper, s):
-    return kpi_parameter_value(user, "after_hour_count", condition, cutoff, upper, s)
+    return _kpi_total_count("after_hour_attempts", user, condition, cutoff, upper, s)
 
 def _count_session_count(user, condition, cutoff, upper, s):
-    return kpi_parameter_value(user, "session_count", condition, cutoff, upper, s)
+    return _kpi_total_count("session_items", user, condition, cutoff, upper, s)
 
 def _count_interakcio(user, condition, cutoff, upper, s):
-    return kpi_parameter_value(user, "interaction_count", condition, cutoff, upper, s)
-
-
-# ---------------------------------------------------------------------------
-# Built-in KPI registrations (reused by evaluators and count_fn paths)
-# ---------------------------------------------------------------------------
-
-register_kpi_param(KPIParamDef(
-    name="attempt_count",
-    description="Total attempts in the active window.",
-    calc_fn=_kpi_attempt_count,
-))
-
-register_kpi_param(KPIParamDef(
-    name="correct_count",
-    description="Correct attempts in the active window.",
-    calc_fn=_kpi_correct_count,
-))
-
-register_kpi_param(KPIParamDef(
-    name="points_sum",
-    description="Total earned points in the active window.",
-    calc_fn=_kpi_points_sum,
-))
-
-register_kpi_param(KPIParamDef(
-    name="fast_correct_count",
-    description="Fast correct attempts (elapsed<=10s, pont>0) in the active window.",
-    calc_fn=_kpi_fast_correct_count,
-))
-
-register_kpi_param(KPIParamDef(
-    name="subject_attempt_count",
-    description="Attempts in a selected subject in the active window.",
-    calc_fn=_kpi_subject_attempt_count,
-    key_fields=("subject",),
-))
-
-register_kpi_param(KPIParamDef(
-    name="before_hour_count",
-    description="Attempts before local hour in the active window.",
-    calc_fn=_kpi_before_hour_count,
-    key_fields=("hour",),
-))
-
-register_kpi_param(KPIParamDef(
-    name="after_hour_count",
-    description="Attempts after local hour in the active window.",
-    calc_fn=_kpi_after_hour_count,
-    key_fields=("hour",),
-))
-
-register_kpi_param(KPIParamDef(
-    name="session_count",
-    description="Started sessions in the active window.",
-    calc_fn=_kpi_session_count,
-))
-
-register_kpi_param(KPIParamDef(
-    name="interaction_count",
-    description="Interaction event count in the active window with optional filters.",
-    calc_fn=_kpi_interakcio_count,
-    key_fields=("event_type", "targy", "szint", "feladat_id", "meta_contains"),
-))
-
-_KPI_BOOTSTRAP_DONE = True
+    return _kpi_total_count("matching_interactions", user, condition, cutoff, upper, s)
 
 
 # ---------------------------------------------------------------------------

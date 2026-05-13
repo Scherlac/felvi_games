@@ -135,22 +135,25 @@ def test_eval_dynamic_condition_reuses_kpi_cache_with_shared_session(repo) -> No
     created = datetime(2026, 5, 2, 8, 0, tzinfo=timezone.utc)
     _insert_attempt_at(repo, user, created)
 
-    original = cr.get_kpi_param("attempt_count")
+    original = cr._KPI_ENGINE.get("attempt_items")
     assert original is not None
+    assert original.query_fn is not None
 
     calls = {"count": 0}
 
-    def wrapped_calc(user_name, condition, cutoff, upper, session):
+    def wrapped_query(ctx, session):
         calls["count"] += 1
-        return original.calc_fn(user_name, condition, cutoff, upper, session)
+        return original.query_fn(ctx, session)
 
-    cr.register_kpi_param(
-        cr.KPIParamDef(
-            name=original.name,
-            description=original.description,
-            calc_fn=wrapped_calc,
-            key_fields=original.key_fields,
-        )
+    cr._KPI_ENGINE.register(
+        name=original.name,
+        type="item",
+        query_fn=wrapped_query,
+        timestamp_fn=original.timestamp_fn,
+        description=original.description,
+        metric_name=original.metric_name,
+        key_fields=original.key_fields,
+        stats_supported=original.stats_supported,
     )
 
     try:
@@ -168,7 +171,16 @@ def test_eval_dynamic_condition_reuses_kpi_cache_with_shared_session(repo) -> No
                 eval_session=shared,
             ) is True
     finally:
-        cr.register_kpi_param(original)
+        cr._KPI_ENGINE.register(
+            name=original.name,
+            type="item",
+            query_fn=original.query_fn,
+            timestamp_fn=original.timestamp_fn,
+            description=original.description,
+            metric_name=original.metric_name,
+            key_fields=original.key_fields,
+            stats_supported=original.stats_supported,
+        )
 
     assert calls["count"] == 1
 
@@ -233,22 +245,25 @@ def test_eval_dynamic_condition_short_circuits_compound_conditions(repo) -> None
     created = datetime(2026, 5, 2, 8, 0, tzinfo=timezone.utc)
     _insert_attempt_at(repo, user, created)
 
-    original = cr.get_kpi_param("after_hour_count")
+    original = cr._KPI_ENGINE.get("after_hour_attempts")
     assert original is not None
+    assert original.property_fn is not None
 
     calls = {"count": 0}
 
-    def wrapped_calc(user_name, condition, cutoff, upper, session):
+    def wrapped_property(row, ctx):
         calls["count"] += 1
-        return original.calc_fn(user_name, condition, cutoff, upper, session)
+        return original.property_fn(row, ctx)
 
-    cr.register_kpi_param(
-        cr.KPIParamDef(
-            name=original.name,
-            description=original.description,
-            calc_fn=wrapped_calc,
-            key_fields=original.key_fields,
-        )
+    cr._KPI_ENGINE.register(
+        name=original.name,
+        type="value",
+        base=original.base,
+        property_fn=wrapped_property,
+        description=original.description,
+        metric_name=original.metric_name,
+        key_fields=original.key_fields,
+        stats_supported=original.stats_supported,
     )
 
     try:
@@ -258,6 +273,15 @@ def test_eval_dynamic_condition_short_circuits_compound_conditions(repo) -> None
         ]
         assert _eval_dynamic_condition(user, condition, repo._engine) is False
     finally:
-        cr.register_kpi_param(original)
+        cr._KPI_ENGINE.register(
+            name=original.name,
+            type="value",
+            base=original.base,
+            property_fn=original.property_fn,
+            description=original.description,
+            metric_name=original.metric_name,
+            key_fields=original.key_fields,
+            stats_supported=original.stats_supported,
+        )
 
     assert calls["count"] == 0
