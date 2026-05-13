@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+import felvi_games.condition_registry as cr
 from felvi_games.models import Erem
 
 if TYPE_CHECKING:
@@ -551,80 +552,293 @@ def is_first_login_today(user: str, repo: FeladatRepository) -> bool:
 # ---------------------------------------------------------------------------
 
 def get_user_stats(user: str, repo: FeladatRepository) -> dict:
-    """Return a dict of aggregate player statistics for AI / closeness checks.
-    
-    Now powered by KPI registry for unified calculation and caching.
-    """
-    from felvi_games import condition_registry as cr
-    
+    """Return a dict of aggregate player statistics for AI / closeness checks."""
+    from felvi_games.db import FeladatRecord, MegoldasRecord
+
     engine = repo._engine
     now_utc = datetime.now(timezone.utc)
     cutoff_24h = now_utc - timedelta(hours=24)
     cutoff_48h = now_utc - timedelta(hours=48)
     cutoff_7d = now_utc - timedelta(days=7)
 
-    # Use a shared session to enable cache hits across multiple KPI calls
     with Session(engine) as s:
-        # All-time aggregate counts
-        total_attempts = cr.kpi_parameter_value(user, "total_attempts", {}, now_utc, None, s) or 0
-        correct = cr.kpi_parameter_value(user, "total_correct", {}, now_utc, None, s) or 0
-        total_sessions = cr.kpi_parameter_value(user, "total_sessions", {}, now_utc, None, s) or 0
-        completed_sessions = cr.kpi_parameter_value(user, "completed_sessions", {}, now_utc, None, s) or 0
+        attempt_items = cr._KPI_ENGINE.kpi_parameter(
+            "attempt_items",
+            user=user,
+            session=s,
+            upper=now_utc,
+        )
+        attempt_points = cr._KPI_ENGINE.kpi_parameter(
+            "attempt_points",
+            user=user,
+            session=s,
+            upper=now_utc,
+        )
+        helyes_attempts = cr._KPI_ENGINE.kpi_parameter(
+            "helyes_attempts",
+            user=user,
+            session=s,
+            upper=now_utc,
+        )
 
-        # Metadata (subjects, levels)
-        subjects_used = cr.kpi_parameter_value(user, "subjects_used", {}, now_utc, None, s) or []
-        levels_used = cr.kpi_parameter_value(user, "levels_used", {}, now_utc, None, s) or []
-        avg_elapsed = cr.kpi_parameter_value(user, "avg_elapsed_sec", {}, now_utc, None, s)
+        attempts_24h = _kpi_last(attempt_items.count_24h)
+        attempts_48h = _kpi_last(attempt_items.count_48h)
+        correct_24h = _kpi_last(helyes_attempts.count_24h)
+        correct_48h = _kpi_last(helyes_attempts.count_48h)
+        points_24h = _kpi_last(attempt_points.sum_24h)
+        points_48h = _kpi_last(attempt_points.sum_48h)
 
-        # Streaks
-        best_correct_streak = cr.kpi_parameter_value(user, "correct_streak_best", {}, now_utc, None, s) or 0
-        current_correct_streak = cr.kpi_parameter_value(user, "correct_streak_current", {}, now_utc, None, s) or 0
-        play_day_streak_current = cr.kpi_parameter_value(user, "play_day_streak_current", {}, now_utc, None, s) or 0
-        recent_days_7d = cr.kpi_parameter_value(user, "play_days_7d", {}, now_utc, None, s) or 0
+        attempts_last_24h = int(attempts_24h)
+        attempts_prev_24h = int(max(0.0, attempts_48h - attempts_24h))
+        correct_last_24h = int(correct_24h)
+        correct_prev_24h = int(max(0.0, correct_48h - correct_24h))
+        points_last_24h = int(points_24h)
+        points_prev_24h = int(max(0.0, points_48h - points_24h))
 
-        # Hint statistics
-        hints_stats = cr.kpi_parameter_value(user, "hints_last_20_correct", {}, now_utc, None, s) or {}
-        hint_free_correct = hints_stats.get("hint_free", 0) if isinstance(hints_stats, dict) else 0
+        total_attempts = int(attempt_items.total_count or 0)
+        correct = int(helyes_attempts.total_count or 0)
 
-        # Time-windowed aggregates (last 24h)
-        attempts_last_24h = cr.kpi_parameter_value(user, "attempt_count", {}, cutoff_24h, now_utc, s) or 0
-        correct_last_24h = cr.kpi_parameter_value(user, "correct_count", {}, cutoff_24h, now_utc, s) or 0
-        points_last_24h = cr.kpi_parameter_value(user, "points_sum", {}, cutoff_24h, now_utc, s) or 0
-        hint_uses_last_24h = cr.kpi_parameter_value(user, "hint_uses_window", {}, cutoff_24h, now_utc, s) or 0
+        attempt_rows_all = cr._KPI_ENGINE.kpi_rows(
+            "attempt_items",
+            user=user,
+            session=s,
+            upper=now_utc,
+        )
+        attempt_rows_48h_all = cr._KPI_ENGINE.kpi_rows(
+            "attempt_items",
+            user=user,
+            session=s,
+            cutoff=cutoff_48h,
+            upper=now_utc,
+        )
+        attempt_rows_7d_all = cr._KPI_ENGINE.kpi_rows(
+            "attempt_items",
+            user=user,
+            session=s,
+            cutoff=cutoff_7d,
+            upper=now_utc,
+        )
+        helyes_rows_all = cr._KPI_ENGINE.kpi_rows(
+            "helyes_attempts",
+            user=user,
+            session=s,
+            upper=now_utc,
+        )
+        session_rows_all = cr._KPI_ENGINE.kpi_rows(
+            "session_items",
+            user=user,
+            session=s,
+            upper=now_utc,
+        )
+        session_rows_7d_all = cr._KPI_ENGINE.kpi_rows(
+            "session_items",
+            user=user,
+            session=s,
+            cutoff=cutoff_7d,
+            upper=now_utc,
+        )
+        interaction_rows_7d_all = cr._KPI_ENGINE.kpi_rows(
+            "interaction_items",
+            user=user,
+            session=s,
+            cutoff=cutoff_7d,
+            upper=now_utc,
+        )
 
-        # Time-windowed aggregates (prev 24h-48h)
-        attempts_prev_24h = cr.kpi_parameter_value(user, "attempt_count", {}, cutoff_48h, cutoff_24h, s) or 0
-        correct_prev_24h = cr.kpi_parameter_value(user, "correct_count", {}, cutoff_48h, cutoff_24h, s) or 0
-        points_prev_24h = cr.kpi_parameter_value(user, "points_sum", {}, cutoff_48h, cutoff_24h, s) or 0
-        hint_uses_prev_24h = cr.kpi_parameter_value(user, "hint_uses_window", {}, cutoff_48h, cutoff_24h, s) or 0
+        total_sessions = len(session_rows_all)
+        completed_sessions = sum(1 for row in session_rows_all if getattr(row, "ended_at", None) is not None)
 
-        # Dimension aggregations (all-time)
-        subject_session_counts = cr.kpi_parameter_value(user, "subject_session_counts", {}, now_utc, None, s) or {}
-        level_session_counts = cr.kpi_parameter_value(user, "level_session_counts", {}, now_utc, None, s) or {}
-        task_type_counts = cr.kpi_parameter_value(user, "task_type_counts", {}, now_utc, None, s) or {}
+        subject_rows = [getattr(row, "targy", None) for row in session_rows_all]
+        subjects_used = {value for value in subject_rows if _is_real_dimension_value(value)}
 
-        # Dimension aggregations (7d window)
-        subject_session_counts_7d = cr.kpi_parameter_value(user, "subject_session_counts_window", {}, cutoff_7d, now_utc, s) or {}
-        level_session_counts_7d = cr.kpi_parameter_value(user, "level_session_counts_window", {}, cutoff_7d, now_utc, s) or {}
+        level_rows = [getattr(row, "szint", None) for row in session_rows_all]
+        levels_used = {value for value in level_rows if _is_real_dimension_value(value)}
 
-        # Event aggregations (last 24h and 7d)
-        event_counts_last_24h = cr.kpi_parameter_value(user, "event_count_by_type", {}, cutoff_24h, now_utc, s) or {}
-        event_counts_last_7d = cr.kpi_parameter_value(user, "event_count_by_type", {}, cutoff_7d, now_utc, s) or {}
+        # last 7 days play days
+        recent_sessions = [
+            _as_utc(ts)
+            for row in session_rows_7d_all
+            for ts in [getattr(row, "started_at", None)]
+            if isinstance(ts, datetime)
+        ]
+        recent_days = len({dt.date() for dt in recent_sessions})
 
-        # Reevaluations
-        reevaluations_7d = cr.kpi_parameter_value(user, "reevaluations_7d", {}, cutoff_7d, now_utc, s) or 0
-        reevaluation_improved_7d = cr.kpi_parameter_value(user, "reevaluations_improved_7d", {}, cutoff_7d, now_utc, s) or 0
+        # current streak
+        all_session_dates = sorted(
+            {
+                _as_utc(ts).date()
+                for row in session_rows_all
+                for ts in [getattr(row, "started_at", None)]
+                if isinstance(ts, datetime)
+            }
+        )
+        current_streak = _trailing_streak(all_session_dates)
 
-        # Pending rewards
-        pending_rewards_count = cr.kpi_parameter_value(user, "pending_rewards", {}, now_utc, None, s) or 0
+        # current best/curr correct streak from existing KPI rows
+        best_correct_streak = helyes_attempts.max_streak()
+        current_correct_streak = helyes_attempts.current_streak()
 
-        # Complex 7d aggregations
-        daily_attempts_7d = cr.kpi_parameter_value(user, "daily_attempts_7d", {}, cutoff_7d, now_utc, s) or []
-        answer_outcomes_7d = cr.kpi_parameter_value(user, "answer_outcomes_7d", {}, cutoff_7d, now_utc, s) or {}
-        recent_events = cr.kpi_parameter_value(user, "recent_events_7d", {}, cutoff_7d, now_utc, s) or []
+        # hint usage in last 20 correct answers
+        last_20_correct_hints = [
+            bool(getattr(row, "segitseg_kert", False))
+            for row in sorted(
+                helyes_rows_all,
+                key=lambda r: (_as_utc(getattr(r, "created_at")), int(getattr(r, "id", 0))),
+                reverse=True,
+            )[:20]
+        ]
+        hint_free_correct = sum(1 for h in last_20_correct_hints if not h)
 
-    # Compute derived values
+        # average elapsed_sec for correct answers
+        elapsed_values = [
+            float(elapsed)
+            for row in helyes_rows_all
+            for elapsed in [getattr(row, "elapsed_sec", None)]
+            if isinstance(elapsed, (int, float))
+        ]
+        avg_elapsed = (sum(elapsed_values) / len(elapsed_values)) if elapsed_values else None
+
+        attempt_rows_7d = [
+            (
+                getattr(row, "created_at"),
+                bool(getattr(row, "helyes", False)),
+                getattr(row, "pont", 0),
+                bool(getattr(row, "segitseg_kert", False)),
+            )
+            for row in sorted(
+                (
+                    row
+                    for row in attempt_rows_7d_all
+                    if isinstance(getattr(row, "created_at", None), datetime)
+                ),
+                key=lambda r: (_as_utc(getattr(r, "created_at")), int(getattr(r, "id", 0))),
+            )
+        ]
+
+        subject_rows_7d = [
+            (getattr(row, "targy", None),)
+            for row in session_rows_7d_all
+            if isinstance(getattr(row, "started_at", None), datetime)
+        ]
+        level_rows_7d = [
+            (getattr(row, "szint", None),)
+            for row in session_rows_7d_all
+            if isinstance(getattr(row, "started_at", None), datetime)
+        ]
+        feladat_tipus_counts = Counter(
+            value
+            for value in s.scalars(
+                select(FeladatRecord.feladat_tipus)
+                .join(MegoldasRecord, MegoldasRecord.feladat_id == FeladatRecord.id)
+                .where(MegoldasRecord.felhasznalo_nev == user)
+            ).all()
+            if _is_real_dimension_value(value)
+        )
+
+        event_rows_7d = [
+            (
+                getattr(row, "tipus", ""),
+                getattr(row, "created_at"),
+                getattr(row, "targy", None),
+                getattr(row, "szint", None),
+                getattr(row, "feladat_id", None),
+            )
+            for row in sorted(
+                interaction_rows_7d_all,
+                key=lambda r: (_as_utc(getattr(r, "created_at")), int(getattr(r, "id", 0))),
+                reverse=True,
+            )
+        ]
+
+        pending_rewards_count = sum(1 for row in attempt_rows_all if bool(getattr(row, "jutalom_varakozik", False)))
+
+        hint_uses_last_24h = sum(
+            1
+            for row in attempt_rows_48h_all
+            if isinstance(getattr(row, "created_at", None), datetime)
+            and _as_utc(getattr(row, "created_at")) >= cutoff_24h
+            and bool(getattr(row, "segitseg_kert", False))
+        )
+        hint_uses_prev_24h = sum(
+            1
+            for row in attempt_rows_48h_all
+            if isinstance(getattr(row, "created_at", None), datetime)
+            and cutoff_48h <= _as_utc(getattr(row, "created_at")) < cutoff_24h
+            and bool(getattr(row, "segitseg_kert", False))
+        )
+
+        reevaluation_rows_7d = [
+            (getattr(row, "eredeti_pont", None), getattr(row, "pont", None))
+            for row in attempt_rows_7d_all
+            if bool(getattr(row, "ujraertekelt", False))
+            and getattr(row, "ujraertekelt_at", None) is not None
+            and _as_utc(getattr(row, "ujraertekelt_at")) >= cutoff_7d
+        ]
+
     accuracy = round(correct / total_attempts * 100, 1) if total_attempts else 0.0
+
+    daily_attempts_7d: dict[str, dict[str, int | float | str]] = {}
+    answer_outcomes_7d = Counter()
+
+    for created_at, is_correct, points, segitseg_kert in attempt_rows_7d:
+        created_utc = _as_utc(created_at)
+        day_key = created_utc.date().isoformat()
+        if day_key not in daily_attempts_7d:
+            daily_attempts_7d[day_key] = {
+                "date": day_key,
+                "attempts": 0,
+                "correct": 0,
+                "points": 0,
+                "accuracy_pct": 0.0,
+            }
+        bucket = daily_attempts_7d[day_key]
+        bucket["attempts"] = int(bucket["attempts"]) + 1
+        bucket["points"] = int(bucket["points"]) + int(points or 0)
+        if is_correct:
+            bucket["correct"] = int(bucket["correct"]) + 1
+
+        if is_correct:
+            answer_outcomes_7d["helyes"] += 1
+        elif int(points or 0) > 0:
+            answer_outcomes_7d["reszleges"] += 1
+        else:
+            answer_outcomes_7d["helytelen"] += 1
+
+    for bucket in daily_attempts_7d.values():
+        attempts = int(bucket["attempts"])
+        correct_attempts = int(bucket["correct"])
+        bucket["accuracy_pct"] = round(correct_attempts / attempts * 100, 1) if attempts else 0.0
+
+    event_counts_last_24h = Counter()
+    event_counts_last_7d = Counter()
+    recent_events: list[dict[str, object]] = []
+    for tipus, created_at, targy, szint, feladat_id in event_rows_7d:
+        created_utc = _as_utc(created_at)
+        event_counts_last_7d[str(tipus)] += 1
+        if created_utc >= cutoff_24h:
+            event_counts_last_24h[str(tipus)] += 1
+        if len(recent_events) < 8:
+            recent_events.append(
+                {
+                    "type": str(tipus),
+                    "created_at": created_utc.isoformat(),
+                    "targy": targy,
+                    "szint": szint if _is_real_dimension_value(szint) else None,
+                    "feladat_id": feladat_id,
+                }
+            )
+
+    reevaluation_improved_count = sum(
+        1
+        for old_points, new_points in reevaluation_rows_7d
+        if old_points is not None and int(new_points or 0) > int(old_points or 0)
+    )
+
+    subject_session_counts = Counter(value for value in subject_rows if _is_real_dimension_value(value))
+    subject_session_counts_7d = Counter(value for (value,) in subject_rows_7d if _is_real_dimension_value(value))
+    level_session_counts = Counter(value for value in level_rows if _is_real_dimension_value(value))
+    level_session_counts_7d = Counter(value for (value,) in level_rows_7d if _is_real_dimension_value(value))
+
     accuracy_last_24h = round(correct_last_24h / attempts_last_24h * 100, 1) if attempts_last_24h else None
     accuracy_prev_24h = round(correct_prev_24h / attempts_prev_24h * 100, 1) if attempts_prev_24h else None
 
@@ -634,10 +848,10 @@ def get_user_stats(user: str, repo: FeladatRepository) -> dict:
         "accuracy_pct": accuracy,
         "total_sessions": total_sessions,
         "completed_sessions": completed_sessions,
-        "subjects_used": subjects_used,
-        "levels_used": levels_used,
-        "recent_days_7d": recent_days_7d,
-        "current_streak_days": play_day_streak_current,
+        "subjects_used": sorted(subjects_used),
+        "levels_used": sorted(levels_used),
+        "recent_days_7d": recent_days,
+        "current_streak_days": current_streak,
         "best_correct_streak": best_correct_streak,
         "current_correct_streak": current_correct_streak,
         "hint_free_correct_last20": hint_free_correct,
@@ -655,30 +869,36 @@ def get_user_stats(user: str, repo: FeladatRepository) -> dict:
             "hint_uses_prev_24h": hint_uses_prev_24h,
             "activity_trend": _trend_label(attempts_last_24h, attempts_prev_24h),
             "accuracy_trend": _trend_label(accuracy_last_24h, accuracy_prev_24h),
-            "daily_attempts_7d": daily_attempts_7d,
-            "answer_outcomes_7d": answer_outcomes_7d,
+            "daily_attempts_7d": [daily_attempts_7d[key] for key in sorted(daily_attempts_7d)],
+            "answer_outcomes_7d": dict(answer_outcomes_7d),
         },
         "patterns": {
-            "subject_session_counts": subject_session_counts,
-            "subject_session_counts_7d": subject_session_counts_7d,
-            "level_session_counts": level_session_counts,
-            "level_session_counts_7d": level_session_counts_7d,
-            "attempt_task_type_counts": task_type_counts,
+            "subject_session_counts": dict(subject_session_counts),
+            "subject_session_counts_7d": dict(subject_session_counts_7d),
+            "level_session_counts": dict(level_session_counts),
+            "level_session_counts_7d": dict(level_session_counts_7d),
+            "attempt_task_type_counts": dict(feladat_tipus_counts),
             "help_usage_last20": {
                 "hint_free_correct": hint_free_correct,
-                "hint_used_correct": hints_stats.get("hint_used", 0) if isinstance(hints_stats, dict) else 0,
+                "hint_used_correct": max(0, len(last_20_correct_hints) - hint_free_correct),
             },
         },
         "events": {
-            "counts_last_24h": event_counts_last_24h,
-            "counts_last_7d": event_counts_last_7d,
-            "reevaluations_last_7d": reevaluations_7d,
-            "reevaluation_improved_last_7d": reevaluation_improved_7d,
+            "counts_last_24h": dict(event_counts_last_24h),
+            "counts_last_7d": dict(event_counts_last_7d),
+            "reevaluations_last_7d": len(reevaluation_rows_7d),
+            "reevaluation_improved_last_7d": reevaluation_improved_count,
             "pending_reward_attempts": int(pending_rewards_count),
             "recent": recent_events,
         },
     }
 
+
+def _kpi_last(values: list[int | float | None]) -> float:
+    if not isinstance(values, list) or not values:
+        return 0.0
+    value = values[-1]
+    return float(value) if isinstance(value, (int, float)) else 0.0
 
 
 def _as_utc(dt: datetime) -> datetime:

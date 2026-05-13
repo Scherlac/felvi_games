@@ -222,7 +222,12 @@ def _condition_matches_trigger(condition: dict, trigger_tipus: str | None, sessi
     return trigger_bucket in cr.effective_events(condition)
 
 
-def _window_bounds(valid_from: datetime | None, window_h: float) -> tuple[datetime, datetime | None]:
+def _window_bounds(
+    valid_from: datetime | None,
+    window_h: float,
+    *,
+    now_utc: datetime | None = None,
+) -> tuple[datetime, datetime | None]:
     """Resolve (cutoff, upper) bounds, honoring simulation context.
 
     When *valid_from* is given it is used as the lower-bound anchor.
@@ -230,7 +235,7 @@ def _window_bounds(valid_from: datetime | None, window_h: float) -> tuple[dateti
       - ``window_h`` of 0 means "all-time" (the caller omitted window_hours)
       - any positive value means rolling window of that size
     """
-    now_utc = _sim_now()
+    now_utc = now_utc or _sim_now()
     rolling_cutoff = now_utc - timedelta(hours=window_h) if window_h > 0 else None
 
     if valid_from is not None:
@@ -243,8 +248,14 @@ def _window_bounds(valid_from: datetime | None, window_h: float) -> tuple[dateti
         # Use Unix epoch as a practical all-time lower bound for SQL backends.
         cutoff = datetime(1970, 1, 1, tzinfo=timezone.utc)
     _as_of = _simulation_as_of.get()
-    upper = _as_of if _as_of is not None else None
+    upper = _as_of if _as_of is not None else now_utc
     return cutoff, upper
+
+
+def _session_eval_now(eval_session: Session | None) -> datetime | None:
+    if eval_session is None:
+        return None
+    return eval_session.info.setdefault("_dynamic_condition_now", _sim_now())
 
 
 def _eval_dynamic_condition(
@@ -270,7 +281,11 @@ def _eval_dynamic_condition(
             return False
         n = int(cond.get("n", 1))
         window_h = float(cond["window_hours"]) if "window_hours" in cond else 0.0
-        cutoff, upper = _window_bounds(valid_from, window_h)
+        cutoff, upper = _window_bounds(
+            valid_from,
+            window_h,
+            now_utc=_session_eval_now(eval_session),
+        )
         if eval_session is None:
             with Session(engine) as s:
                 if not spec.evaluator(user, cond, n, cutoff, upper, s):
@@ -300,7 +315,11 @@ def _count_dynamic_condition(
     ctype = cr.condition_type(first)
     target = 1 if ctype == "interakcio_exists" else n
     window_h = float(first["window_hours"]) if "window_hours" in first else 0.0
-    cutoff, upper = _window_bounds(valid_from, window_h)
+    cutoff, upper = _window_bounds(
+        valid_from,
+        window_h,
+        now_utc=_session_eval_now(eval_session),
+    )
     if eval_session is None:
         with Session(engine) as s:
             cnt = spec.count_fn(user, first, cutoff, upper, s)

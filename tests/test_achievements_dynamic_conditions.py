@@ -173,6 +173,61 @@ def test_eval_dynamic_condition_reuses_kpi_cache_with_shared_session(repo) -> No
     assert calls["count"] == 1
 
 
+def test_eval_dynamic_condition_attempt_count_and_pont_sum_share_attempt_items_cache(repo) -> None:
+    user = "Lori"
+    created = datetime(2026, 5, 2, 8, 0, tzinfo=timezone.utc)
+    _insert_attempt_at(repo, user, created, pont=3)
+
+    original = cr._KPI_ENGINE.get("attempt_items")
+    assert original is not None
+    assert original.query_fn is not None
+
+    calls = {"query": 0}
+
+    def wrapped_query(ctx, session):
+        calls["query"] += 1
+        return original.query_fn(ctx, session)
+
+    cr._KPI_ENGINE.register(
+        name=original.name,
+        type="item",
+        query_fn=wrapped_query,
+        timestamp_fn=original.timestamp_fn,
+        description=original.description,
+        metric_name=original.metric_name,
+        key_fields=original.key_fields,
+        stats_supported=original.stats_supported,
+    )
+
+    try:
+        with Session(repo._engine) as shared:
+            assert _eval_dynamic_condition(
+                user,
+                {"type": "feladat_count", "n": 1, "window_hours": 24 * 365},
+                repo._engine,
+                eval_session=shared,
+            ) is True
+            assert _eval_dynamic_condition(
+                user,
+                {"type": "pont_sum", "n": 3, "window_hours": 24 * 365},
+                repo._engine,
+                eval_session=shared,
+            ) is True
+    finally:
+        cr._KPI_ENGINE.register(
+            name=original.name,
+            type="item",
+            query_fn=original.query_fn,
+            timestamp_fn=original.timestamp_fn,
+            description=original.description,
+            metric_name=original.metric_name,
+            key_fields=original.key_fields,
+            stats_supported=original.stats_supported,
+        )
+
+    assert calls["query"] == 1
+
+
 def test_eval_dynamic_condition_short_circuits_compound_conditions(repo) -> None:
     user = "Lori"
     created = datetime(2026, 5, 2, 8, 0, tzinfo=timezone.utc)
