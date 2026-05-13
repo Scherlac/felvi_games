@@ -34,13 +34,26 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from felvi_games.kpi_definitions import KPI_ENGINE as _KPI_ENGINE
+from felvi_games.kpi_registry import (
+    _kpi_total_count,
+    _kpi_total_sum,
+    _attempt_rows,
+    _session_rows,
+    _helyes_sequence,
+    _max_streak,
+    _perfect_session_count,
+    _play_days,
+    _day_streak_current,
+    _day_streak_max,
+
+)
 from felvi_games.models import InterakcioTipus
 
 # ---------------------------------------------------------------------------
@@ -268,113 +281,6 @@ def condition_count(
     return None, target   # counting must go through session-aware path in achievements.py
 
 
-# ---------------------------------------------------------------------------
-# Shared query helpers (used only by condition evaluators below)
-# ---------------------------------------------------------------------------
-
-
-def _kpi_total_count(
-    kpi_name: str,
-    user: str,
-    condition: dict,
-    cutoff: datetime,
-    upper: datetime | None,
-    s: Session,
-) -> int:
-    param = _KPI_ENGINE.kpi_parameter(
-        kpi_name,
-        user=user,
-        session=s,
-        condition=condition,
-        cutoff=cutoff,
-        upper=upper,
-        requested_stats={"total"},
-    )
-    return int(param.total_count or 0)
-
-
-def _kpi_total_sum(
-    kpi_name: str,
-    user: str,
-    condition: dict,
-    cutoff: datetime,
-    upper: datetime | None,
-    s: Session,
-) -> int:
-    param = _KPI_ENGINE.kpi_parameter(
-        kpi_name,
-        user=user,
-        session=s,
-        condition=condition,
-        cutoff=cutoff,
-        upper=upper,
-        requested_stats={"total"},
-    )
-    return int(param.total_sum or 0)
-
-
-def _attempt_rows(
-    user: str,
-    cutoff: datetime | None,
-    upper: datetime | None,
-    s: Session,
-    *,
-    condition: dict[str, Any] | None = None,
-) -> list[Any]:
-    return _KPI_ENGINE.kpi_rows(
-        "attempt_items",
-        user=user,
-        session=s,
-        condition=condition,
-        cutoff=cutoff,
-        upper=upper,
-    )
-
-
-def _session_rows(
-    user: str,
-    cutoff: datetime | None,
-    upper: datetime | None,
-    s: Session,
-    *,
-    condition: dict[str, Any] | None = None,
-) -> list[Any]:
-    return _KPI_ENGINE.kpi_rows(
-        "session_items",
-        user=user,
-        session=s,
-        condition=condition,
-        cutoff=cutoff,
-        upper=upper,
-    )
-
-
-def _helyes_sequence(rows: list[Any]) -> list[bool]:
-    return [bool(getattr(row, "helyes", False)) for row in rows]
-
-
-def _max_streak(seq: list[bool]) -> int:
-    best = cur = 0
-    for h in seq:
-        if h:
-            cur += 1
-            best = max(best, cur)
-        else:
-            cur = 0
-    return best
-
-
-def _perfect_session_count(session_rows: list[Any]) -> int:
-    perfect = 0
-    for rec in session_rows:
-        if rec is None or rec.ended_at is None or rec.feladat_limit <= 0 or rec.megoldott < rec.feladat_limit:
-            continue
-        rows = list(getattr(rec, "megoldasok", []) or [])
-        total = len(rows)
-        helyes = sum(1 for row in rows if getattr(row, "helyes", False))
-        if total > 0 and total == helyes == rec.feladat_limit:
-            perfect += 1
-    return perfect
 
 
 # ---------------------------------------------------------------------------
@@ -416,43 +322,13 @@ def _eval_tokeletes_session(user, condition, n, cutoff, upper, s):
     return _perfect_session_count(session_rows) >= n
 
 def _eval_maraton(user, condition, n, cutoff, upper, s):
-    from felvi_games.db import MenetRecord
     if n < 1:
         return False
-    sid = condition.get("session_id")
-    if sid is not None:
-        try:
-            sid = int(sid)
-        except (TypeError, ValueError):
-            return False
-        rec = s.get(MenetRecord, sid)
-        return bool(rec and rec.feladat_limit >= 30 and rec.megoldott >= 30)
-    stmt = (
-        select(MenetRecord.feladat_limit, MenetRecord.megoldott)
-        .where(
-            MenetRecord.felhasznalo_nev == user,
-            MenetRecord.started_at >= cutoff,
-            MenetRecord.ended_at.is_not(None),
-            MenetRecord.feladat_limit >= 30,
-            MenetRecord.megoldott >= 30,
-        )
-    )
-    if upper:
-        stmt = stmt.where(MenetRecord.started_at <= upper)
-    cnt = s.scalar(select(func.count()).select_from(stmt.subquery())) or 0
-    return cnt >= n
+    return _kpi_total_count("maraton_sessions", user, condition, cutoff, upper, s) >= n
 
 def _eval_special_date(user, condition, n, cutoff, upper, s):
-    from felvi_games.db import MegoldasRecord
-    date_mmdd = condition.get("date", "")
     target = int(condition.get("feladat_count", 1))
-    cnt = s.scalar(
-        select(func.count()).select_from(MegoldasRecord)
-        .where(
-            MegoldasRecord.felhasznalo_nev == user,
-            func.strftime("%m-%d", MegoldasRecord.created_at) == date_mmdd,
-        )
-    ) or 0
+    cnt = _kpi_total_count("special_date_attempts", user, condition, cutoff, upper, s)
     return cnt >= target
 
 def _eval_interakcio_count(user, condition, n, cutoff, upper, s):
@@ -659,63 +535,6 @@ register(ConditionDef(
 ))
 
 # ---------------------------------------------------------------------------
-# Shared helpers for play-day and streak computation
-# ---------------------------------------------------------------------------
-
-def _play_days(session_rows: list[Any]) -> list[datetime]:
-    """Sorted list of distinct play-day datetimes (UTC midnight)."""
-    seen: set[str] = set()
-    days: list[datetime] = []
-    for row in session_rows:
-        dt = getattr(row, "started_at", None)
-        if not isinstance(dt, datetime):
-            continue
-        d = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
-        d = d.replace(hour=0, minute=0, second=0, microsecond=0)
-        key = d.strftime("%Y-%m-%d")
-        if key not in seen:
-            seen.add(key)
-            days.append(d)
-    return days
-
-
-def _day_streak_current(days: list[datetime]) -> int:
-    """Current trailing streak of consecutive play days (must include today or yesterday)."""
-    if not days:
-        return 0
-    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-    streak = 0
-    prev = today
-    for d in reversed(days):
-        if (prev - d).days <= 1:
-            streak += 1
-            prev = d
-        else:
-            break
-    return streak
-
-
-def _day_streak_max(days: list[datetime]) -> int:
-    """All-time longest consecutive play day streak."""
-    if not days:
-        return 0
-    best = current = 1
-    for i in range(1, len(days)):
-        if (days[i] - days[i - 1]).days == 1:
-            current += 1
-            best = max(best, current)
-        else:
-            current = 1
-    return best
-
-
-# Task types that must all be covered for feladattipus_cover
-_FELADAT_TIPUSOK_COVER = frozenset({
-    "nyilt_valasz", "tobbvalasztos", "parositas", "igaz_hamis", "fogalmazas", "kitoltes",
-})
-
-
-# ---------------------------------------------------------------------------
 # New evaluators
 # ---------------------------------------------------------------------------
 
@@ -742,98 +561,25 @@ def _eval_day_streak_max(user, condition, n, cutoff, upper, s):
 
 def _eval_hint_nelkul(user, condition, n, cutoff, upper, s):
     """Last N answers contain no hint requests."""
-    from felvi_games.db import MegoldasRecord
-    stmt = (
-        select(MegoldasRecord.segitseg_kert)
-        .where(MegoldasRecord.felhasznalo_nev == user)
-        .order_by(MegoldasRecord.created_at.desc())
-        .limit(n)
-    )
-    if upper:
-        stmt = (
-            select(MegoldasRecord.segitseg_kert)
-            .where(MegoldasRecord.felhasznalo_nev == user, MegoldasRecord.created_at <= upper)
-            .order_by(MegoldasRecord.created_at.desc())
-            .limit(n)
-        )
-    rows = s.scalars(stmt).all()
-    return len(rows) == n and not any(rows)
+    recent = _kpi_total_count("recent_n_attempt_items", user, condition, None, upper, s)
+    hinted = _kpi_total_count("recent_n_hint_requests", user, condition, None, upper, s)
+    return recent == n and hinted == 0
 
 def _eval_pontossag(user, condition, n, cutoff, upper, s):
     """At least n attempts with accuracy >= min_ratio (all-time, ignores cutoff)."""
-    from felvi_games.db import FeladatRecord, MegoldasRecord
-    min_ratio = float(condition.get("min_ratio", 0.8))
-    filters = [MegoldasRecord.felhasznalo_nev == user]
-    if upper:
-        filters.append(MegoldasRecord.created_at <= upper)
-    total = s.scalar(select(func.count()).select_from(MegoldasRecord).where(*filters)) or 0
-    if total < n:
-        return False
-    earned = s.scalar(select(func.sum(MegoldasRecord.pont)).where(*filters)) or 0
-    max_possible = s.scalar(
-        select(func.sum(FeladatRecord.max_pont))
-        .join(MegoldasRecord, MegoldasRecord.feladat_id == FeladatRecord.id)
-        .where(*filters)
-    ) or 0
-    return max_possible > 0 and (earned / max_possible) >= min_ratio
+    return _kpi_total_count("pontossag_gate", user, condition, None, upper, s) >= 1
 
 def _eval_menet_cover(user, condition, n, cutoff, upper, s):
     """Sessions cover all required values of a menet attribute (all-time)."""
-    from felvi_games.db import MenetRecord
-    attr = str(condition.get("attr", ""))
-    values = condition.get("values", [])
-    if not attr or not values:
-        return False
-    required = set(values)
-    col = getattr(MenetRecord, attr, None)
-    if col is None:
-        return False
-    stmt = select(col).where(MenetRecord.felhasznalo_nev == user)
-    if upper:
-        stmt = stmt.where(MenetRecord.started_at <= upper)
-    return required.issubset(set(s.scalars(stmt).all()))
+    return _kpi_total_count("menet_cover_gate", user, condition, None, upper, s) >= 1
 
 def _eval_feladattipus_cover(user, condition, n, cutoff, upper, s):
     """All required feladat_tipus values have been encountered (all-time)."""
-    from felvi_games.db import FeladatRecord, MegoldasRecord
-    stmt = (
-        select(FeladatRecord.feladat_tipus)
-        .join(MegoldasRecord, MegoldasRecord.feladat_id == FeladatRecord.id)
-        .where(MegoldasRecord.felhasznalo_nev == user)
-    )
-    if upper:
-        stmt = stmt.where(MegoldasRecord.created_at <= upper)
-    rows = s.scalars(stmt).all()
-    return _FELADAT_TIPUSOK_COVER.issubset({r for r in rows if r})
+    return _kpi_total_count("feladattipus_cover_gate", user, condition, None, upper, s) >= 1
 
 def _eval_pentek_matek(user, condition, n, cutoff, upper, s):
     """All Fridays of the previous calendar month were covered with matek sessions."""
-    from felvi_games.db import MenetRecord
-    now = datetime.now(timezone.utc)
-    first_this = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    last_prev = first_this - timedelta(seconds=1)
-    first_prev = last_prev.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    fridays: set[str] = set()
-    d = first_prev
-    while d <= last_prev:
-        if d.weekday() == 4:
-            fridays.add(d.strftime("%Y-%m-%d"))
-        d += timedelta(days=1)
-    if not fridays:
-        return False
-    rows = s.scalars(
-        select(MenetRecord.started_at).where(
-            MenetRecord.felhasznalo_nev == user,
-            MenetRecord.targy == "matek",
-            MenetRecord.started_at >= first_prev,
-            MenetRecord.started_at <= last_prev,
-        )
-    ).all()
-    def _day(dt: datetime) -> datetime:
-        x = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
-        return x.replace(hour=0, minute=0, second=0, microsecond=0)
-    played_fridays = {_day(dt).strftime("%Y-%m-%d") for dt in rows if _day(dt).weekday() == 4}
-    return fridays.issubset(played_fridays)
+    return _kpi_total_count("pentek_matek_gate", user, condition, None, upper, s) >= 1
 
 
 # ---------------------------------------------------------------------------
@@ -858,23 +604,9 @@ def _count_day_streak_max(user, condition, cutoff, upper, s):
 
 def _count_hint_nelkul(user, condition, cutoff, upper, s):
     """Returns how many of the last n answers have no hint (for progress display)."""
-    from felvi_games.db import MegoldasRecord
-    n = int(condition.get("n", 20))
-    stmt = (
-        select(MegoldasRecord.segitseg_kert)
-        .where(MegoldasRecord.felhasznalo_nev == user)
-        .order_by(MegoldasRecord.created_at.desc())
-        .limit(n)
-    )
-    if upper:
-        stmt = (
-            select(MegoldasRecord.segitseg_kert)
-            .where(MegoldasRecord.felhasznalo_nev == user, MegoldasRecord.created_at <= upper)
-            .order_by(MegoldasRecord.created_at.desc())
-            .limit(n)
-        )
-    rows = s.scalars(stmt).all()
-    return sum(1 for h in rows if not h)
+    recent = _kpi_total_count("recent_n_attempt_items", user, condition, None, upper, s)
+    hinted = _kpi_total_count("recent_n_hint_requests", user, condition, None, upper, s)
+    return max(recent - hinted, 0)
 
 
 # ---------------------------------------------------------------------------

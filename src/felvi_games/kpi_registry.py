@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Literal, Protocol, cast
 
+from sqlalchemy.orm import Session
+
 
 JSONScalar = int | float | str | bool | None
 JSONValue = JSONScalar | list["JSONValue"] | dict[str, "JSONValue"]
@@ -591,3 +593,188 @@ class KPIRegistry:
             return None
         value = metric_values[-1]
         return value if isinstance(value, (int, float)) else None
+
+
+
+def _kpi_engine() -> KPIRegistry:
+    from felvi_games.kpi_definitions import KPI_ENGINE
+
+    return KPI_ENGINE
+
+
+def _kpi_total_count(
+    kpi_name: str,
+    user: str,
+    condition: dict,
+    cutoff: datetime | None,
+    upper: datetime | None,
+    s: Session,
+) -> int:
+    param = _kpi_engine().kpi_parameter(
+        kpi_name,
+        user=user,
+        session=s,
+        condition=condition,
+        cutoff=cutoff,
+        upper=upper,
+        requested_stats={"total"},
+    )
+    return int(param.total_count or 0)
+
+def _kpi_total_count_gt(
+    kpi_name: str,
+    threshold: int,
+    user: str,
+    condition: dict,
+    cutoff: datetime | None,
+    upper: datetime | None,
+    s: Session,
+) -> bool:
+    return _kpi_total_count(kpi_name, user, condition, cutoff, upper, s) > threshold
+
+def _kpi_total_count_gte(
+    kpi_name: str,
+    threshold: int,
+    user: str,
+    condition: dict,
+    cutoff: datetime | None,
+    upper: datetime | None,
+    s: Session,
+) -> bool:
+    return _kpi_total_count(kpi_name, user, condition, cutoff, upper, s) >= threshold
+
+def _kpi_total_sum(
+    kpi_name: str,
+    user: str,
+    condition: dict,
+    cutoff: datetime | None,
+    upper: datetime | None,
+    s: Session,
+) -> int:
+    param = _kpi_engine().kpi_parameter(
+        kpi_name,
+        user=user,
+        session=s,
+        condition=condition,
+        cutoff=cutoff,
+        upper=upper,
+        requested_stats={"total"},
+    )
+    return int(param.total_sum or 0)
+
+
+def _attempt_rows(
+    user: str,
+    cutoff: datetime | None,
+    upper: datetime | None,
+    s: Session,
+    *,
+    condition: dict[str, Any] | None = None,
+) -> list[Any]:
+    return _kpi_engine().kpi_rows(
+        "attempt_items",
+        user=user,
+        session=s,
+        condition=condition,
+        cutoff=cutoff,
+        upper=upper,
+    )
+
+
+def _session_rows(
+    user: str,
+    cutoff: datetime | None,
+    upper: datetime | None,
+    s: Session,
+    *,
+    condition: dict[str, Any] | None = None,
+) -> list[Any]:
+    return _kpi_engine().kpi_rows(
+        "session_items",
+        user=user,
+        session=s,
+        condition=condition,
+        cutoff=cutoff,
+        upper=upper,
+    )
+
+
+def _helyes_sequence(rows: list[Any]) -> list[bool]:
+    return [bool(getattr(row, "helyes", False)) for row in rows]
+
+
+def _max_streak(seq: list[bool]) -> int:
+    best = cur = 0
+    for h in seq:
+        if h:
+            cur += 1
+            best = max(best, cur)
+        else:
+            cur = 0
+    return best
+
+
+def _perfect_session_count(session_rows: list[Any]) -> int:
+    perfect = 0
+    for rec in session_rows:
+        if rec is None or rec.ended_at is None or rec.feladat_limit <= 0 or rec.megoldott < rec.feladat_limit:
+            continue
+        rows = list(getattr(rec, "megoldasok", []) or [])
+        total = len(rows)
+        helyes = sum(1 for row in rows if getattr(row, "helyes", False))
+        if total > 0 and total == helyes == rec.feladat_limit:
+            perfect += 1
+    return perfect
+
+
+def _play_days(session_rows: list[Any]) -> list[datetime]:
+    """Sorted list of distinct play-day datetimes (UTC midnight)."""
+    seen: set[str] = set()
+    days: list[datetime] = []
+    for row in session_rows:
+        dt = getattr(row, "started_at", None)
+        if not isinstance(dt, datetime):
+            continue
+        d = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+        d = d.replace(hour=0, minute=0, second=0, microsecond=0)
+        key = d.strftime("%Y-%m-%d")
+        if key not in seen:
+            seen.add(key)
+            days.append(d)
+    return days
+
+
+def _day_streak_current(days: list[datetime]) -> int:
+    """Current trailing streak of consecutive play days (must include today or yesterday)."""
+    if not days:
+        return 0
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    streak = 0
+    prev = today
+    for d in reversed(days):
+        if (prev - d).days <= 1:
+            streak += 1
+            prev = d
+        else:
+            break
+    return streak
+
+
+def _day_streak_max(days: list[datetime]) -> int:
+    """All-time longest consecutive play day streak."""
+    if not days:
+        return 0
+    best = current = 1
+    for i in range(1, len(days)):
+        if (days[i] - days[i - 1]).days == 1:
+            current += 1
+            best = max(best, current)
+        else:
+            current = 1
+    return best
+
+
+_FELADAT_TIPUSOK_COVER = frozenset({
+    "nyilt_valasz", "tobbvalasztos", "parositas", "igaz_hamis", "fogalmazas", "kitoltes",
+})
+
