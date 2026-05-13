@@ -169,17 +169,6 @@ def kategoria_mappa(href: str) -> str:
     return "6_osztaly"
 
 
-def ev_szam(href: str) -> str | None:
-    """Kinyeri az évet a href-ből vagy szövegből."""
-    m = re.search(r"[_/\-](\d{4})[_/\-]", href)
-    if m:
-        return m.group(1)
-    m = re.search(r"(\d{4})", href)
-    if m:
-        return m.group(1)
-    return None
-
-
 # ---------------------------------------------------------------------------
 # 1. lépés: Főoldal – évenkénti linkek összegyűjtése
 # ---------------------------------------------------------------------------

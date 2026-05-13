@@ -28,7 +28,6 @@ from dataclasses import field as _field
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 import felvi_games.condition_registry as cr
@@ -90,31 +89,6 @@ def _repeatable_cooldown_hours(erem: Erem) -> int:
 def _cooldown_elapsed(erem: Erem, last_award_at: datetime, now: datetime) -> bool:
     hours = _repeatable_cooldown_hours(erem)
     return now >= (_as_utc(last_award_at) + timedelta(hours=hours))
-
-
-def _has_new_activity_after(user: str, engine: Engine, since: datetime) -> bool:
-    from felvi_games.db import InterakcioRecord, MegoldasRecord, MenetRecord
-
-    since_utc = _as_utc(since)
-    _as_of = _simulation_as_of.get()
-    with Session(engine) as s:
-        m_stmt = (
-            select(func.count()).select_from(MegoldasRecord)
-            .where(MegoldasRecord.felhasznalo_nev == user, MegoldasRecord.created_at > since_utc)
-        )
-        n_stmt = (
-            select(func.count()).select_from(MenetRecord)
-            .where(MenetRecord.felhasznalo_nev == user, MenetRecord.started_at > since_utc)
-        )
-        i_stmt = (
-            select(func.count()).select_from(InterakcioRecord)
-            .where(InterakcioRecord.felhasznalo_nev == user, InterakcioRecord.created_at > since_utc)
-        )
-        if _as_of is not None:
-            m_stmt = m_stmt.where(MegoldasRecord.created_at <= _as_of)
-            n_stmt = n_stmt.where(MenetRecord.started_at <= _as_of)
-            i_stmt = i_stmt.where(InterakcioRecord.created_at <= _as_of)
-        return (s.scalar(m_stmt) or 0) > 0 or (s.scalar(n_stmt) or 0) > 0 or (s.scalar(i_stmt) or 0) > 0
 
 
 def _effective_condition_valid_from(erem: Erem, last_award_at: datetime | None) -> datetime | None:
@@ -241,9 +215,10 @@ def _eval_dynamic_condition(
         )
         if eval_session is None:
             with Session(engine) as s:
-                if not spec.evaluator(user, cond, n, cutoff, upper, s):
-                    return False
-        elif not spec.evaluator(user, cond, n, cutoff, upper, eval_session):
+                ok = spec.evaluator(user, cond, n, cutoff, upper, s)
+        else:
+            ok = spec.evaluator(user, cond, n, cutoff, upper, eval_session)
+        if not ok:
             return False
     return True
 
@@ -255,12 +230,10 @@ def _count_dynamic_condition(
     valid_from: datetime | None = None,
     eval_session: Session | None = None,
 ) -> tuple[int | None, int | None]:
-    """Return (current_value, target_n) for progress display.
-
-    For compound conditions returns the progress of the first sub-condition.
-    Returns (None, None) when the condition type has no countable scalar.
-    """
-    first = condition[0] if isinstance(condition, list) else condition
+    items = condition if isinstance(condition, list) else [condition]
+    first = items[0] if items else None
+    if first is None:
+        return None, None
     spec = cr.from_dict(first)
     if spec is None or spec.count_fn is None:
         return None, None

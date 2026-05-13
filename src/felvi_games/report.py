@@ -27,8 +27,19 @@ logger = logging.getLogger(__name__)
 # Data containers
 # ---------------------------------------------------------------------------
 
+
+class AccuracyPctMixin:
+    """Shared percentage helper for rows with attempts/correct counters."""
+
+    attempts: int
+    correct: int
+
+    @property
+    def accuracy_pct(self) -> float:
+        return (self.correct / self.attempts * 100) if self.attempts > 0 else 0.0
+
 @dataclass
-class UserSummary:
+class UserSummary(AccuracyPctMixin):
     nev: str
     sessions: int = 0
     play_time_min: float = 0.0
@@ -37,23 +48,15 @@ class UserSummary:
     points: int = 0
     new_achievements: int = 0
 
-    @property
-    def accuracy_pct(self) -> float:
-        return (self.correct / self.attempts * 100) if self.attempts > 0 else 0.0
-
 
 @dataclass
-class UserTargySzintRow:
+class UserTargySzintRow(AccuracyPctMixin):
     nev: str
     targy: str
     szint: str
     attempts: int = 0
     correct: int = 0
     points: int = 0
-
-    @property
-    def accuracy_pct(self) -> float:
-        return (self.correct / self.attempts * 100) if self.attempts > 0 else 0.0
 
 
 @dataclass
@@ -73,7 +76,7 @@ class DailyActivity:
 
 
 @dataclass
-class DailyDetail:
+class DailyDetail(AccuracyPctMixin):
     """Per-day, per-user, per-tárgy breakdown for points and accuracy charts."""
     datum: str   # YYYY-MM-DD
     nev: str
@@ -81,10 +84,6 @@ class DailyDetail:
     attempts: int = 0
     correct: int = 0
     points: int = 0
-
-    @property
-    def accuracy_pct(self) -> float:
-        return (self.correct / self.attempts * 100) if self.attempts > 0 else 0.0
 
 
 @dataclass

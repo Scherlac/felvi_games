@@ -145,18 +145,6 @@ def asset_subfolder(szint: str, ev: int | None, valtozat: int | None) -> str:
     return f"{szint_slug}_{ev_str}_{val_str}"
 
 
-def asset_path(
-    feladat_id: str,
-    kind: str,          # "kerdes" | "magyarazat"
-    szint: str,
-    ev: int | None,
-    valtozat: int | None,
-) -> Path:
-    """Abszolút elérési út egy TTS asset fájlhoz."""
-    subfolder = asset_subfolder(szint, ev, valtozat)
-    return get_assets_dir() / subfolder / f"{feladat_id}_{kind}.mp3"
-
-
 def relative_asset_path(
     feladat_id: str,
     kind: str,

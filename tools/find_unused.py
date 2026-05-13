@@ -91,6 +91,10 @@ def _collect_definitions(tree: ast.AST, rel_path: str, prefix: str | None) -> li
         def _add(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
             if prefix and not node.name.startswith(prefix):
                 return
+            # Skip dunder methods — they are called implicitly by the runtime
+            # and will never appear as a direct name reference.
+            if node.name.startswith("__") and node.name.endswith("__"):
+                return
             kind = "method" if self._class_stack else "function"
             owner = self._class_stack[-1] if self._class_stack else None
             defs.append(
@@ -133,6 +137,48 @@ def _collect_references(tree: ast.AST) -> set[str]:
     return refs
 
 
+# Decorator attribute names that indicate a function is registered externally
+# and should not be counted as unused even if no direct call site exists.
+_REGISTRATION_DECORATOR_ATTRS: frozenset[str] = frozenset({
+    "command",   # @app.command(), @typer_app.command()
+    "callback",  # @app.callback()
+    "fixture",   # @pytest.fixture
+    "mark",      # @pytest.mark.*
+})
+
+
+def _collect_decorator_registered_names(tree: ast.AST) -> set[str]:
+    """Return names of functions that carry a registration decorator.
+
+    A function is considered externally registered when any of its decorators
+    is a Call or Attribute whose final attribute name is in
+    _REGISTRATION_DECORATOR_ATTRS (e.g. @app.command(), @pytest.fixture).
+    Such functions are treated as implicitly referenced and excluded from the
+    unused-symbol report.
+    """
+    registered: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for dec in node.decorator_list:
+            # @something.command() — Call node wrapping an Attribute
+            if isinstance(dec, ast.Call) and isinstance(dec.func, ast.Attribute):
+                if dec.func.attr in _REGISTRATION_DECORATOR_ATTRS:
+                    registered.add(node.name)
+                    break
+            # @something.command — bare Attribute (without call parens)
+            elif isinstance(dec, ast.Attribute):
+                if dec.attr in _REGISTRATION_DECORATOR_ATTRS:
+                    registered.add(node.name)
+                    break
+            # @fixture — bare Name
+            elif isinstance(dec, ast.Name):
+                if dec.id in _REGISTRATION_DECORATOR_ATTRS:
+                    registered.add(node.name)
+                    break
+    return registered
+
+
 def analyse(py_files: list[Path], repo_root: Path, prefix: str | None = None) -> tuple[list[UnusedSymbol], int]:
     all_defs: list[UnusedSymbol] = []
     all_refs: set[str] = set()
@@ -147,6 +193,7 @@ def analyse(py_files: list[Path], repo_root: Path, prefix: str | None = None) ->
         rel = _rel(py_file, repo_root)
         all_defs.extend(_collect_definitions(tree, rel, prefix))
         all_refs |= _collect_references(tree)
+        all_refs |= _collect_decorator_registered_names(tree)
 
     unused = [d for d in all_defs if d.name not in all_refs]
     return unused, len(all_defs)

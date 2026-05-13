@@ -341,6 +341,31 @@ def _cohesion_metrics(
 # ---------------------------------------------------------------------------
 
 
+_REGISTRATION_DECORATOR_ATTRS: frozenset[str] = frozenset(
+    {
+        "command",   # @app.command(), @typer_app.command()
+        "callback",  # @app.callback()
+        "fixture",   # @pytest.fixture
+        "mark",      # @pytest.mark.*
+    }
+)
+
+
+def _is_decorator_registered(node: _ast_mod.FunctionDef | _ast_mod.AsyncFunctionDef) -> bool:
+    """Return True when a function is externally registered via decorators."""
+    for dec in node.decorator_list:
+        if isinstance(dec, _ast_mod.Call) and isinstance(dec.func, _ast_mod.Attribute):
+            if dec.func.attr in _REGISTRATION_DECORATOR_ATTRS:
+                return True
+        elif isinstance(dec, _ast_mod.Attribute):
+            if dec.attr in _REGISTRATION_DECORATOR_ATTRS:
+                return True
+        elif isinstance(dec, _ast_mod.Name):
+            if dec.id in _REGISTRATION_DECORATOR_ATTRS:
+                return True
+    return False
+
+
 def _interface_metrics(
     py_files: list[Path], repo_root: Path, max_params: int = 5
 ) -> tuple[int, float, int, int, list[dict[str, object]], str | None]:
@@ -361,6 +386,8 @@ def _interface_metrics(
                     continue
                 if node.name.startswith("_"):
                     continue  # skip private/dunder
+                if _is_decorator_registered(node):
+                    continue  # externally wired entrypoints are not interface-surface debt
                 analyzed += 1
                 all_args = node.args.posonlyargs + node.args.args + node.args.kwonlyargs
                 n_params = len(all_args)

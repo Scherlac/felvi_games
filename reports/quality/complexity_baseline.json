@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generated_at_utc": "2026-05-09T21:48:37+00:00",
+  "generated_at_utc": "2026-05-13T22:06:30+00:00",
   "paths": [
     "src",
     "tests"
@@ -10,7 +10,7 @@
   "total_sloc": 11796,
   "total_blank": 2278,
   "avg_mi": 40.506,
-  "avg_cc": 4.413,
+  "avg_cc": 4.377,
   "p95_cc": 15.0,
   "counts_by_rank": {
     "A": 492,
@@ -20,7 +20,7 @@
     "E": 5,
     "F": 2
   },
-  "d_or_worse_blocks": 17,
+  "d_or_worse_blocks": 18,
   "f_blocks": 1,
   "parse_error_files": [],
   "blocks": [
@@ -4332,32 +4332,32 @@
       "rank": "D"
     }
   ],
-  "coverage_pct": 52.758,
-  "coverage_files": 14,
+  "coverage_pct": 54.477,
+  "coverage_files": 18,
   "low_coverage_files": [
     {
       "file": "src/felvi_games/report.py",
       "coverage_pct": 0.0,
       "covered_lines": 0,
-      "num_statements": 435
+      "num_statements": 432
     },
     {
       "file": "src/felvi_games/scraper.py",
       "coverage_pct": 0.0,
       "covered_lines": 0,
-      "num_statements": 187
+      "num_statements": 179
     },
     {
       "file": "src/felvi_games/cli.py",
-      "coverage_pct": 25.76,
-      "covered_lines": 322,
-      "num_statements": 1250
+      "coverage_pct": 22.915,
+      "covered_lines": 327,
+      "num_statements": 1427
     },
     {
       "file": "src/felvi_games/ai.py",
-      "coverage_pct": 46.667,
-      "covered_lines": 49,
-      "num_statements": 105
+      "coverage_pct": 42.857,
+      "covered_lines": 51,
+      "num_statements": 119
     },
     {
       "file": "src/felvi_games/review.py",
@@ -4366,10 +4366,22 @@
       "num_statements": 159
     },
     {
+      "file": "src/felvi_games/condition_registry.py",
+      "coverage_pct": 64.113,
+      "covered_lines": 159,
+      "num_statements": 248
+    },
+    {
       "file": "src/felvi_games/achievements.py",
-      "coverage_pct": 68.789,
-      "covered_lines": 443,
-      "num_statements": 644
+      "coverage_pct": 72.619,
+      "covered_lines": 183,
+      "num_statements": 252
+    },
+    {
+      "file": "src/felvi_games/progress_check.py",
+      "coverage_pct": 74.375,
+      "covered_lines": 357,
+      "num_statements": 480
     },
     {
       "file": "src/felvi_games/status.py",
@@ -4382,18 +4394,6 @@
       "coverage_pct": 76.471,
       "covered_lines": 221,
       "num_statements": 289
-    },
-    {
-      "file": "src/felvi_games/progress_check.py",
-      "coverage_pct": 76.499,
-      "covered_lines": 319,
-      "num_statements": 417
-    },
-    {
-      "file": "src/felvi_games/models.py",
-      "coverage_pct": 80.364,
-      "covered_lines": 221,
-      "num_statements": 275
     }
   ],
   "coverage_error": null,
@@ -4403,7 +4403,7 @@
     "E": 7
   },
   "ruff_error": null,
-  "duplicate_block_pairs": 20,
+  "duplicate_block_pairs": 24,
   "duplicate_blocks": [
     {
       "file_a": "src/felvi_games/achievements.py",
@@ -4672,31 +4672,13 @@
   ],
   "public_functions_analyzed": 397,
   "avg_params": 1.622,
-  "high_param_count": 17,
+  "high_param_count": 15,
   "untyped_public_functions": 179,
   "high_param_functions": [
     {
-      "file": "src/felvi_games/cli.py",
-      "name": "medal_edit_cmd",
-      "line": 812,
-      "params": 13
-    },
-    {
-      "file": "src/felvi_games/cli.py",
-      "name": "medals",
-      "line": 308,
-      "params": 12
-    },
-    {
-      "file": "src/felvi_games/cli.py",
-      "name": "medal_add_cmd",
-      "line": 775,
-      "params": 11
-    },
-    {
-      "file": "src/felvi_games/cli.py",
-      "name": "medal_promote_candidates_cmd",
-      "line": 2220,
+      "file": "src/felvi_games/kpi_registry.py",
+      "name": "register",
+      "line": 220,
       "params": 10
     },
     {
@@ -4712,28 +4694,49 @@
       "params": 8
     },
     {
-      "file": "src/felvi_games/cli.py",
-      "name": "parse",
-      "line": 118,
-      "params": 8
-    },
-    {
-      "file": "src/felvi_games/cli.py",
-      "name": "wrong_cmd",
-      "line": 1015,
-      "params": 8
-    },
-    {
-      "file": "src/felvi_games/cli.py",
-      "name": "reeval_cmd",
-      "line": 1635,
+      "file": "src/felvi_games/db.py",
+      "name": "save_megoldas",
+      "line": 871,
       "params": 8
     },
     {
       "file": "src/felvi_games/db.py",
-      "name": "save_megoldas",
-      "line": 867,
+      "name": "log_interakcio",
+      "line": 1357,
       "params": 8
+    },
+    {
+      "file": "src/felvi_games/kpi_registry.py",
+      "name": "kpi_parameter",
+      "line": 270,
+      "params": 8
+    },
+    {
+      "file": "src/felvi_games/pdf_parser.py",
+      "name": "run",
+      "line": 711,
+      "params": 8
+    },
+    {
+      "file": "src/felvi_games/condition_registry.py",
+      "name": "eval_condition",
+      "line": 216,
+      "params": 7
+    },
+    {
+      "file": "src/felvi_games/condition_registry.py",
+      "name": "eval_conditions",
+      "line": 238,
+      "params": 7
+    },
+    {
+      "file": "src/felvi_games/kpi_registry.py",
+      "name": "kpi_rows",
+      "line": 300,
+      "params": 7
     }
-  ]
+  ],
+  "unused_function_count": 75,
+  "unused_functions": [],
+  "unused_error": null
 }
