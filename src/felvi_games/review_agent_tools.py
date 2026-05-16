@@ -127,15 +127,18 @@ def get_markdown_origin(context: dict[str, Any]) -> dict[str, Any]:
 def list_wrong_tasks(
     context: dict[str, Any],
     *,
-    kind: str = "any",
-    user: str | None = None,
-    contains: str = "hibás",
-    min_hibas: int = 1,
-    limit: int = 20,
     include_wrong_answers: bool = False,
+    **filters: Any,
 ) -> dict[str, Any]:
     """List wrong tasks using the same DB-backed logic as CLI wrong/wrong-issues commands."""
     from felvi_games.review_check_shared import ReviewQuery, collect_wrong_task_items
+
+    kind = str(filters.get("kind", "any"))
+    user_raw = filters.get("user")
+    user = str(user_raw).strip() if user_raw is not None else None
+    contains = str(filters.get("contains", "hibás"))
+    min_hibas = max(0, int(filters.get("min_hibas", 1) or 1))
+    limit = max(1, int(filters.get("limit", 20) or 20))
 
     repo = _repo_from_context(context)
     merged_items = collect_wrong_task_items(
@@ -157,10 +160,51 @@ def list_wrong_tasks(
     }
 
 
+def load_task_context(
+    context: dict[str, Any],
+    *,
+    feladat_id: str,
+    attempts_limit: int = 12,
+    include_ai_assessment: bool = False,
+    model: str | None = None,
+) -> dict[str, Any]:
+    """Reload the in-chat review context for another task ID from the same DB."""
+    from felvi_games.review import build_review_chat_context
+
+    target_id = str(feladat_id or "").strip()
+    if not target_id:
+        return {"error": "Missing feladat_id."}
+
+    repo = _repo_from_context(context)
+    target = repo.get(target_id)
+    if target is None:
+        return {"error": f"Task not found: {target_id}"}
+
+    new_context = build_review_chat_context(
+        target,
+        repo,
+        attempts_limit=max(1, int(attempts_limit)),
+        model=model,
+        include_ai_assessment=bool(include_ai_assessment),
+    )
+    new_context["meta"] = dict(context.get("meta") or {})
+
+    context.clear()
+    context.update(new_context)
+
+    return {
+        "status": "loaded",
+        "feladat_id": target.id,
+        "targy": target.targy,
+        "szint": target.szint,
+        "attempts_total": int((new_context.get("attempts") or {}).get("total", 0)),
+    }
+
+
 def request_task_update_confirmation(
     context: dict[str, Any],
     *,
-    updates: dict[str, Any],
+    updates: dict[str, Any] | None = None,
     review_note: str | None = None,
 ) -> dict[str, Any]:
     """Prepare a versioned task update and generate confirmation code.
@@ -168,6 +212,33 @@ def request_task_update_confirmation(
     The update is not persisted until apply_task_update_with_confirmation() is
     called with the exact confirmation code.
     """
+    if not isinstance(updates, dict) or not updates:
+        return {
+            "error": "Missing required field: updates.",
+            "required": ["updates"],
+            "updates_format": {
+                "type": "object",
+                "allowed_fields": [
+                    "kerdes",
+                    "helyes_valasz",
+                    "elfogadott_valaszok",
+                    "hint",
+                    "magyarazat",
+                    "neh",
+                    "szint",
+                    "feladat_tipus",
+                    "max_pont",
+                    "abra_van",
+                    "reszpontozas",
+                    "ertekeles_megjegyzes",
+                ],
+            },
+            "example": {
+                "updates": {"magyarazat": "uj magyarazat"},
+                "review_note": "opcionális indoklás",
+            },
+        }
+
     repo = _repo_from_context(context)
     current = _current_feladat(context, repo)
     normalized = _normalize_updates(updates)
@@ -267,6 +338,70 @@ def apply_task_update_with_confirmation(
     }
 
 
+def resolve_task_flag(
+    context: dict[str, Any],
+    *,
+    reviewer: str,
+    resolution_note: str | None = None,
+    attempt_ids: list[int] | None = None,
+    mark_reviewed: bool = True,
+) -> dict[str, Any]:
+    """Clear erroneous task-level or attempt-level flags without content edits."""
+    reviewer_name = str(reviewer or "").strip()
+    if not reviewer_name:
+        return {
+            "error": "Missing required field: reviewer.",
+            "required": ["reviewer"],
+            "example": {
+                "reviewer": "moderator_nev",
+                "resolution_note": "false positive flag",
+                "attempt_ids": [123],
+            },
+        }
+
+    repo = _repo_from_context(context)
+    current = _current_feladat(context, repo)
+    result = repo.resolve_hibajelezes(
+        feladat_id=current.id,
+        reviewer=reviewer_name,
+        resolution_note=resolution_note,
+        attempt_ids=attempt_ids,
+        mark_reviewed=mark_reviewed,
+        source="review_chat_tool",
+    )
+
+    # Keep chat context synced after moderation-only resolution.
+    raw_cleared_ids = result.get("cleared_attempt_ids")
+    cleared_ids = {
+        int(i)
+        for i in (raw_cleared_ids if isinstance(raw_cleared_ids, list) else [])
+    }
+    attempts_ctx = context.get("attempts")
+    if isinstance(attempts_ctx, dict):
+        bad_recent = attempts_ctx.get("bad_recent")
+        if isinstance(bad_recent, list):
+            clear_all = bool(result.get("scope") == "task")
+            for item in bad_recent:
+                if not isinstance(item, dict):
+                    continue
+                if not item.get("hibajelezes"):
+                    continue
+                if clear_all or int(item.get("id", -1)) in cleared_ids:
+                    item["hibajelezes"] = False
+
+    feladat_ctx = context.get("feladat")
+    if isinstance(feladat_ctx, dict):
+        if mark_reviewed:
+            feladat_ctx["review_elvegezve"] = True
+        if result.get("review_megjegyzes"):
+            feladat_ctx["review_megjegyzes"] = result["review_megjegyzes"]
+
+    return {
+        "status": "resolved",
+        **result,
+    }
+
+
 def _repo_from_context(context: dict[str, Any]):
     from felvi_games.db import FeladatRepository
 
@@ -340,3 +475,175 @@ def _normalize_updates(updates: dict[str, Any]) -> dict[str, Any]:
         normalized["abra_van"] = bool(updates["abra_van"])
 
     return normalized
+
+
+def search_source_text(
+    context: dict[str, Any],
+    *,
+    file_path: str,
+    query: str,
+    **search_options: Any,
+) -> dict[str, Any]:
+    """Search for text in original source files (task sheet or guide).
+    
+    Use this to verify official wording, find task sections, or check guide content.
+    
+    Example queries:
+    - "8." to find task 8
+    - "a)" to find subtask a
+    - "Tavaszi felhők" to find poem title
+    - "indokold" to find justification requirement
+    """
+    from felvi_games.source_search import search_source_text as _search_impl
+    
+    file_path_clean = str(file_path or "").strip()
+    if not file_path_clean:
+        return {
+            "error": "Missing required field: file_path",
+            "example": {
+                "file_path": "text/A8_2020_2_ut.txt",
+                "query": "8.",
+            },
+        }
+    
+    query_clean = str(query or "").strip()
+    if not query_clean:
+        return {
+            "error": "Missing required field: query",
+        }
+
+    max_hits = max(1, int(search_options.get("max_hits", 20) or 20))
+    case_sensitive = bool(search_options.get("case_sensitive", False) or False)
+    context_lines = max(0, int(search_options.get("context_lines", 2) or 2))
+    
+    return _search_impl(
+        file_path_clean,
+        query_clean,
+        max_hits=max_hits,
+        case_sensitive=case_sensitive,
+        context_lines=context_lines,
+    )
+
+
+def get_source_window(
+    context: dict[str, Any],
+    *,
+    file_path: str,
+    start_line: int,
+    end_line: int,
+) -> dict[str, Any]:
+    """Retrieve a span of lines from original source files.
+    
+    Use this to read complete sections or verify context around search hits.
+    Line numbers are 1-indexed.
+    """
+    from felvi_games.source_search import get_source_window as _window_impl
+    
+    file_path_clean = str(file_path or "").strip()
+    if not file_path_clean:
+        return {
+            "error": "Missing required field: file_path",
+        }
+    
+    try:
+        start = int(start_line)
+        end = int(end_line)
+    except (TypeError, ValueError):
+        return {
+            "error": "start_line and end_line must be integers",
+        }
+    
+    if start < 1 or end < 1 or start > end:
+        return {
+            "error": "Invalid line range; start and end must be >= 1, and start <= end",
+        }
+    
+    return _window_impl(file_path_clean, start, end)
+
+
+def locate_task_in_sources(
+    context: dict[str, Any],
+    *,
+    feladat_id: str,
+    context_lines: int = 3,
+) -> dict[str, Any]:
+    """Locate a task in the original source files by task/subtask ID.
+    
+    Attempts to find the task heading in both task sheet and guide,
+    using patterns like "8." for task 8, "a)" for subtask a, etc.
+    
+    Use this to verify whether the current source file links are correct.
+    """
+    from felvi_games.source_search import find_task_in_sources as _locate_impl
+    
+    feladat_id_clean = str(feladat_id or "").strip()
+    if not feladat_id_clean:
+        return {
+            "error": "Missing required field: feladat_id",
+        }
+    
+    feladat_ctx = context.get("feladat") or {}
+    fl_path = str(feladat_ctx.get("fl_szoveg_path") or "").strip()
+    ut_path = str(feladat_ctx.get("ut_szoveg_path") or "").strip()
+    
+    if not fl_path and not ut_path:
+        return {
+            "error": "No source file paths in current task context",
+            "hint": "Load a task using load_task_context first",
+        }
+    
+    return _locate_impl(
+        feladat_id_clean,
+        task_sheet_path=fl_path or None,
+        guide_path=ut_path or None,
+        context_lines=max(1, int(context_lines)),
+    )
+
+
+def validate_guide_excerpt(
+    context: dict[str, Any],
+    *,
+    source_path: str | None = None,
+    context_lines: int = 2,
+) -> dict[str, Any]:
+    """Compare the currently stored guide excerpt to the original source.
+    
+    Use this to detect whether the attached excerpt is:
+    - correct (found in source),
+    - partially correct (similar match),
+    - or wrong (excerpt not found, may belong to different task or guide version).
+    """
+    from felvi_games.source_search import compare_excerpt_to_source as _compare_impl
+    
+    sources_ctx = context.get("sources") or {}
+    guide_excerpt = str(sources_ctx.get("utmutato_kivonat") or "").strip()
+    
+    if not guide_excerpt:
+        return {
+            "error": "No guide excerpt in current task context",
+        }
+    
+    # Use explicit path or fall back to ut_szoveg_path
+    feladat_ctx = context.get("feladat") or {}
+    guide_file = (
+        str(source_path or "").strip()
+        or str(feladat_ctx.get("ut_szoveg_path") or "").strip()
+    )
+    
+    if not guide_file:
+        return {
+            "error": "No source file path provided; cannot validate excerpt",
+            "hint": "Provide source_path or load a task with source references",
+        }
+    
+    result = _compare_impl(
+        guide_excerpt,
+        guide_file,
+        context_lines=max(1, int(context_lines)),
+    )
+    
+    return {
+        **result,
+        "stored_excerpt_length": len(guide_excerpt),
+        "stored_excerpt_preview": guide_excerpt[:200],
+    }

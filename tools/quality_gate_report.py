@@ -406,7 +406,7 @@ def _interface_metrics(
             avg,
             len(high_param),
             untyped,
-            sorted(high_param, key=lambda x: int(x["params"]), reverse=True)[:10],
+            sorted(high_param, key=lambda x: int(x["params"]), reverse=True),
             None,
         )
     except Exception as exc:
@@ -487,7 +487,7 @@ def build_snapshot(repo_root: Path, scan_paths: list[Path], top_n: int = 15) -> 
     func_records = _collect_function_hashes(py_files, repo_root)
     dup_pairs = _detect_duplicates(func_records)
     snap.duplicate_block_pairs = len(dup_pairs)
-    snap.duplicate_blocks = dup_pairs[:20]
+    snap.duplicate_blocks = dup_pairs
 
     cls_analyzed, avg_lcom, low_coh, _coh_err = _cohesion_metrics(py_files, repo_root)
     snap.classes_analyzed = cls_analyzed
@@ -512,7 +512,7 @@ def build_snapshot(repo_root: Path, scan_paths: list[Path], top_n: int = 15) -> 
         unused_symbols, _defined = _find_unused.analyse(py_files, repo_root, prefix=None)
         unused_functions = [s for s in unused_symbols if s.kind == "function" and s.owner is None]
         snap.unused_function_count = len(unused_functions)
-        snap.unused_functions = [asdict(s) for s in unused_functions[:20]]
+        snap.unused_functions = [asdict(s) for s in unused_functions]
     except Exception as exc:
         snap.unused_error = str(exc)
 
@@ -927,7 +927,7 @@ def render_report(
         lines.append("")
         lines.append("| Clones | Body Size | Location A | Location B |")
         lines.append("|---:|---:|---|---|")
-        for row in current.duplicate_blocks[:10]:
+        for row in current.duplicate_blocks:
             lines.append(
                 f"| {row['clone_count']} | {row['body_size']} | "
                 f"{row['file_a']}:{row['line_a']} {row['name_a']} | "
@@ -979,7 +979,7 @@ def render_report(
         lines.append("")
         lines.append("| Symbol | File |")
         lines.append("|---|---|")
-        for row in current.unused_functions[:10]:
+        for row in current.unused_functions:
             lines.append(f"| {row['name']} | {row['file']}:{row['line']} |")
     lines.append("")
 
@@ -1025,6 +1025,83 @@ def render_report(
             for note in gate.notes:
                 lines.append(f"- {note}")
         lines.append("")
+
+        # New-since-baseline sub-tables (only when delta > 0)
+        dup_baseline_complete = len(baseline.duplicate_blocks) >= baseline.duplicate_block_pairs
+        b_dup_keys = {
+            (r.get("file_a"), r.get("name_a"), r.get("file_b"), r.get("name_b"))
+            for r in baseline.duplicate_blocks
+        }
+        new_dup = [
+            r for r in current.duplicate_blocks
+            if (r.get("file_a"), r.get("name_a"), r.get("file_b"), r.get("name_b")) not in b_dup_keys
+        ]
+        if new_dup:
+            lines.append("### New Duplicate Pairs Since Baseline")
+            lines.append("")
+            if not dup_baseline_complete:
+                lines.append(
+                    f"> **Note:** Baseline snapshot stored only "
+                    f"{len(baseline.duplicate_blocks)} of {baseline.duplicate_block_pairs} "
+                    f"duplicate pairs — some listed pairs may pre-date the baseline. "
+                    f"Re-run the quality gate to update the baseline."
+                )
+                lines.append("")
+            lines.append("| Clones | Body Size | Location A | Location B |")
+            lines.append("|---:|---:|---|---|")
+            for row in new_dup:
+                lines.append(
+                    f"| {row['clone_count']} | {row['body_size']} | "
+                    f"{row['file_a']}:{row['line_a']} {row['name_a']} | "
+                    f"{row['file_b']}:{row['line_b']} {row['name_b']} |"
+                )
+            lines.append("")
+
+        hpf_baseline_complete = len(baseline.high_param_functions) >= baseline.high_param_count
+        b_hpf_keys = {(r.get("name"), r.get("file")) for r in baseline.high_param_functions}
+        new_hpf = [
+            r for r in current.high_param_functions
+            if (r.get("name"), r.get("file")) not in b_hpf_keys
+        ]
+        if new_hpf:
+            lines.append("### New High-Parameter Functions Since Baseline")
+            lines.append("")
+            if not hpf_baseline_complete:
+                lines.append(
+                    f"> **Note:** Baseline snapshot stored only "
+                    f"{len(baseline.high_param_functions)} of {baseline.high_param_count} "
+                    f"high-param functions — some listed functions may pre-date the baseline. "
+                    f"Re-run the quality gate to update the baseline."
+                )
+                lines.append("")
+            lines.append("| Params | Function | File |")
+            lines.append("|---:|---|---|")
+            for row in new_hpf:
+                lines.append(f"| {row['params']} | {row['name']} | {row['file']}:{row['line']} |")
+            lines.append("")
+
+        unused_baseline_complete = len(baseline.unused_functions) >= baseline.unused_function_count
+        b_unused_keys = {(r.get("name"), r.get("file")) for r in baseline.unused_functions}
+        new_unused = [
+            r for r in current.unused_functions
+            if (r.get("name"), r.get("file")) not in b_unused_keys
+        ]
+        if new_unused:
+            lines.append("### New Unused Functions Since Baseline")
+            lines.append("")
+            if not unused_baseline_complete:
+                lines.append(
+                    f"> **Note:** Baseline snapshot stored only "
+                    f"{len(baseline.unused_functions)} of {baseline.unused_function_count} "
+                    f"unused functions — some listed functions may pre-date the baseline. "
+                    f"Re-run the quality gate to update the baseline."
+                )
+                lines.append("")
+            lines.append("| Symbol | File |")
+            lines.append("|---|---|")
+            for row in new_unused:
+                lines.append(f"| {row['name']} | {row['file']}:{row.get('line', '?')} |")
+            lines.append("")
 
     lines.append("## Gate Thresholds")
     lines.append("")

@@ -153,6 +153,29 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "load_task_context",
+            "description": "Load a different task by feladat_id and switch the active chat context to it.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "feladat_id": {"type": "string"},
+                    "attempts_limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "default": 12,
+                    },
+                    "include_ai_assessment": {"type": "boolean", "default": False},
+                    "model": {"type": "string"},
+                },
+                "required": ["feladat_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "request_task_update_confirmation",
             "description": "Prepare a versioned task+guide update and generate a required confirmation code.",
             "parameters": {
@@ -188,6 +211,146 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "resolve_task_flag",
+            "description": "Resolve erroneous task flags without task content/version updates.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "reviewer": {
+                        "type": "string",
+                        "description": "Reviewer/moderator identity for audit trail.",
+                    },
+                    "resolution_note": {
+                        "type": "string",
+                        "description": "Optional short reason for clearing the flag.",
+                    },
+                    "attempt_ids": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "Optional attempt IDs to resolve; omit to clear task-level flags.",
+                    },
+                    "mark_reviewed": {
+                        "type": "boolean",
+                        "default": True,
+                    },
+                },
+                "required": ["reviewer"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_source_text",
+            "description": "Search for text in original source files (task sheet or guide).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "Relative asset path, e.g., 'text/A8_2020_2_ut.txt'.",
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Search string (plain text or regex). E.g., '8.', 'a)', 'indokold'.",
+                    },
+                    "max_hits": {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Maximum number of matches to return.",
+                    },
+                    "case_sensitive": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Whether search is case-sensitive.",
+                    },
+                    "context_lines": {
+                        "type": "integer",
+                        "default": 2,
+                        "description": "Lines of context before/after each match.",
+                    },
+                },
+                "required": ["file_path", "query"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_source_window",
+            "description": "Retrieve a span of lines from original source files.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "Relative asset path, e.g., 'text/A8_2020_2_ut.txt'.",
+                    },
+                    "start_line": {
+                        "type": "integer",
+                        "description": "1-indexed start line number (inclusive).",
+                    },
+                    "end_line": {
+                        "type": "integer",
+                        "description": "1-indexed end line number (inclusive).",
+                    },
+                },
+                "required": ["file_path", "start_line", "end_line"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "locate_task_in_sources",
+            "description": "Locate a task in original source files by task/subtask ID.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "feladat_id": {
+                        "type": "string",
+                        "description": "Task ID, e.g., 'mag4_2020_2_8_a'.",
+                    },
+                    "context_lines": {
+                        "type": "integer",
+                        "default": 3,
+                        "description": "Lines of context around matches.",
+                    },
+                },
+                "required": ["feladat_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "validate_guide_excerpt",
+            "description": "Verify stored guide excerpt against original source file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source_path": {
+                        "type": "string",
+                        "description": "Optional explicit source file path; uses task guide path by default.",
+                    },
+                    "context_lines": {
+                        "type": "integer",
+                        "default": 2,
+                        "description": "Context lines around matches.",
+                    },
+                },
+                "required": [],
+                "additionalProperties": False,
+            },
+        },
+    },
 ]
 
 
@@ -202,9 +365,11 @@ def _load_context() -> dict:
 
 
 def _make_client() -> OpenAI:
+    api_key = os.getenv("LLM_API_KEY")
+    base_url = os.getenv("LLM_BASE_URL", "https://api.openai.com/v1")
     return OpenAI(
-        api_key=os.getenv("LLM_API_KEY"),
-        base_url=os.getenv("LLM_BASE_URL", "https://api.openai.com/v1"),
+        api_key=api_key,
+        base_url=base_url,
     )
 
 
@@ -214,12 +379,18 @@ def _tool_handlers(context: dict[str, Any]) -> dict[str, Any]:
         get_attempt_detail,
         get_markdown_origin,
         get_source_excerpt,
+        get_source_window,
         get_task_overview,
         list_attempts,
         list_wrong_tasks,
+        load_task_context,
+        locate_task_in_sources,
         request_task_update_confirmation,
+        resolve_task_flag,
+        search_source_text,
         summarize_answer_patterns,
         summarize_review_risk,
+        validate_guide_excerpt,
     )
 
     return {
@@ -231,8 +402,14 @@ def _tool_handlers(context: dict[str, Any]) -> dict[str, Any]:
         "summarize_review_risk": lambda **kwargs: summarize_review_risk(context),
         "get_markdown_origin": lambda **kwargs: get_markdown_origin(context),
         "list_wrong_tasks": lambda **kwargs: list_wrong_tasks(context, **kwargs),
+        "load_task_context": lambda **kwargs: load_task_context(context, **kwargs),
         "request_task_update_confirmation": lambda **kwargs: request_task_update_confirmation(context, **kwargs),
         "apply_task_update_with_confirmation": lambda **kwargs: apply_task_update_with_confirmation(context, **kwargs),
+        "resolve_task_flag": lambda **kwargs: resolve_task_flag(context, **kwargs),
+        "search_source_text": lambda **kwargs: search_source_text(context, **kwargs),
+        "get_source_window": lambda **kwargs: get_source_window(context, **kwargs),
+        "locate_task_in_sources": lambda **kwargs: locate_task_in_sources(context, **kwargs),
+        "validate_guide_excerpt": lambda **kwargs: validate_guide_excerpt(context, **kwargs),
     }
 
 

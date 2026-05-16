@@ -2664,9 +2664,6 @@ def _run_chainlit_review_chat(
 ) -> None:
     """Build review context and optionally launch Chainlit for one task."""
     import json
-    import os
-    import subprocess
-    import sys
 
     from felvi_games.review import build_review_chat_context
 
@@ -2691,13 +2688,21 @@ def _run_chainlit_review_chat(
         typer.echo("[prepare-only] Chainlit indítás kihagyva.")
         return
 
+    _launch_chainlit_review_chat(out_path)
+
+
+def _launch_chainlit_review_chat(context_path: Path) -> None:
+    import os
+    import subprocess
+    import sys
+
     app_path = Path(__file__).with_name("review_chainlit_app.py")
     if not app_path.exists():
         typer.echo(f"[!] Chainlit app fájl hiányzik: {app_path}")
         raise typer.Exit(code=1)
 
     env = os.environ.copy()
-    env["FELVI_REVIEW_CHAT_CONTEXT"] = str(out_path.resolve())
+    env["FELVI_REVIEW_CHAT_CONTEXT"] = str(context_path.resolve())
 
     cmd = [sys.executable, "-m", "chainlit", "run", str(app_path), "-w"]
     typer.echo("Chainlit indul… (leállítás: Ctrl+C)")
@@ -2715,7 +2720,10 @@ def _run_chainlit_review_chat(
 
 @app.command("review-chat")
 def review_chat_cmd(
-    feladat_id: Annotated[str, typer.Argument(help="Feladat ID, amelyről interaktív review chat indul")],
+    feladat_id: Annotated[
+        str | None,
+        typer.Argument(help="Feladat ID (ha nincs megadva, interaktív választó indul)")
+    ] = None,
     db: Annotated[
         Path | None, typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
     ] = None,
@@ -2747,6 +2755,9 @@ def review_chat_cmd(
     - korábbi jó és rossz válaszokat,
     - opcionális AI előértékelést.
     """
+    import json
+    from datetime import datetime, timezone
+
     from felvi_games.config import get_db_path
     from felvi_games.db import FeladatRepository
 
@@ -2756,12 +2767,49 @@ def review_chat_cmd(
         raise typer.Exit(code=1)
 
     repo = FeladatRepository(db_path)
-    feladat = repo.get(feladat_id)
+    selected_id = (feladat_id or "").strip()
+    if not selected_id:
+        out_path = context_out or (Path("data") / "review_chat" / "session.json")
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        typer.echo("i Nincs megadott ID, üres review-chat kontextussal indulunk.")
+
+        context = {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "feladat": {},
+            "sources": {
+                "fl_szoveg_path": "",
+                "ut_szoveg_path": "",
+                "feladatlap_kivonat": "",
+                "utmutato_kivonat": "",
+            },
+            "attempts": {
+                "total": 0,
+                "good_count": 0,
+                "bad_count": 0,
+                "good_recent": [],
+                "bad_recent": [],
+            },
+            "ai_assessment": "",
+            "meta": {
+                "db_path": str(db_path),
+            },
+        }
+        out_path.write_text(json.dumps(context, ensure_ascii=False, indent=2), encoding="utf-8")
+        typer.echo(f"✓ Kontextus mentve: {out_path}")
+
+        if prepare_only:
+            typer.echo("[prepare-only] Chainlit indítás kihagyva.")
+            return
+
+        _launch_chainlit_review_chat(out_path)
+        return
+
+    feladat = repo.get(selected_id)
     if feladat is None:
-        typer.echo(f"[!] Feladat nem található: {feladat_id}")
+        typer.echo(f"[!] Feladat nem található: {selected_id}")
         raise typer.Exit(code=1)
 
-    out_path = context_out or (Path("data") / "review_chat" / f"{feladat_id}.json")
+    out_path = context_out or (Path("data") / "review_chat" / f"{selected_id}.json")
     _run_chainlit_review_chat(
         feladat=feladat,
         repo=repo,

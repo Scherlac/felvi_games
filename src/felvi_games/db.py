@@ -1136,6 +1136,95 @@ class FeladatRepository:
             session.commit()
             return new_record.to_domain()
 
+    def resolve_hibajelezes(
+        self,
+        *,
+        feladat_id: str,
+        reviewer: str,
+        resolution_note: str | None = None,
+        attempt_ids: Sequence[int] | None = None,
+        mark_reviewed: bool = True,
+        source: str = "review_moderation",
+    ) -> dict[str, object]:
+        """Clear erroneous hibajelezes flags without changing task content.
+
+        This moderation action is intentionally separate from save_review() so
+        reviewers can resolve false-positive flags without creating a new task
+        version.
+        """
+        reviewer_name = str(reviewer or "").strip() or "review_moderator"
+        note = str(resolution_note).strip() if resolution_note else None
+
+        normalized_attempt_ids: list[int] = []
+        if attempt_ids:
+            seen: set[int] = set()
+            for raw in attempt_ids:
+                try:
+                    value = int(raw)
+                except (TypeError, ValueError):
+                    continue
+                if value <= 0 or value in seen:
+                    continue
+                seen.add(value)
+                normalized_attempt_ids.append(value)
+
+        with Session(self._engine) as session:
+            record = session.get(FeladatRecord, feladat_id)
+            if record is None:
+                raise KeyError(f"Feladat not found: {feladat_id}")
+
+            flagged_stmt = (
+                select(MegoldasRecord.id)
+                .where(MegoldasRecord.feladat_id == feladat_id)
+                .where(MegoldasRecord.hibajelezes.is_(True))
+            )
+            if normalized_attempt_ids:
+                flagged_stmt = flagged_stmt.where(MegoldasRecord.id.in_(normalized_attempt_ids))
+
+            flagged_ids = list(session.scalars(flagged_stmt))
+            if flagged_ids:
+                session.execute(
+                    update(MegoldasRecord)
+                    .where(MegoldasRecord.id.in_(flagged_ids))
+                    .values(hibajelezes=False)
+                )
+
+            if mark_reviewed:
+                record.review_elvegezve = True
+                if note:
+                    record.review_megjegyzes = note
+                record.updated_at = datetime.now(timezone.utc)
+
+            session.commit()
+
+        self.log_interakcio(
+            reviewer_name,
+            InterakcioTipus.HIBAJELEZES_FELOLDVA,
+            feladat_id=feladat_id,
+            meta={
+                "source": source,
+                "resolution_note": note,
+                "scope": "selected" if normalized_attempt_ids else "task",
+                "selected_attempt_ids": normalized_attempt_ids,
+                "cleared_attempt_ids": flagged_ids,
+                "cleared_count": len(flagged_ids),
+                "mark_reviewed": bool(mark_reviewed),
+            },
+            process_pending_rewards=False,
+        )
+
+        return {
+            "feladat_id": feladat_id,
+            "reviewer": reviewer_name,
+            "scope": "selected" if normalized_attempt_ids else "task",
+            "selected_attempt_ids": normalized_attempt_ids,
+            "cleared_attempt_ids": flagged_ids,
+            "cleared_count": len(flagged_ids),
+            "mark_reviewed": bool(mark_reviewed),
+            "review_elvegezve": bool(mark_reviewed),
+            "review_megjegyzes": note,
+        }
+
     def stats(self) -> dict:
         """Return aggregate statistics across all attempts."""
         with Session(self._engine) as session:

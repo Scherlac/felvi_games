@@ -28,22 +28,6 @@ from felvi_games.pdf_parser import (
     split_into_task_blocks,
 )
 
-# ---------------------------------------------------------------------------
-# Fixtures & helpers
-# ---------------------------------------------------------------------------
-
-
-def _make_pdf(tmp_path: Path, name: str, text: str) -> Path:
-    """Write a minimal text-only PDF that pdftotext can read."""
-    import pdftotext  # noqa: F401 – ensure it's importable
-
-    # We cannot easily create a real PDF in tests, so we patch pdf_to_text
-    # where needed.  This helper creates a sentinel file for path-based tests.
-    p = tmp_path / name
-    p.write_bytes(b"%PDF-1.4 placeholder")
-    return p
-
-
 def _gpt_response(feladatok: list[dict]) -> MagicMock:
     """Build a mock OpenAI completion response carrying *feladatok* as JSON."""
     msg = MagicMock()

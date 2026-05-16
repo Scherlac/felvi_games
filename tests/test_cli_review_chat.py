@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -52,3 +53,29 @@ class TestReviewChatCli:
         text = out_path.read_text(encoding="utf-8")
         assert '"id": "m_chat_01"' in text
         assert "prepare-only" in result.output
+
+    def test_review_chat_without_id_prepare_only_writes_empty_context(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "review_chat_empty.db"
+        out_path = tmp_path / "ctx_empty.json"
+
+        # Ensure DB file exists, but do not require task selection for startup.
+        FeladatRepository(db_path=db_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "review-chat",
+                "--db",
+                str(db_path),
+                "--prepare-only",
+                "--context-out",
+                str(out_path),
+            ],
+        )
+
+        assert result.exit_code == 0
+        payload = json.loads(out_path.read_text(encoding="utf-8"))
+        assert payload["feladat"] == {}
+        assert payload["attempts"]["total"] == 0
+        assert payload["meta"]["db_path"] == str(db_path)
+        assert "üres review-chat kontextussal indulunk" in result.output

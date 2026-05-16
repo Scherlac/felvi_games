@@ -29,6 +29,7 @@ class InterakcioTipus(str, Enum):
     HELYTELEN_VALASZ = "helytelen_valasz"
     SEGITSEG_KERT = "segitseg_kert"
     HIBAJELEZES = "hibajelezes"
+    HIBAJELEZES_FELOLDVA = "hibajelezes_feloldva"
     TARGY_VALTAS = "targy_valtas"
     SZINT_VALTAS = "szint_valtas"
     TTS_LEJATSZO = "tts_lejatszo"

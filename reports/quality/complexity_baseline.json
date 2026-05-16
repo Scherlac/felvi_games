@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generated_at_utc": "2026-05-16T11:19:49+00:00",
+  "generated_at_utc": "2026-05-16T17:21:18+00:00",
   "paths": [
     "src",
     "tests"
@@ -4332,8 +4332,8 @@
       "rank": "D"
     }
   ],
-  "coverage_pct": 56.332,
-  "coverage_files": 21,
+  "coverage_pct": 57.462,
+  "coverage_files": 22,
   "low_coverage_files": [
     {
       "file": "src/felvi_games/report.py",
@@ -4345,7 +4345,7 @@
       "file": "src/felvi_games/review_chainlit_app.py",
       "coverage_pct": 0.0,
       "covered_lines": 0,
-      "num_statements": 73
+      "num_statements": 75
     },
     {
       "file": "src/felvi_games/scraper.py",
@@ -4355,9 +4355,9 @@
     },
     {
       "file": "src/felvi_games/cli.py",
-      "coverage_pct": 30.713,
-      "covered_lines": 504,
-      "num_statements": 1641
+      "coverage_pct": 31.062,
+      "covered_lines": 515,
+      "num_statements": 1658
     },
     {
       "file": "src/felvi_games/ai.py",
