@@ -312,6 +312,18 @@ def _render_sidebar(gs: GameState) -> None:
                 st.session_state["_active_page"] = "game"
                 st.rerun()
 
+        if gs.fazis in (Fazis.KERDES, Fazis.EREDMENY):
+            st.divider()
+            st.caption("🧱 Elrendezés")
+            st.slider(
+                "PDF panel szélesség (%)",
+                min_value=30,
+                max_value=60,
+                value=int(st.session_state.get("_pdf_panel_width_pct", 44)),
+                key="_pdf_panel_width_pct",
+                help="Állítsd be, mekkora helyet kapjon a jobb oldali PDF panel.",
+            )
+
         if gs.felhasznalo:
             menetek = get_repo().get_menetek(gs.felhasznalo)
             if menetek:
@@ -661,167 +673,164 @@ def _render_kerdes(gs: GameState) -> None:
         if feladat.max_pont > 1:
             st.metric("Max. pont", feladat.max_pont)
 
-    # --- Csoport pozíció + közös kontextus ---
-    _render_csoport_context(feladat)
+    col_main = st.container()
 
-    # --- Kérdés (Markdown + LaTeX math renderelés) ---
-    st.info(feladat.kerdes)
+    with col_main:
+        # --- Csoport pozíció + közös kontextus ---
+        _render_csoport_context(feladat)
 
-    # --- Válaszlehetőségek listázva (párosítás / ha nincs widget) ---
-    if (
-        feladat.valaszlehetosegek
-        and feladat.feladat_tipus not in ("tobbvalasztos", "igaz_hamis")
-    ):
-        with st.expander("📋 Válaszlehetőségek", expanded=False):
-            for opt in feladat.valaszlehetosegek:
-                st.markdown(f"- {opt}")
+        # --- Kérdés (Markdown + LaTeX math renderelés) ---
+        st.info(feladat.kerdes)
 
-    # --- Ábra figyelmeztetés + PDF gomb ---
-    if feladat.abra_van:
-        col_abra, col_pdf = st.columns([3, 1])
-        with col_abra:
+        # --- Válaszlehetőségek listázva (párosítás / ha nincs widget) ---
+        if (
+            feladat.valaszlehetosegek
+            and feladat.feladat_tipus not in ("tobbvalasztos", "igaz_hamis")
+        ):
+            with st.expander("📋 Válaszlehetőségek", expanded=False):
+                for opt in feladat.valaszlehetosegek:
+                    st.markdown(f"- {opt}")
+
+        # --- Ábra figyelmeztetés ---
+        if feladat.abra_van:
             page_hint = f" · **{feladat.feladat_oldal}. oldal**" if feladat.feladat_oldal else ""
             st.warning(f"⚠️ Ábrára hivatkozik!{page_hint}")
-        with col_pdf:
-            _render_pdf_button(feladat)
-    elif feladat.fl_pdf_path:
-        _render_pdf_button(feladat)
 
-    # --- TTS audio (cached) megjelenítése a kérdés közelében ---
-    if gs.tts_audio:
-        st.audio(gs.tts_audio, format="audio/mp3", autoplay=True)
+        # --- TTS audio (cached) megjelenítése a kérdés közelében ---
+        if gs.tts_audio:
+            st.audio(gs.tts_audio, format="audio/mp3", autoplay=True)
 
-    # Resolve kontextus for TTS (group shared text must be read before the question)
-    _csoport_tts = get_repo().get_csoport(feladat.csoport_id) if feladat.csoport_id else None
-    _tts_bemeneti = feladat.kerdes
+        # Resolve kontextus for TTS (group shared text must be read before the question)
+        _csoport_tts = get_repo().get_csoport(feladat.csoport_id) if feladat.csoport_id else None
+        _tts_bemeneti = feladat.kerdes
 
-    # Stale when the SHA256 hash of the current raw input differs from the stored hash.
-    _bemeneti_hash = hashlib.sha256(_tts_bemeneti.encode()).hexdigest()[:12]
-    _stale = feladat.tts_kerdes_bemenet_hash != _bemeneti_hash
+        # Stale when the SHA256 hash of the current raw input differs from the stored hash.
+        _bemeneti_hash = hashlib.sha256(_tts_bemeneti.encode()).hexdigest()[:12]
+        _stale = feladat.tts_kerdes_bemenet_hash != _bemeneti_hash
 
-    # --- TTS, Tipp, Hiba gombok ---
-    col_tts, col_hint, col_hiba = st.columns(3)
-    with col_tts:
-        if st.button("🔊 Felolvasás", help=feladat.tts_szoveg()):
-            if feladat.tts_kerdes_path and not _stale:
-                gs.tts_audio = resolve_asset(feladat.tts_kerdes_path).read_bytes()
-            else:
-                tts_text = kerdes_to_tts_szoveg(_tts_bemeneti)
-                with st.spinner("Hangszintézis..."):
-                    audio = text_to_speech(tts_text)
-                    gs.tts_audio = audio
-                    updated = get_repo().save_tts_assets(
-                        feladat,
-                        tts_kerdes=audio,
-                        tts_kerdes_szoveg=tts_text,          # LLM-processed output (shown in help tooltip)
-                        tts_kerdes_bemenet_hash=_bemeneti_hash,  # hash of raw input (stale detection)
+        # --- TTS, Tipp, Hiba gombok ---
+        col_tts, col_hint, col_hiba = st.columns(3)
+        with col_tts:
+            if st.button("🔊 Felolvasás", help=feladat.tts_szoveg()):
+                if feladat.tts_kerdes_path and not _stale:
+                    gs.tts_audio = resolve_asset(feladat.tts_kerdes_path).read_bytes()
+                else:
+                    tts_text = kerdes_to_tts_szoveg(_tts_bemeneti)
+                    with st.spinner("Hangszintézis..."):
+                        audio = text_to_speech(tts_text)
+                        gs.tts_audio = audio
+                        updated = get_repo().save_tts_assets(
+                            feladat,
+                            tts_kerdes=audio,
+                            tts_kerdes_szoveg=tts_text,
+                            tts_kerdes_bemenet_hash=_bemeneti_hash,
+                        )
+                        gs.aktualis = updated
+                if gs.felhasznalo:
+                    get_repo().log_interakcio(
+                        gs.felhasznalo, InterakcioTipus.TTS_LEJATSZO,
+                        targy=gs.targy, szint=gs.szint,
+                        feladat_id=feladat.id, menet_id=gs.menet_id,
                     )
-                    gs.aktualis = updated
-            if gs.felhasznalo:
-                get_repo().log_interakcio(
-                    gs.felhasznalo, InterakcioTipus.TTS_LEJATSZO,
-                    targy=gs.targy, szint=gs.szint,
-                    feladat_id=feladat.id, menet_id=gs.menet_id,
+                st.rerun()
+        with col_hint:
+            if st.button("💡 Tipp"):
+                gs.segitseg_kert = True
+                if gs.felhasznalo:
+                    get_repo().log_interakcio(
+                        gs.felhasznalo, InterakcioTipus.SEGITSEG_KERT,
+                        targy=gs.targy, szint=gs.szint,
+                        feladat_id=feladat.id, menet_id=gs.menet_id,
+                    )
+                st.rerun()
+        with col_hiba:
+            if st.button("🚩 Hibát jelzek", help="Hibás feladatszöveg bejelentése"):
+                gs.hibajelezes = True
+                st.toast("Köszönjük a visszajelzést!", icon="🚩")
+
+        if gs.segitseg_kert:
+            st.info(f"💡 **Tipp:** {feladat.hint}")
+
+        # --- Válasz ---
+        valasz = _render_valasz_input(feladat, gs)
+
+        if valasz:
+            st.caption(f"Felismert/beírt válasz: **{valasz}**")
+
+        col_ok, col_vissza = st.columns(2)
+        with col_ok:
+            if st.button("✅ Ellenőrzés", disabled=not valasz, use_container_width=True, type="primary"):
+                with st.spinner("GPT értékel..."):
+                    ert = check_answer(
+                        feladat.kerdes,
+                        feladat.helyes_valasz,
+                        valasz,
+                        feladat.magyarazat,
+                        elfogadott_valaszok=feladat.elfogadott_valaszok_vagy_helyes(),
+                        feladat_tipus=feladat.feladat_tipus,
+                        max_pont=feladat.max_pont,
+                        reszpontozas=feladat.reszpontozas,
+                    )
+                elapsed = (
+                    (datetime.now(timezone.utc) - gs.kerdes_kezdete).total_seconds()
+                    if gs.kerdes_kezdete else None
                 )
-            st.rerun()
-    with col_hint:
-        if st.button("💡 Tipp"):
-            gs.segitseg_kert = True
-            if gs.felhasznalo:
-                get_repo().log_interakcio(
-                    gs.felhasznalo, InterakcioTipus.SEGITSEG_KERT,
-                    targy=gs.targy, szint=gs.szint,
-                    feladat_id=feladat.id, menet_id=gs.menet_id,
+                gs.utolso_valasz = valasz
+                gs.record_answer(feladat, ert)
+                get_repo().save_megoldas(
+                    feladat, valasz, ert,
+                    felhasznalo_nev=gs.felhasznalo,
+                    menet_id=gs.menet_id,
+                    elapsed_sec=elapsed,
+                    segitseg_kert=gs.segitseg_kert,
+                    hibajelezes=gs.hibajelezes,
                 )
-            st.rerun()
-    with col_hiba:
-        if st.button("🚩 Hibát jelzek", help="Hibás feladatszöveg bejelentése"):
-            gs.hibajelezes = True
-            st.toast("Köszönjük a visszajelzést!", icon="🚩")
+                # --- interaction log ---
+                if gs.felhasznalo:
+                    ev_tipus = (
+                        InterakcioTipus.HELYES_VALASZ if ert.helyes
+                        else InterakcioTipus.RESZLEGES_VALASZ if ert.pont > 0
+                        else InterakcioTipus.HELYTELEN_VALASZ
+                    )
+                    get_repo().log_interakcio(
+                        gs.felhasznalo, ev_tipus,
+                        targy=gs.targy, szint=gs.szint,
+                        feladat_id=feladat.id, menet_id=gs.menet_id,
+                        meta={"pont": ert.pont, "elapsed_sec": elapsed},
+                    )
+                # --- session progress + medal checks ---
+                if gs.menet_id:
+                    get_repo().update_menet_progress(gs.menet_id, gs.menet_megoldott, gs.pont)
+                    if gs.pont >= gs.menet_cel:
+                        get_repo().end_menet(gs.menet_id)
+                        if gs.felhasznalo:
+                            get_repo().log_interakcio(
+                                gs.felhasznalo, InterakcioTipus.MENET_VEGZETT,
+                                targy=gs.targy, szint=gs.szint, menet_id=gs.menet_id,
+                            )
+                            from felvi_games.achievements import check_new_medals
+                            uj_eremek = check_new_medals(
+                                gs.felhasznalo,
+                                gs.menet_id,
+                                get_repo(),
+                                trigger_tipus=InterakcioTipus.MENET_VEGZETT.value,
+                            )
+                            if uj_eremek:
+                                st.session_state["_uj_eremek"] = [e.id for e in uj_eremek]
+                        gs.menet_id = None
+                gs.fazis = Fazis.EREDMENY
+                st.rerun()
+        with col_vissza:
+            if st.button("↩ Vissza", use_container_width=True):
+                gs.fazis = Fazis.VALASZTAS
+                st.rerun()
 
-    if gs.segitseg_kert:
-        st.info(f"💡 **Tipp:** {feladat.hint}")
+        # --- Kevésbé fontos elemek a válaszmező alatt ---
+        if feladat.ertekeles_megjegyzes:
+            with st.expander("ℹ️ Értékelési feltétel"):
+                st.caption(feladat.ertekeles_megjegyzes)
 
-    # --- Válasz ---
-    valasz = _render_valasz_input(feladat, gs)
-
-    if valasz:
-        st.caption(f"Felismert/beírt válasz: **{valasz}**")
-
-    col_ok, col_vissza = st.columns(2)
-    with col_ok:
-        if st.button("✅ Ellenőrzés", disabled=not valasz, use_container_width=True, type="primary"):
-            with st.spinner("GPT értékel..."):
-                ert = check_answer(
-                    feladat.kerdes,
-                    feladat.helyes_valasz,
-                    valasz,
-                    feladat.magyarazat,
-                    elfogadott_valaszok=feladat.elfogadott_valaszok_vagy_helyes(),
-                    feladat_tipus=feladat.feladat_tipus,
-                    max_pont=feladat.max_pont,
-                    reszpontozas=feladat.reszpontozas,
-                )
-            elapsed = (
-                (datetime.now(timezone.utc) - gs.kerdes_kezdete).total_seconds()
-                if gs.kerdes_kezdete else None
-            )
-            gs.utolso_valasz = valasz
-            gs.record_answer(feladat, ert)
-            get_repo().save_megoldas(
-                feladat, valasz, ert,
-                felhasznalo_nev=gs.felhasznalo,
-                menet_id=gs.menet_id,
-                elapsed_sec=elapsed,
-                segitseg_kert=gs.segitseg_kert,
-                hibajelezes=gs.hibajelezes,
-            )
-            # --- interaction log ---
-            if gs.felhasznalo:
-                ev_tipus = (
-                    InterakcioTipus.HELYES_VALASZ if ert.helyes
-                    else InterakcioTipus.RESZLEGES_VALASZ if ert.pont > 0
-                    else InterakcioTipus.HELYTELEN_VALASZ
-                )
-                get_repo().log_interakcio(
-                    gs.felhasznalo, ev_tipus,
-                    targy=gs.targy, szint=gs.szint,
-                    feladat_id=feladat.id, menet_id=gs.menet_id,
-                    meta={"pont": ert.pont, "elapsed_sec": elapsed},
-                )
-            # --- session progress + medal checks ---
-            if gs.menet_id:
-                get_repo().update_menet_progress(gs.menet_id, gs.menet_megoldott, gs.pont)
-                if gs.pont >= gs.menet_cel:
-                    get_repo().end_menet(gs.menet_id)
-                    if gs.felhasznalo:
-                        get_repo().log_interakcio(
-                            gs.felhasznalo, InterakcioTipus.MENET_VEGZETT,
-                            targy=gs.targy, szint=gs.szint, menet_id=gs.menet_id,
-                        )
-                        from felvi_games.achievements import check_new_medals
-                        uj_eremek = check_new_medals(
-                            gs.felhasznalo,
-                            gs.menet_id,
-                            get_repo(),
-                            trigger_tipus=InterakcioTipus.MENET_VEGZETT.value,
-                        )
-                        if uj_eremek:
-                            st.session_state["_uj_eremek"] = [e.id for e in uj_eremek]
-                    gs.menet_id = None
-            gs.fazis = Fazis.EREDMENY
-            st.rerun()
-    with col_vissza:
-        if st.button("↩ Vissza", use_container_width=True):
-            gs.fazis = Fazis.VALASZTAS
-            st.rerun()
-
-    # --- Kevésbé fontos elemek a válaszmező alatt ---
-    if feladat.ertekeles_megjegyzes:
-        with st.expander("ℹ️ Értékelési feltétel"):
-            st.caption(feladat.ertekeles_megjegyzes)
-
-    _render_source_expanders(feladat, show_ut=False)
+        _render_source_expanders(feladat, show_ut=False)
 
 
 def _render_score_bar(pont: int, max_pont: int) -> None:
@@ -849,6 +858,13 @@ def _render_score_bar(pont: int, max_pont: int) -> None:
         """,
         unsafe_allow_html=True,
     )
+
+
+def _main_pdf_columns() -> tuple[int, int]:
+    """Return dynamic main/PDF width weights from sidebar slider."""
+    pdf_width = int(st.session_state.get("_pdf_panel_width_pct", 44))
+    pdf_width = max(30, min(60, pdf_width))
+    return 100 - pdf_width, pdf_width
 
 
 def _render_eredmeny(feladatok: dict[str, list[Feladat]], gs: GameState) -> None:
@@ -898,7 +914,6 @@ def _render_eredmeny(feladatok: dict[str, list[Feladat]], gs: GameState) -> None
         if feladat.max_pont > 1:
             st.caption(f"Max. pont: {feladat.max_pont}")
 
-    _render_pdf_button(feladat)
     # Source text inspection (both feladatlap and útmutató)
     _render_source_expanders(feladat, show_ut=True)
 
@@ -990,21 +1005,47 @@ def _run_ai_review(feladat: Feladat, megjegyzes: str | None, gs: GameState) -> N
     st.rerun()
 
 
-def _render_pdf_button(feladat: Feladat) -> None:
-    """Show a download button for the source feladatlap PDF.
-    Always visible; shows page number when known."""
+def _render_pdf_button(feladat: Feladat, *, page_num: int | None = None) -> None:
+    """Show a control button that jumps the PDF viewer back to the target page."""
     if not feladat.fl_pdf_path:
         return
     pdf_path = get_exams_dir() / feladat.fl_pdf_path
     if not pdf_path.exists():
         return
-    page_info = f" – {feladat.feladat_oldal}. oldal" if feladat.feladat_oldal else ""
-    st.download_button(
-        label=f"📄 Feladatlap PDF{page_info}",
-        data=pdf_path.read_bytes(),
-        file_name=pdf_path.name,
-        mime="application/pdf",
+    target_page = page_num if page_num is not None else feladat.feladat_oldal
+    page_info = f" – {target_page}. oldal" if target_page else ""
+    fragment = f"#page={target_page}" if target_page else ""
+    jump_url = f"{pdf_path.resolve().as_uri()}{fragment}"
+    st.link_button(
+        f"📄 Feladatlap PDF{page_info}",
+        jump_url,
+        use_container_width=True,
+        help="Ugrás a feladathoz tartozó oldalra (nem tölt le fájlt).",
     )
+
+def _render_pdf_iframe_panel(feladat: Feladat) -> None:
+    """Render the task source PDF as a native Streamlit PDF viewer."""
+    if not feladat.fl_pdf_path:
+        return
+
+    pdf_path = get_exams_dir() / feladat.fl_pdf_path
+    if not pdf_path.exists():
+        st.caption(f"PDF nem található: {feladat.fl_pdf_path}")
+        return
+
+    page_num: int | None = None
+    if feladat.feladat_oldal is not None:
+        try:
+            page_num = max(1, int(feladat.feladat_oldal))
+        except (TypeError, ValueError):
+            page_num = None
+
+    page_text = f"{page_num}. oldal" if page_num else "oldalszám nélkül"
+    st.caption(f"📄 Eredeti feladatlap ({page_text})")
+
+    st.pdf(pdf_path, height=1020, key=f"pdf_view_{feladat.id}")
+
+    _render_pdf_button(feladat, page_num=page_num)
 
 
 def _render_source_expanders(feladat: Feladat, *, show_ut: bool) -> None:
@@ -1110,12 +1151,26 @@ def _show_daily_insight_dialog(insight_data: dict) -> None:
 
     awardable_now = insight_data.get("awardable_now", [])
     would_repeat_now = insight_data.get("would_repeat_now", [])
-    if awardable_now or would_repeat_now:
+    if awardable_now:
         st.markdown("#### ⚡ Most megszerezhető:")
         for erem in awardable_now:
-            st.success(f"{erem.get('ikon', '🏅')} **{erem.get('nev', 'Ismeretlen érem')}**", icon=None)
+            st.success(
+                f"{erem.get('ikon', '🏅')} **{erem.get('nev', 'Ismeretlen érem')}**",
+                icon=None,
+            )
+        st.markdown("---")
+
+    if would_repeat_now:
+        st.markdown("#### 🔁 Ismételhető érmek most teljesülnek:")
+        st.caption("Ezeket már egyszer megszerezted, de a feltétel most újra teljesült.")
         for erem in would_repeat_now:
-            st.info(f"{erem.get('ikon', '🏅')} **{erem.get('nev', 'Ismételhető érem')}** — újra megszerezhető", icon="🔁")
+            name = erem.get("nev", "Ismételhető érem")
+            icon = erem.get("ikon", "🏅")
+            desc = str(erem.get("leiras", "") or "").strip()
+            line = f"{icon} **{name}** — most újra megszerezhető"
+            if desc:
+                line += f"  \\n{desc}"
+            st.info(line, icon="🔁")
         st.markdown("---")
 
     # Active challenges — always shown
@@ -1220,7 +1275,7 @@ def _show_medal_dialog(erem_ids: list[str]) -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="Felvételi Kvíz", page_icon="🎯", layout="centered")
+    st.set_page_config(page_title="Felvételi Kvíz", page_icon="🎯", layout="wide")
 
     gs = get_state()
     feladatok = load_feladatok()
@@ -1327,9 +1382,17 @@ def main() -> None:
     if gs.fazis == Fazis.VALASZTAS:
         _render_valasztas(feladatok, gs)
     elif gs.fazis == Fazis.KERDES:
-        _render_kerdes(gs)
+        col_main, col_pdf = st.columns(list(_main_pdf_columns()), gap="large")
+        with col_main:
+            _render_kerdes(gs)
+        with col_pdf:
+            _render_pdf_iframe_panel(gs.aktualis)  # type: ignore[arg-type]
     elif gs.fazis == Fazis.EREDMENY:
-        _render_eredmeny(feladatok, gs)
+        col_main, col_pdf = st.columns(list(_main_pdf_columns()), gap="large")
+        with col_main:
+            _render_eredmeny(feladatok, gs)
+        with col_pdf:
+            _render_pdf_iframe_panel(gs.aktualis)  # type: ignore[arg-type]
 
 
 if __name__ == "__main__":
