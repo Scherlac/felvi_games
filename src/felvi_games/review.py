@@ -14,6 +14,7 @@ import dataclasses
 import json
 import logging
 import os
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from felvi_games.models import Feladat, FeladatCsoport
@@ -408,3 +409,167 @@ def run_feladat_review(
         changed_fields=changed_fields,
         versioned=updated.id != feladat.id,
     )
+
+
+# ---------------------------------------------------------------------------
+# Review chat context (Chainlit)
+# ---------------------------------------------------------------------------
+
+
+def _read_asset_text_safe(relative_path: str | None) -> str:
+    if not relative_path:
+        return ""
+    from felvi_games.config import resolve_asset
+
+    try:
+        return resolve_asset(relative_path).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return ""
+
+
+def _build_ai_task_guide_assessment(
+    *,
+    feladat: Feladat,
+    task_excerpt: str,
+    guide_excerpt: str,
+    good_attempts: list[dict],
+    bad_attempts: list[dict],
+    model: str | None = None,
+) -> str:
+    """Return a concise AI assessment for the task+guide pair.
+
+    Falls back to an explanatory message when the model call fails.
+    """
+    try:
+        client = _make_openai_client()
+        model = model or os.getenv("LLM_MODEL", "gpt-4o")
+        prompt = {
+            "feladat_id": feladat.id,
+            "feladat_tipus": feladat.feladat_tipus,
+            "max_pont": feladat.max_pont,
+            "helyes_valasz": feladat.helyes_valasz,
+            "elfogadott_valaszok": feladat.elfogadott_valaszok,
+            "reszpontozas": feladat.reszpontozas,
+            "kerdes": feladat.kerdes,
+            "magyarazat": feladat.magyarazat,
+            "feladatlap_kivonat": task_excerpt[:2200],
+            "utmutato_kivonat": guide_excerpt[:2200],
+            "korabbi_jo_valaszok": good_attempts[:3],
+            "korabbi_rossz_valaszok": bad_attempts[:5],
+        }
+
+        response = client.chat.completions.create(
+            model=model,
+            temperature=0.1,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Felvételi feladat-auditor vagy. Röviden értékeled, hogy a feladat és az útmutató "
+                        "konzisztens-e, és hol lehet félreértés. "
+                        "Adj 4 blokkot Markdownban: 'Összkép', 'Lehetséges hibaokok', "
+                        "'Mit érdemes ellenőrizni', 'Javasolt döntés'."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(prompt, ensure_ascii=False, indent=2),
+                },
+            ],
+        )
+        return (response.choices[0].message.content or "").strip() or "AI értékelés nem érkezett."
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("AI pre-evaluation failed for %s: %s", feladat.id, exc)
+        return "AI előértékelés nem elérhető (modell/API hiba)."
+
+
+def build_review_chat_context(
+    feladat: Feladat,
+    repo: FeladatRepository,
+    *,
+    attempts_limit: int = 12,
+    model: str | None = None,
+    include_ai_assessment: bool = True,
+) -> dict:
+    """Build a rich context object for interactive review discussion."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import Session
+
+    from felvi_games.db import MegoldasRecord
+
+    fl_full = _read_asset_text_safe(feladat.fl_szoveg_path)
+    ut_full = _read_asset_text_safe(feladat.ut_szoveg_path)
+
+    task_excerpt = _extract_page(fl_full, feladat.feladat_oldal)[:3000]
+    guide_excerpt = _extract_page(ut_full, feladat.feladat_oldal)[:3000]
+
+    attempts: list[dict] = []
+    with Session(repo._engine) as s:
+        stmt = (
+            select(MegoldasRecord)
+            .where(MegoldasRecord.feladat_id == feladat.id)
+            .order_by(MegoldasRecord.created_at.desc(), MegoldasRecord.id.desc())
+            .limit(max(1, attempts_limit))
+        )
+        for rec in s.scalars(stmt):
+            attempts.append(
+                {
+                    "id": rec.id,
+                    "user": rec.felhasznalo_nev,
+                    "helyes": bool(rec.helyes),
+                    "pont": int(rec.pont),
+                    "adott_valasz": rec.adott_valasz,
+                    "visszajelzes": rec.visszajelzes,
+                    "hibajelezes": bool(rec.hibajelezes),
+                    "created_at": rec.created_at.isoformat() if rec.created_at else None,
+                }
+            )
+
+    good_attempts = [a for a in attempts if a["helyes"]]
+    bad_attempts = [a for a in attempts if not a["helyes"]]
+
+    ai_assessment = ""
+    if include_ai_assessment:
+        ai_assessment = _build_ai_task_guide_assessment(
+            feladat=feladat,
+            task_excerpt=task_excerpt,
+            guide_excerpt=guide_excerpt,
+            good_attempts=good_attempts,
+            bad_attempts=bad_attempts,
+            model=model,
+        )
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "feladat": {
+            "id": feladat.id,
+            "targy": feladat.targy,
+            "szint": feladat.szint,
+            "ev": feladat.ev,
+            "valtozat": feladat.valtozat,
+            "feladat_sorszam": feladat.feladat_sorszam,
+            "feladat_tipus": feladat.feladat_tipus,
+            "max_pont": feladat.max_pont,
+            "reszpontozas": feladat.reszpontozas,
+            "kerdes": feladat.kerdes,
+            "helyes_valasz": feladat.helyes_valasz,
+            "elfogadott_valaszok": feladat.elfogadott_valaszok,
+            "magyarazat": feladat.magyarazat,
+            "kontextus": feladat.kontextus,
+            "feladat_oldal": feladat.feladat_oldal,
+        },
+        "sources": {
+            "fl_szoveg_path": feladat.fl_szoveg_path,
+            "ut_szoveg_path": feladat.ut_szoveg_path,
+            "feladatlap_kivonat": task_excerpt,
+            "utmutato_kivonat": guide_excerpt,
+        },
+        "attempts": {
+            "total": len(attempts),
+            "good_count": len(good_attempts),
+            "bad_count": len(bad_attempts),
+            "good_recent": good_attempts,
+            "bad_recent": bad_attempts,
+        },
+        "ai_assessment": ai_assessment,
+    }

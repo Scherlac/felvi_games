@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generated_at_utc": "2026-05-13T22:06:30+00:00",
+  "generated_at_utc": "2026-05-16T11:19:49+00:00",
   "paths": [
     "src",
     "tests"
@@ -11,7 +11,7 @@
   "total_blank": 2278,
   "avg_mi": 40.506,
   "avg_cc": 4.377,
-  "p95_cc": 15.0,
+  "p95_cc": 14.0,
   "counts_by_rank": {
     "A": 492,
     "B": 59,
@@ -4332,14 +4332,20 @@
       "rank": "D"
     }
   ],
-  "coverage_pct": 54.477,
-  "coverage_files": 18,
+  "coverage_pct": 56.332,
+  "coverage_files": 21,
   "low_coverage_files": [
     {
       "file": "src/felvi_games/report.py",
       "coverage_pct": 0.0,
       "covered_lines": 0,
       "num_statements": 432
+    },
+    {
+      "file": "src/felvi_games/review_chainlit_app.py",
+      "coverage_pct": 0.0,
+      "covered_lines": 0,
+      "num_statements": 73
     },
     {
       "file": "src/felvi_games/scraper.py",
@@ -4349,9 +4355,9 @@
     },
     {
       "file": "src/felvi_games/cli.py",
-      "coverage_pct": 22.915,
-      "covered_lines": 327,
-      "num_statements": 1427
+      "coverage_pct": 30.713,
+      "covered_lines": 504,
+      "num_statements": 1641
     },
     {
       "file": "src/felvi_games/ai.py",
@@ -4361,9 +4367,9 @@
     },
     {
       "file": "src/felvi_games/review.py",
-      "coverage_pct": 50.314,
-      "covered_lines": 80,
-      "num_statements": 159
+      "coverage_pct": 53.807,
+      "covered_lines": 106,
+      "num_statements": 197
     },
     {
       "file": "src/felvi_games/condition_registry.py",
@@ -4373,8 +4379,8 @@
     },
     {
       "file": "src/felvi_games/achievements.py",
-      "coverage_pct": 72.619,
-      "covered_lines": 183,
+      "coverage_pct": 72.222,
+      "covered_lines": 182,
       "num_statements": 252
     },
     {
@@ -4388,12 +4394,6 @@
       "coverage_pct": 75.0,
       "covered_lines": 54,
       "num_statements": 72
-    },
-    {
-      "file": "src/felvi_games/pdf_parser.py",
-      "coverage_pct": 76.471,
-      "covered_lines": 221,
-      "num_statements": 289
     }
   ],
   "coverage_error": null,
@@ -4736,7 +4736,168 @@
       "params": 7
     }
   ],
-  "unused_function_count": 75,
-  "unused_functions": [],
+  "unused_function_count": 71,
+  "unused_functions": [
+    {
+      "file": "src/felvi_games/condition_registry.py",
+      "name": "all_conditions",
+      "line": 172,
+      "end_line": 173,
+      "kind": "function",
+      "owner": null
+    },
+    {
+      "file": "src/felvi_games/condition_registry.py",
+      "name": "advertise_all",
+      "line": 197,
+      "end_line": 209,
+      "kind": "function",
+      "owner": null
+    },
+    {
+      "file": "src/felvi_games/condition_registry.py",
+      "name": "eval_conditions",
+      "line": 238,
+      "end_line": 257,
+      "kind": "function",
+      "owner": null
+    },
+    {
+      "file": "src/felvi_games/condition_registry.py",
+      "name": "condition_count",
+      "line": 260,
+      "end_line": 276,
+      "kind": "function",
+      "owner": null
+    },
+    {
+      "file": "tests/test_achievements_dynamic_conditions.py",
+      "name": "test_eval_dynamic_condition_unknown_type_returns_false",
+      "line": 50,
+      "end_line": 51,
+      "kind": "function",
+      "owner": null
+    },
+    {
+      "file": "tests/test_achievements_dynamic_conditions.py",
+      "name": "test_eval_dynamic_condition_feladat_count_respects_valid_from",
+      "line": 54,
+      "end_line": 78,
+      "kind": "function",
+      "owner": null
+    },
+    {
+      "file": "tests/test_achievements_dynamic_conditions.py",
+      "name": "test_eval_dynamic_condition_interakcio_exists_with_enum_and_filters",
+      "line": 81,
+      "end_line": 105,
+      "kind": "function",
+      "owner": null
+    },
+    {
+      "file": "tests/test_achievements_dynamic_conditions.py",
+      "name": "test_eval_dynamic_condition_respects_simulation_upper_bound",
+      "line": 108,
+      "end_line": 130,
+      "kind": "function",
+      "owner": null
+    },
+    {
+      "file": "tests/test_achievements_dynamic_conditions.py",
+      "name": "test_eval_dynamic_condition_reuses_kpi_cache_with_shared_session",
+      "line": 133,
+      "end_line": 185,
+      "kind": "function",
+      "owner": null
+    },
+    {
+      "file": "tests/test_achievements_dynamic_conditions.py",
+      "name": "test_eval_dynamic_condition_attempt_count_and_pont_sum_share_attempt_items_cache",
+      "line": 188,
+      "end_line": 240,
+      "kind": "function",
+      "owner": null
+    },
+    {
+      "file": "tests/test_achievements_dynamic_conditions.py",
+      "name": "test_eval_dynamic_condition_short_circuits_compound_conditions",
+      "line": 243,
+      "end_line": 287,
+      "kind": "function",
+      "owner": null
+    },
+    {
+      "file": "tests/test_achievements_expiry_policy.py",
+      "name": "test_non_repeatable_temporary_medal_does_not_get_expiry",
+      "line": 41,
+      "end_line": 50,
+      "kind": "function",
+      "owner": null
+    },
+    {
+      "file": "tests/test_achievements_expiry_policy.py",
+      "name": "test_repeatable_temporary_medal_gets_expiry",
+      "line": 53,
+      "end_line": 62,
+      "kind": "function",
+      "owner": null
+    },
+    {
+      "file": "tests/test_achievements_repeatable_gating.py",
+      "name": "test_bootstrap_conditions_seeded_and_villam_awardable",
+      "line": 57,
+      "end_line": 87,
+      "kind": "function",
+      "owner": null
+    },
+    {
+      "file": "tests/test_achievements_repeatable_gating.py",
+      "name": "test_esti_tanulas_requires_new_night_signal",
+      "line": 90,
+      "end_line": 136,
+      "kind": "function",
+      "owner": null
+    },
+    {
+      "file": "tests/test_achievements_repeatable_gating.py",
+      "name": "test_villam_repeatable_respects_cooldown",
+      "line": 139,
+      "end_line": 153,
+      "kind": "function",
+      "owner": null
+    },
+    {
+      "file": "tests/test_ai_daily_insight.py",
+      "name": "test_generate_daily_insight_prompt_includes_trends_patterns_and_events",
+      "line": 11,
+      "end_line": 60,
+      "kind": "function",
+      "owner": null
+    },
+    {
+      "file": "tests/test_cli_medals.py",
+      "name": "test_medals_generator_inputs_shows_payload",
+      "line": 34,
+      "end_line": 90,
+      "kind": "function",
+      "owner": null
+    },
+    {
+      "file": "tests/test_cli_medals.py",
+      "name": "test_medals_generator_inputs_requires_user",
+      "line": 93,
+      "end_line": 99,
+      "kind": "function",
+      "owner": null
+    },
+    {
+      "file": "tests/test_cli_medals.py",
+      "name": "test_medals_shows_all_earned_dates_for_repeated_medal",
+      "line": 102,
+      "end_line": 136,
+      "kind": "function",
+      "owner": null
+    }
+  ],
   "unused_error": null
 }

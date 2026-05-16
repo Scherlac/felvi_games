@@ -60,6 +60,14 @@ class Targy(str, Enum):
     magyar = "magyar"
 
 
+class ReviewCheckSource(str, Enum):
+    direct = "direct"
+    wrong = "wrong"
+    flagged = "flagged"
+    keyword = "keyword"
+    any = "any"
+
+
 # ---------------------------------------------------------------------------
 # felvi info
 # ---------------------------------------------------------------------------
@@ -1182,10 +1190,9 @@ def wrong_cmd(
     ] = None,
 ) -> None:
     """Feladatok, amelyekre legalább egy hibás választ adtak (legtöbbet rontottak elöl)."""
-    from collections import Counter
-
     from felvi_games.config import get_db_path
     from felvi_games.db import FeladatRepository
+    from felvi_games.review_check_shared import ReviewQuery, collect_wrong_task_items, render_wrong_task_report
 
     db_path = db or get_db_path()
     if not db_path.exists():
@@ -1193,51 +1200,97 @@ def wrong_cmd(
         raise typer.Exit(code=1)
 
     repo = FeladatRepository(db_path)
-    rows = repo.get_wrong_feladatok(
-        felhasznalo_nev=user,
-        targy=targy.value if targy else None,
-        szint=szint.value if szint else None,
-        min_hibas=min_hibas,
-        limit=limit,
+    rows = collect_wrong_task_items(
+        repo,
+        ReviewQuery(
+            kind="wrong",
+            user=user,
+            targy=targy.value if targy else None,
+            szint=szint.value if szint else None,
+            min_hibas=min_hibas,
+            limit=limit,
+        ),
         include_wrong_answers=detail,
     )
-
-    scope = f"  (user={user})" if user else ""
-    lines = [f"\n=== Hibásan megoldott feladatok  (DB: {db_path}){scope} ===\n"]
-
-    if not rows:
-        lines.append("  Nincs találat (még senki sem rontott el egy feladatot sem ebben a körben).")
-        lines.append("")
-    else:
-        for r in rows:
-            ev_label = str(r.ev) if r.ev else "?"
-            tipus = r.feladat_tipus or "-"
-            kerdes_short = (r.kerdes[:90] + "…") if len(r.kerdes) > 90 else r.kerdes
-            helyes_short = (r.helyes_valasz[:50] + "…") if len(r.helyes_valasz) > 50 else r.helyes_valasz
-
-            lines.append(
-                f"  [{r.targy}/{r.szint}/{ev_label}] {tipus}  "
-                f"hibás: {r.hibas_db}/{r.osszes_db}  ({r.rontas_pct:.0f}% rontás)"
-            )
-            lines.append(f"    Kérdés:        {kerdes_short}")
-            lines.append(f"    Helyes válasz: {helyes_short}")
-            lines.append(f"    ID:            {r.feladat_id}")
-
-            if detail and r.hibas_valaszok:
-                cnt = Counter(r.hibas_valaszok)
-                parts = [f'"{v}"×{c}' if c > 1 else f'"{v}"' for v, c in cnt.most_common()]
-                lines.append(f"    Hibás válaszok: {', '.join(parts)}")
-
-            lines.append("")
-
-        lines.append(f"  Összesen: {len(rows)} feladat listázva.\n")
-
-    output_text = "\n".join(lines)
+    output_text = render_wrong_task_report(rows, db_path=db_path, user=user, detail=detail)
     if output:
         output.write_text(output_text, encoding="utf-8")
         typer.echo(f"✓ Kiírva: {output}")
     else:
         typer.echo(output_text, nl=False)
+
+
+# ---------------------------------------------------------------------------
+# felvi wrong-issues  – felhasználói hibajelzések és kulcsszavas hibás válaszok
+# ---------------------------------------------------------------------------
+
+
+@app.command("wrong-issues")
+def wrong_issues_cmd(
+    db: Annotated[
+        Path | None, typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
+    ] = None,
+    user: Annotated[
+        str | None, typer.Option("--user", help="Szűrés egy felhasználóra")
+    ] = None,
+    contains: Annotated[
+        str, typer.Option("--contains", help="Kulcsszó a beírt válaszban (kis/nagybetű független)")
+    ] = "hibás",
+    limit: Annotated[
+        int, typer.Option("--limit", help="Max. kilistázott feladatok száma (0 = mind)")
+    ] = 50,
+    output: Annotated[
+        Path | None, typer.Option("--output", help="Kimenet fájl útvonala (üres = stdout)")
+    ] = None,
+    ids_dat: Annotated[
+        Path | None,
+        typer.Option(
+            "--ids-dat",
+            help="Hibajelzéssel jelölt feladat ID-k mentése .dat fájlba (egy sor = egy ID)",
+        ),
+    ] = None,
+) -> None:
+    """Listázza a vitás feladatokat két nézetben.
+
+    1) Felhasználó által hibásnak jelölt próbálkozások (hibajelzés).
+    2) Olyan válaszok, amelyek tartalmazzák a megadott kulcsszót (alap: "hibás").
+    """
+    from felvi_games.config import get_db_path
+    from felvi_games.db import FeladatRepository
+    from felvi_games.review_check_shared import (
+        ReviewQuery,
+        collect_wrong_issue_report,
+        render_wrong_issue_report,
+        write_flagged_ids,
+    )
+
+    db_path = db or get_db_path()
+    if not db_path.exists():
+        typer.echo(f"[!] DB nem található: {db_path}")
+        raise typer.Exit(code=1)
+
+    repo = FeladatRepository(db_path)
+    keyword = (contains or "").strip()
+    if not keyword:
+        typer.echo("[!] A --contains nem lehet üres.")
+        raise typer.Exit(code=2)
+
+    query = ReviewQuery(user=user, contains=keyword, limit=limit)
+    report = collect_wrong_issue_report(repo, query)
+    flagged_rows = list(report.get("flagged") or [])
+    output_text = render_wrong_issue_report(report, db_path=db_path, user=user)
+
+    if ids_dat is not None:
+        write_flagged_ids(report, ids_dat)
+
+    if output:
+        output.write_text(output_text, encoding="utf-8")
+        typer.echo(f"✓ Kiírva: {output}")
+    else:
+        typer.echo(output_text, nl=False)
+
+    if ids_dat is not None:
+        typer.echo(f"✓ ID-k kiírva: {ids_dat}  ({len(flagged_rows)} db)")
 
 
 # ---------------------------------------------------------------------------
@@ -1779,6 +1832,196 @@ def medal_check_cmd(
 # felvi reeval  – GPT-alapú újraértékelés parancssori eszköz
 # ---------------------------------------------------------------------------
 
+
+def _handle_reeval_pending(repo, user: str | None) -> None:
+    if not user:
+        typer.echo("[!] --pending használatához add meg a --user opciót.")
+        raise typer.Exit(code=2)
+    earned = repo.process_pending_ujraertekeles_jutalom(user, trigger_tipus="cli_reeval")
+    if earned:
+        typer.echo(f"✅ Jutalmak kiosztva ({user}): {', '.join(earned)}")
+        return
+    typer.echo(f"  Nincs függő jutalom ({user}).")
+
+
+def _query_reeval_rows(
+    repo,
+    *,
+    user: str | None,
+    feladat_id: str | None,
+    megoldas_id: int | None,
+    limit: int,
+):
+    from sqlalchemy import select
+    from sqlalchemy.orm import Session
+
+    from felvi_games.db import FeladatRecord as FR
+    from felvi_games.db import MegoldasRecord
+
+    with Session(repo._engine) as session:
+        stmt = (
+            select(
+                MegoldasRecord.id,
+                MegoldasRecord.felhasznalo_nev,
+                MegoldasRecord.feladat_id,
+                MegoldasRecord.adott_valasz,
+                MegoldasRecord.pont,
+                MegoldasRecord.helyes,
+                MegoldasRecord.ujraertekelt,
+                MegoldasRecord.created_at,
+            )
+            .where(MegoldasRecord.adott_valasz.is_not(None))
+        )
+        if megoldas_id is not None:
+            return session.execute(stmt.where(MegoldasRecord.id == megoldas_id)).all()
+
+        if user:
+            stmt = stmt.where(MegoldasRecord.felhasznalo_nev == user)
+        if feladat_id:
+            stmt = stmt.where(MegoldasRecord.feladat_id == feladat_id)
+        if not feladat_id:
+            open_ids = set(session.scalars(select(FR.id).where(FR.feladat_tipus == "nyilt_valasz")).all())
+            stmt = stmt.where(MegoldasRecord.feladat_id.in_(open_ids))
+        stmt = stmt.order_by(MegoldasRecord.ujraertekelt.asc(), MegoldasRecord.created_at.desc())
+        return session.execute(stmt.limit(limit)).all()
+
+
+def _list_reeval_rows(rows, db_path: Path) -> None:
+    typer.echo(f"\n=== Újraértékelhető megoldások  (DB: {db_path})  összesen: {len(rows)} ===\n")
+    for row in rows:
+        flag = "✓" if row.ujraertekelt else " "
+        eredmeny = "✅" if row.helyes else "❌"
+        typer.echo(
+            f"  [{flag}] id={row.id:5d}  {eredmeny} {row.pont}pt  "
+            f"{row.feladat_id}  {row.felhasznalo_nev}  "
+            f"  válasz: {str(row.adott_valasz or '')[:60]}"
+        )
+    typer.echo("\nTipp: felvi reeval --id <ID>   egy konkrét újraértékeléshez")
+    typer.echo("      felvi reeval --user <NÉV>  tömeges újraértékeléshez\n")
+
+
+def _parse_elfogadott_valaszok(raw: str | None):
+    import json as _json
+
+    if not raw:
+        return None
+    try:
+        return _json.loads(raw)
+    except Exception:
+        return None
+
+
+def _run_reeval_check(check_answer_fn, feladat, answer: str, elfogadott, *, lenient_open: bool):
+    ert = check_answer_fn(
+        feladat.kerdes,
+        feladat.helyes_valasz,
+        answer,
+        feladat.magyarazat,
+        elfogadott_valaszok=elfogadott,
+        feladat_tipus=feladat.feladat_tipus,
+        max_pont=feladat.max_pont,
+        reszpontozas=feladat.reszpontozas,
+    )
+    eval_mode = "strict"
+    should_retry = (
+        lenient_open
+        and feladat.feladat_tipus == "nyilt_valasz"
+        and elfogadott
+        and ert.pont < feladat.max_pont
+    )
+    if not should_retry:
+        return ert, eval_mode
+
+    ert_lenient = check_answer_fn(
+        feladat.kerdes,
+        feladat.helyes_valasz,
+        answer,
+        feladat.magyarazat,
+        elfogadott_valaszok=None,
+        feladat_tipus=feladat.feladat_tipus,
+        max_pont=feladat.max_pont,
+        reszpontozas=feladat.reszpontozas,
+    )
+    if ert_lenient.pont > ert.pont:
+        return ert_lenient, "lenient-upgrade"
+    return ert, eval_mode
+
+
+def _print_reeval_result(row, feladat, ert, eval_mode: str) -> None:
+    arrow = f"{row.pont} → {ert.pont}" if ert.pont != row.pont else f"{row.pont} (változatlan)"
+    flag = "📈" if ert.pont > row.pont else ("📉" if ert.pont < row.pont else "➡️ ")
+    typer.echo(
+        f"  {flag} id={row.id:5d}  {row.feladat_id}  {row.felhasznalo_nev}  "
+        f"pont: {arrow} / {feladat.max_pont}   [{eval_mode}] {ert.visszajelzes[:60]}"
+    )
+
+
+def _process_reeval_rows(repo, rows, *, dry_run: bool, lenient_open: bool, check_answer_fn):
+    from sqlalchemy.orm import Session
+
+    from felvi_games.db import FeladatRecord
+
+    improved = skipped = errors = 0
+    with Session(repo._engine) as session:
+        for row in rows:
+            feladat = session.get(FeladatRecord, row.feladat_id)
+            if not feladat:
+                typer.echo(f"  [!] Feladat nem található: {row.feladat_id} — kihagyva")
+                skipped += 1
+                continue
+
+            try:
+                elfogadott = _parse_elfogadott_valaszok(feladat.elfogadott_valaszok)
+                ert, eval_mode = _run_reeval_check(
+                    check_answer_fn,
+                    feladat,
+                    row.adott_valasz or "",
+                    elfogadott,
+                    lenient_open=lenient_open,
+                )
+            except Exception as exc:  # noqa: BLE001
+                typer.echo(f"  [!] GPT hiba  id={row.id}: {exc}")
+                errors += 1
+                continue
+
+            _print_reeval_result(row, feladat, ert, eval_mode)
+            if dry_run:
+                continue
+
+            result = repo.reevaluate_megoldas(
+                row.id,
+                ertekeles=ert,
+                source="cli_reeval",
+                note=f"Tömeges CLI újraértékelés ({eval_mode})",
+            )
+            if result["new_pont"] > result["old_pont"]:
+                improved += 1
+                if result["deferred_reward"]:
+                    typer.echo(f"          ⭐ Jutalom függőben ({row.felhasznalo_nev})")
+
+    return improved, skipped, errors
+
+def _print_reeval_summary(
+    repo,
+    *,
+    user: str | None,
+    total: int,
+    dry_run: bool,
+    improved: int,
+    skipped: int,
+    errors: int,
+) -> None:
+    if dry_run:
+        typer.echo("\n  (Dry-run, semmi nem lett mentve.)\n")
+        return
+    typer.echo(f"\n  Mentve: {total - skipped - errors} db, javult: {improved}, hiba: {errors}\n")
+    if not user:
+        return
+    earned = repo.process_pending_ujraertekeles_jutalom(user, trigger_tipus="cli_reeval")
+    if earned:
+        typer.echo(f"  ✅ Jutalmak kiosztva: {', '.join(earned)}\n")
+
+
 @app.command("reeval")
 def reeval_cmd(
     db: Annotated[
@@ -1805,6 +2048,16 @@ def reeval_cmd(
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Csak kiírja mit csinálna, nem ment")
     ] = False,
+    lenient_open: Annotated[
+        bool,
+        typer.Option(
+            "--lenient-open",
+            help=(
+                "Nyílt válasznál, ha az első körben nem teljes pont, fusson egy második "
+                "értékelés elfogadott-lista kényszer nélkül, és a jobb pont legyen érvényes"
+            ),
+        ),
+    ] = False,
 ) -> None:
     """GPT-alapú újraértékelés: nyílt válaszok pontszámának felülvizsgálata.
 
@@ -1813,14 +2066,9 @@ def reeval_cmd(
     --id N: egy megoldást értékel újra GPT-vel.
     --user / --feladat-id: tömeges újraértékelés (--limit darabot).
     """
-    import json as _json
-
-    from sqlalchemy import select
-    from sqlalchemy.orm import Session
-
     from felvi_games.ai import check_answer
     from felvi_games.config import get_db_path
-    from felvi_games.db import FeladatRecord, FeladatRepository, MegoldasRecord
+    from felvi_games.db import FeladatRepository
 
     db_path = db or get_db_path()
     if not db_path.exists():
@@ -1829,136 +2077,44 @@ def reeval_cmd(
 
     repo = FeladatRepository(db_path)
 
-    # --pending: process deferred rewards only, no GPT calls
     if pending:
-        if not user:
-            typer.echo("[!] --pending használatához add meg a --user opciót.")
-            raise typer.Exit(code=2)
-        earned = repo.process_pending_ujraertekeles_jutalom(user, trigger_tipus="cli_reeval")
-        if earned:
-            typer.echo(f"✅ Jutalmak kiosztva ({user}): {', '.join(earned)}")
-        else:
-            typer.echo(f"  Nincs függő jutalom ({user}).")
+        _handle_reeval_pending(repo, user)
         return
 
-    # Query candidate rows
-    with Session(repo._engine) as s:
-        stmt = (
-            select(
-                MegoldasRecord.id,
-                MegoldasRecord.felhasznalo_nev,
-                MegoldasRecord.feladat_id,
-                MegoldasRecord.adott_valasz,
-                MegoldasRecord.pont,
-                MegoldasRecord.helyes,
-                MegoldasRecord.ujraertekelt,
-                MegoldasRecord.created_at,
-            )
-            .where(MegoldasRecord.adott_valasz.is_not(None))
-        )
-        if megoldas_id is not None:
-            stmt = stmt.where(MegoldasRecord.id == megoldas_id)
-        else:
-            if user:
-                stmt = stmt.where(MegoldasRecord.felhasznalo_nev == user)
-            if feladat_id:
-                stmt = stmt.where(MegoldasRecord.feladat_id == feladat_id)
-            # For bulk: prefer not-yet-reevaluated, open-answer tasks
-            from felvi_games.db import FeladatRecord as FR
-            open_ids = set(s.scalars(
-                select(FR.id).where(FR.feladat_tipus == "nyilt_valasz")
-            ).all())
-            if not feladat_id:
-                stmt = stmt.where(MegoldasRecord.feladat_id.in_(open_ids))
-            stmt = stmt.order_by(MegoldasRecord.ujraertekelt.asc(), MegoldasRecord.created_at.desc())
-            stmt = stmt.limit(limit)
-
-        rows = s.execute(stmt).all()
+    rows = _query_reeval_rows(
+        repo,
+        user=user,
+        feladat_id=feladat_id,
+        megoldas_id=megoldas_id,
+        limit=limit,
+    )
 
     if not rows:
         typer.echo("  Nincs újraértékelhető megoldás a feltételek alapján.")
         return
 
-    # --list mode
     if list_cmd or (megoldas_id is None and not user and not feladat_id):
-        typer.echo(f"\n=== Újraértékelhető megoldások  (DB: {db_path})  összesen: {len(rows)} ===\n")
-        for r in rows:
-            flag = "✓" if r.ujraertekelt else " "
-            eredmeny = "✅" if r.helyes else "❌"
-            typer.echo(
-                f"  [{flag}] id={r.id:5d}  {eredmeny} {r.pont}pt  "
-                f"{r.feladat_id}  {r.felhasznalo_nev}  "
-                f"  válasz: {str(r.adott_valasz or '')[:60]}"
-            )
-        typer.echo("\nTipp: felvi reeval --id <ID>   egy konkrét újraértékeléshez")
-        typer.echo(      "      felvi reeval --user <NÉV>  tömeges újraértékeléshez\n")
+        _list_reeval_rows(rows, db_path)
         return
 
-    # Reevaluate rows with GPT
     total = len(rows)
-    improved = skipped = errors = 0
-
     typer.echo(f"\n=== GPT újraértékelés  (DB: {db_path})  {'DRY-RUN  ' if dry_run else ''}{total} megoldás ===\n")
-
-    with Session(repo._engine) as s:
-        for r in rows:
-            f = s.get(FeladatRecord, r.feladat_id)
-            if not f:
-                typer.echo(f"  [!] Feladat nem található: {r.feladat_id} — kihagyva")
-                skipped += 1
-                continue
-
-            elfogadott = None
-            if f.elfogadott_valaszok:
-                try:
-                    elfogadott = _json.loads(f.elfogadott_valaszok)
-                except Exception:
-                    pass
-
-            try:
-                ert = check_answer(
-                    f.kerdes,
-                    f.helyes_valasz,
-                    r.adott_valasz or "",
-                    f.magyarazat,
-                    elfogadott_valaszok=elfogadott,
-                    feladat_tipus=f.feladat_tipus,
-                    max_pont=f.max_pont,
-                    reszpontozas=f.reszpontozas,
-                )
-            except Exception as exc:  # noqa: BLE001
-                typer.echo(f"  [!] GPT hiba  id={r.id}: {exc}")
-                errors += 1
-                continue
-
-            arrow = f"{r.pont} → {ert.pont}" if ert.pont != r.pont else f"{r.pont} (változatlan)"
-            flag = "📈" if ert.pont > r.pont else ("📉" if ert.pont < r.pont else "➡️ ")
-            typer.echo(
-                f"  {flag} id={r.id:5d}  {r.feladat_id}  {r.felhasznalo_nev}  "
-                f"pont: {arrow} / {f.max_pont}   {ert.visszajelzes[:60]}"
-            )
-
-            if not dry_run:
-                rv = repo.reevaluate_megoldas(
-                    r.id,
-                    ertekeles=ert,
-                    source="cli_reeval",
-                    note="Tömeges CLI újraértékelés",
-                )
-                if rv["new_pont"] > rv["old_pont"]:
-                    improved += 1
-                    if rv["deferred_reward"]:
-                        typer.echo(f"          ⭐ Jutalom függőben ({r.felhasznalo_nev})")
-
-    if not dry_run:
-        typer.echo(f"\n  Mentve: {total - skipped - errors} db, javult: {improved}, hiba: {errors}\n")
-        # Auto-process pending rewards for targeted user
-        if user:
-            earned = repo.process_pending_ujraertekeles_jutalom(user, trigger_tipus="cli_reeval")
-            if earned:
-                typer.echo(f"  ✅ Jutalmak kiosztva: {', '.join(earned)}\n")
-    else:
-        typer.echo("\n  (Dry-run, semmi nem lett mentve.)\n")
+    improved, skipped, errors = _process_reeval_rows(
+        repo,
+        rows,
+        dry_run=dry_run,
+        lenient_open=lenient_open,
+        check_answer_fn=check_answer,
+    )
+    _print_reeval_summary(
+        repo,
+        user=user,
+        total=total,
+        dry_run=dry_run,
+        improved=improved,
+        skipped=skipped,
+        errors=errors,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2318,6 +2474,432 @@ def review_cmd(
         typer.echo()
 
     typer.echo("Kész.\n")
+
+
+def _collect_review_check_candidates(
+    *,
+    repo,
+    source: ReviewCheckSource,
+    user: str | None,
+    contains: str,
+    min_hibas: int,
+    limit: int,
+) -> list[tuple[str, str]]:
+    """Collect candidate task IDs with origin labels for review-check."""
+    from felvi_games.review_check_shared import ReviewQuery, collect_review_check_candidates
+
+    return collect_review_check_candidates(
+        repo,
+        ReviewQuery(
+            kind=source.value,
+            user=user,
+            contains=contains,
+            min_hibas=min_hibas,
+            limit=limit,
+        ),
+    )
+
+
+@app.command("review-check")
+def review_check_cmd(
+    feladat_id: Annotated[
+        str | None, typer.Argument(help="Feladat ID (ha üres, a --source alapján jelöltből választ)")
+    ] = None,
+    db: Annotated[
+        Path | None, typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
+    ] = None,
+    source: Annotated[
+        ReviewCheckSource,
+        typer.Option(
+            "--source",
+            help="direct=adott ID, wrong/flagged/keyword/any=hibás feladatforrás",
+        ),
+    ] = ReviewCheckSource.any,
+    user: Annotated[
+        str | None, typer.Option("--user", help="Felhasználó szűrő wrong/flagged/keyword kiválasztáshoz")
+    ] = None,
+    contains: Annotated[
+        str, typer.Option("--contains", help="Kulcsszó a --source keyword/any esetén")
+    ] = "hibás",
+    min_hibas: Annotated[
+        int, typer.Option("--min-hibas", help="Minimum hibás próbálkozás --source wrong/any esetén")
+    ] = 1,
+    limit: Annotated[
+        int, typer.Option("--limit", help="Maximum jelölt feladat (0 = mind)")
+    ] = 20,
+    attempts_limit: Annotated[
+        int, typer.Option("--attempts-limit", help="Ennyi legutóbbi próbálkozás kerüljön a chat kontextusba")
+    ] = 12,
+    model: Annotated[
+        str | None, typer.Option("--model", help="LLM modell neve az AI előértékeléshez")
+    ] = None,
+    no_ai_assessment: Annotated[
+        bool, typer.Option("--no-ai-assessment", help="Ne készítsen előzetes AI értékelést")
+    ] = False,
+    context_dir: Annotated[
+        Path, typer.Option("--context-dir", help="A review-check kontextus JSON mappája")
+    ] = Path("data") / "review_chat",
+    prepare_only: Annotated[
+        bool,
+        typer.Option("--prepare-only", help="Csak kontextusfájl készítése, Chainlit indítás nélkül"),
+    ] = False,
+    prepare_all: Annotated[
+        bool,
+        typer.Option("--prepare-all", help="Az összes kiválasztott jelölt kontextusának előkészítése"),
+    ] = False,
+) -> None:
+    """Single-command review check with chat tools and guarded task updates.
+
+    A review-chat ugyanazokat az eszközöket kapja, mint a CLI review stack:
+    hibás feladat listázás (wrong/flagged/keyword/any), eredeti kivonatok, és
+    megerősítő kóddal védett verziózott feladat+útmutató frissítés.
+    """
+    from felvi_games.config import get_db_path
+    from felvi_games.db import FeladatRepository
+
+    db_path = db or get_db_path()
+    if not db_path.exists():
+        typer.echo(f"[!] DB nem található: {db_path}")
+        raise typer.Exit(code=1)
+
+    repo = FeladatRepository(db_path)
+    context_dir.mkdir(parents=True, exist_ok=True)
+
+    selected = []
+    if feladat_id:
+        f = repo.get(feladat_id)
+        if f is None:
+            typer.echo(f"[!] Feladat nem található: {feladat_id}")
+            raise typer.Exit(code=1)
+        selected = [f]
+    else:
+        if source == ReviewCheckSource.direct:
+            typer.echo("[!] --source direct esetén adj meg feladat ID-t is.")
+            raise typer.Exit(code=2)
+
+        candidates = _collect_review_check_candidates(
+            repo=repo,
+            source=source,
+            user=user,
+            contains=contains,
+            min_hibas=min_hibas,
+            limit=limit,
+        )
+        if not candidates:
+            typer.echo("[!] Nincs review-check jelölt a megadott szűrőkkel.")
+            raise typer.Exit(code=1)
+
+        for fid, _origin in candidates:
+            f = repo.get(fid)
+            if f is not None:
+                selected.append(f)
+
+    if not selected:
+        typer.echo("[!] Nem található review-zható feladat.")
+        raise typer.Exit(code=1)
+
+    if prepare_all or prepare_only:
+        typer.echo(f"Kontextus előkészítés indul: {len(selected)} feladat")
+        for f in selected:
+            _run_chainlit_review_chat(
+                feladat=f,
+                repo=repo,
+                db_path=db_path,
+                attempts_limit=attempts_limit,
+                model=model,
+                no_ai_assessment=no_ai_assessment,
+                context_out=context_dir / f"{f.id}.json",
+                prepare_only=True,
+            )
+        typer.echo(f"✓ Kész. Kontextusfájlok mappája: {context_dir}")
+        return
+
+    if len(selected) == 1:
+        chosen = selected[0]
+    else:
+        typer.echo("\n=== Review-check jelöltek ===")
+        for i, f in enumerate(selected, start=1):
+            typer.echo(f"  {i:2d}. {f.id:20s}  [{f.targy}/{f.szint}]")
+        default_choice = selected[0].id
+        choice = typer.prompt(
+            "Válassz sorszámot vagy feladat ID-t",
+            default=default_choice,
+        ).strip()
+        chosen = None
+        if choice.isdigit():
+            idx = int(choice)
+            if 1 <= idx <= len(selected):
+                chosen = selected[idx - 1]
+        else:
+            for f in selected:
+                if f.id == choice:
+                    chosen = f
+                    break
+        if chosen is None:
+            typer.echo(f"[!] Ismeretlen választás: {choice}")
+            raise typer.Exit(code=2)
+
+    _run_chainlit_review_chat(
+        feladat=chosen,
+        repo=repo,
+        db_path=db_path,
+        attempts_limit=attempts_limit,
+        model=model,
+        no_ai_assessment=no_ai_assessment,
+        context_out=context_dir / f"{chosen.id}.json",
+        prepare_only=False,
+    )
+
+
+def _run_chainlit_review_chat(
+    *,
+    feladat,
+    repo,
+    db_path: Path,
+    attempts_limit: int,
+    model: str | None,
+    no_ai_assessment: bool,
+    context_out: Path,
+    prepare_only: bool,
+) -> None:
+    """Build review context and optionally launch Chainlit for one task."""
+    import json
+    import os
+    import subprocess
+    import sys
+
+    from felvi_games.review import build_review_chat_context
+
+    out_path = context_out
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    typer.echo(f"Kontextus építése: {feladat.id} …")
+    context = build_review_chat_context(
+        feladat,
+        repo,
+        attempts_limit=attempts_limit,
+        model=model,
+        include_ai_assessment=not no_ai_assessment,
+    )
+    context["meta"] = {
+        "db_path": str(db_path),
+    }
+    out_path.write_text(json.dumps(context, ensure_ascii=False, indent=2), encoding="utf-8")
+    typer.echo(f"✓ Kontextus mentve: {out_path}")
+
+    if prepare_only:
+        typer.echo("[prepare-only] Chainlit indítás kihagyva.")
+        return
+
+    app_path = Path(__file__).with_name("review_chainlit_app.py")
+    if not app_path.exists():
+        typer.echo(f"[!] Chainlit app fájl hiányzik: {app_path}")
+        raise typer.Exit(code=1)
+
+    env = os.environ.copy()
+    env["FELVI_REVIEW_CHAT_CONTEXT"] = str(out_path.resolve())
+
+    cmd = [sys.executable, "-m", "chainlit", "run", str(app_path), "-w"]
+    typer.echo("Chainlit indul… (leállítás: Ctrl+C)")
+    typer.echo(f"Parancs: {' '.join(cmd)}")
+
+    try:
+        subprocess.run(cmd, check=True, env=env)
+    except FileNotFoundError:
+        typer.echo("[!] A chainlit nincs telepítve. Telepítés: pip install chainlit")
+        raise typer.Exit(code=1) from None
+    except subprocess.CalledProcessError as exc:
+        typer.echo(f"[!] Chainlit futtatási hiba: {exc}")
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("review-chat")
+def review_chat_cmd(
+    feladat_id: Annotated[str, typer.Argument(help="Feladat ID, amelyről interaktív review chat indul")],
+    db: Annotated[
+        Path | None, typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
+    ] = None,
+    attempts_limit: Annotated[
+        int, typer.Option("--attempts-limit", help="Ennyi legutóbbi próbálkozás kerüljön a chat kontextusba")
+    ] = 12,
+    model: Annotated[
+        str | None, typer.Option("--model", help="LLM modell neve az AI előértékeléshez")
+    ] = None,
+    no_ai_assessment: Annotated[
+        bool, typer.Option("--no-ai-assessment", help="Ne készítsen előzetes AI értékelést")
+    ] = False,
+    context_out: Annotated[
+        Path | None,
+        typer.Option(
+            "--context-out",
+            help="Kontekstus JSON mentése ide (alap: data/review_chat/<id>.json)",
+        ),
+    ] = None,
+    prepare_only: Annotated[
+        bool,
+        typer.Option("--prepare-only", help="Csak kontextusfájl készítése, Chainlit indítás nélkül"),
+    ] = False,
+) -> None:
+    """Interaktív Chainlit review chat egy feladatról.
+
+    A chat kontextusa tartalmazza:
+    - eredeti feladat + útmutató kivonat,
+    - korábbi jó és rossz válaszokat,
+    - opcionális AI előértékelést.
+    """
+    from felvi_games.config import get_db_path
+    from felvi_games.db import FeladatRepository
+
+    db_path = db or get_db_path()
+    if not db_path.exists():
+        typer.echo(f"[!] DB nem található: {db_path}")
+        raise typer.Exit(code=1)
+
+    repo = FeladatRepository(db_path)
+    feladat = repo.get(feladat_id)
+    if feladat is None:
+        typer.echo(f"[!] Feladat nem található: {feladat_id}")
+        raise typer.Exit(code=1)
+
+    out_path = context_out or (Path("data") / "review_chat" / f"{feladat_id}.json")
+    _run_chainlit_review_chat(
+        feladat=feladat,
+        repo=repo,
+        db_path=db_path,
+        attempts_limit=attempts_limit,
+        model=model,
+        no_ai_assessment=no_ai_assessment,
+        context_out=out_path,
+        prepare_only=prepare_only,
+    )
+
+
+@app.command("review-chat-marked")
+def review_chat_marked_cmd(
+    ids_dat: Annotated[
+        Path,
+        typer.Option("--ids-dat", help=".dat fájl a jelölt feladat ID-kkal (alap: data/issue_task_ids.dat)"),
+    ] = Path("data") / "issue_task_ids.dat",
+    db: Annotated[
+        Path | None, typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
+    ] = None,
+    attempts_limit: Annotated[
+        int, typer.Option("--attempts-limit", help="Ennyi legutóbbi próbálkozás kerüljön a chat kontextusba")
+    ] = 12,
+    model: Annotated[
+        str | None, typer.Option("--model", help="LLM modell neve az AI előértékeléshez")
+    ] = None,
+    no_ai_assessment: Annotated[
+        bool, typer.Option("--no-ai-assessment", help="Ne készítsen előzetes AI értékelést")
+    ] = False,
+    context_dir: Annotated[
+        Path, typer.Option("--context-dir", help="A review-chat kontextus JSON-ok mappája")
+    ] = Path("data") / "review_chat",
+    prepare_only: Annotated[
+        bool,
+        typer.Option("--prepare-only", help="Csak kontextusok készítése az összes ID-hoz, Chainlit nélkül"),
+    ] = False,
+) -> None:
+    """Interaktív review a jelölt feladat-ID listáról (.dat).
+
+    Alap módban listát mutat, és kiválasztható egy ID (sorszám vagy azonosító)
+    Chainlit review-hoz. Kilépés után kérésre újra választható másik feladat.
+    """
+    from felvi_games.config import get_db_path
+    from felvi_games.db import FeladatRepository
+
+    if not ids_dat.exists():
+        typer.echo(f"[!] IDs fájl nem található: {ids_dat}")
+        raise typer.Exit(code=1)
+
+    ids = [line.strip() for line in ids_dat.read_text(encoding="utf-8").splitlines() if line.strip()]
+    if not ids:
+        typer.echo(f"[!] Üres IDs fájl: {ids_dat}")
+        raise typer.Exit(code=1)
+
+    db_path = db or get_db_path()
+    if not db_path.exists():
+        typer.echo(f"[!] DB nem található: {db_path}")
+        raise typer.Exit(code=1)
+
+    repo = FeladatRepository(db_path)
+    found = []
+    missing = []
+    for fid in ids:
+        f = repo.get(fid)
+        if f is None:
+            missing.append(fid)
+        else:
+            found.append(f)
+
+    if missing:
+        typer.echo(f"⚠ Nem található a DB-ben: {len(missing)} ID")
+        for fid in missing:
+            typer.echo(f"  - {fid}")
+        typer.echo("")
+
+    if not found:
+        typer.echo("[!] Egyik ID sem található a DB-ben.")
+        raise typer.Exit(code=1)
+
+    context_dir.mkdir(parents=True, exist_ok=True)
+
+    if prepare_only:
+        typer.echo(f"Kontextus előkészítés indul: {len(found)} feladat")
+        for f in found:
+            _run_chainlit_review_chat(
+                feladat=f,
+                repo=repo,
+                db_path=db_path,
+                attempts_limit=attempts_limit,
+                model=model,
+                no_ai_assessment=no_ai_assessment,
+                context_out=context_dir / f"{f.id}.json",
+                prepare_only=True,
+            )
+        typer.echo(f"✓ Kész. Kontextusfájlok mappája: {context_dir}")
+        return
+
+    while True:
+        typer.echo("\n=== Jelölt feladatok interaktív review ===")
+        for i, f in enumerate(found, start=1):
+            typer.echo(f"  {i:2d}. {f.id:20s}  [{f.targy}/{f.szint}]")
+
+        default_choice = found[0].id
+        choice = typer.prompt("Válassz sorszámot vagy feladat ID-t (q = kilépés)", default=default_choice).strip()
+        if choice.lower() in {"q", "quit", "exit"}:
+            typer.echo("Kilépés.")
+            return
+
+        selected = None
+        if choice.isdigit():
+            idx = int(choice)
+            if 1 <= idx <= len(found):
+                selected = found[idx - 1]
+        else:
+            for f in found:
+                if f.id == choice:
+                    selected = f
+                    break
+
+        if selected is None:
+            typer.echo(f"[!] Ismeretlen választás: {choice}")
+            continue
+
+        _run_chainlit_review_chat(
+            feladat=selected,
+            repo=repo,
+            db_path=db_path,
+            attempts_limit=attempts_limit,
+            model=model,
+            no_ai_assessment=no_ai_assessment,
+            context_out=context_dir / f"{selected.id}.json",
+            prepare_only=False,
+        )
+
+        if not typer.confirm("Szeretnél másik jelölt feladatot is review-zni?", default=True):
+            typer.echo("Kilépés.")
+            return
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 # Code Quality Gate Report
 
-Generated at (UTC): 2026-05-13T22:07:27+00:00
+Generated at (UTC): 2026-05-16T11:19:49+00:00
 Scope: src, tests
 
 ## Gate
@@ -12,23 +12,23 @@ Reasons:
 
 ## Current Snapshot
 
-- Python files: 34
-- LOC: 17673 (SLOC: 13560, Blank: 2695)
-- Avg MI: 39.084
-- Avg CC: 4.377
-- P95 CC: 15.0
-- Rank counts: A=575, B=88, C=41, D=13, E=4, F=1
+- Python files: 44
+- LOC: 20111 (SLOC: 15670, Blank: 2991)
+- Avg MI: 40.381
+- Avg CC: 4.416
+- P95 CC: 14.0
+- Rank counts: A=625, B=109, C=46, D=14, E=3, F=1
 - D/E/F blocks: 18
 - F blocks: 1
 - Parse-error files: 0
-- Unused top-level functions: 75
-- Coverage: 54.477%
+- Unused top-level functions: 71
+- Coverage: 56.332%
 
 ## Coverage
 
-- Total line coverage: 54.477%
-- Files measured: 18
-- Coverage source: cached .coverage (0.49 min old)
+- Total line coverage: 56.332%
+- Files measured: 21
+- Coverage source: fresh test run via --coverage-command
 - Coverage status: OK
 
 ### Lowest Coverage Files
@@ -36,19 +36,19 @@ Reasons:
 | Coverage % | Covered/Statements | File |
 |---:|---:|---|
 | 0.0 | 0/432 | src/felvi_games/report.py |
+| 0.0 | 0/73 | src/felvi_games/review_chainlit_app.py |
 | 0.0 | 0/179 | src/felvi_games/scraper.py |
-| 22.915 | 327/1427 | src/felvi_games/cli.py |
+| 30.713 | 504/1641 | src/felvi_games/cli.py |
 | 42.857 | 51/119 | src/felvi_games/ai.py |
-| 50.314 | 80/159 | src/felvi_games/review.py |
+| 53.807 | 106/197 | src/felvi_games/review.py |
 | 64.113 | 159/248 | src/felvi_games/condition_registry.py |
-| 72.619 | 183/252 | src/felvi_games/achievements.py |
+| 72.222 | 182/252 | src/felvi_games/achievements.py |
 | 74.375 | 357/480 | src/felvi_games/progress_check.py |
 | 75.0 | 54/72 | src/felvi_games/status.py |
-| 76.471 | 221/289 | src/felvi_games/pdf_parser.py |
 
 ## Code Repetition
 
-- Structural duplicate function pairs: 24
+- Structural duplicate function pairs: 26
 
 | Clones | Body Size | Location A | Location B |
 |---:|---:|---|---|
@@ -66,8 +66,8 @@ Reasons:
 
 ## Cohesion
 
-- Classes analyzed: 38
-- Avg LCOM1: 0.812 (0=cohesive, 1=disconnected)
+- Classes analyzed: 41
+- Avg LCOM1: 0.826 (0=cohesive, 1=disconnected)
 
 ### Low-Cohesion Classes (LCOM1 > 0.7)
 
@@ -75,22 +75,22 @@ Reasons:
 |---:|---|---|
 | 1.0 | AwardabilityNow | src/felvi_games/achievements.py:334 |
 | 1.0 | Ertekeles | src/felvi_games/models.py:311 |
+| 1.0 | ReviewQuery | src/felvi_games/review_check_shared.py:17 |
+| 1.0 | TestReviewCli | tests/test_cli_review.py:71 |
 | 1.0 | TestInit | tests/test_db.py:41 |
 | 1.0 | TestUpsert | tests/test_db.py:58 |
 | 1.0 | TestGet | tests/test_db.py:84 |
 | 1.0 | TestAll | tests/test_db.py:106 |
 | 1.0 | TestTtsAssets | tests/test_db.py:153 |
 | 1.0 | TestMegoldas | tests/test_db.py:224 |
-| 1.0 | TestDynamicEventConditions | tests/test_db.py:263 |
-| 1.0 | TestFeladatWithAssets | tests/test_db.py:391 |
 
 
 ## Interface Complexity
 
-- Public functions analyzed: 409
-- Avg parameters: 1.452
-- High-parameter functions (> 5 params): 15
-- Untyped public functions (no return annotation): 183
+- Public functions analyzed: 442
+- Avg parameters: 1.477
+- High-parameter functions (> 5 params): 16
+- Untyped public functions (no return annotation): 186
 
 ### High-Parameter Functions
 
@@ -110,7 +110,7 @@ Reasons:
 
 ## Unused Functions
 
-- Unused top-level functions: 75
+- Unused top-level functions: 71
 - Unused analysis status: OK
 
 | Symbol | File |
@@ -135,17 +135,21 @@ Reasons:
 ## Baseline Delta
 
 - Baseline timestamp: 2026-05-13T22:06:30+00:00
-- Delta avg_cc: 0.0
-- Delta p95_cc: 0.0
+- Delta avg_cc: 0.039
+- Delta p95_cc: -1.0
 - Delta D/E/F blocks: 0
 - Delta F blocks: 0
 - Delta parse-error files: 0
-- Delta coverage_pct: 0.0
+- Delta coverage_pct: 1.855
 - Delta ruff_violations: 0
-- Delta duplicate_block_pairs: 0
-- Delta high_param_count: 0
-- Delta unused_function_count: 0
+- Delta duplicate_block_pairs: 2
+- Delta high_param_count: 1
+- Delta unused_function_count: -4
 
+Notes:
+- WARNING: Avg CC +0.039 (within tolerance 0.35).
+- WARNING: Duplicate pairs +2 (within tolerance 2).
+- WARNING: High-param functions +1 (within tolerance 2).
 
 ## Gate Thresholds
 
@@ -168,20 +172,21 @@ Reasons:
 |---|---:|---|
 | F | 67.0 | src/felvi_games/progress_check.py:555 get_user_stats |
 | E | 35.0 | src/felvi_games/app.py:123 next_feladat |
-| E | 35.0 | src/felvi_games/cli.py:1783 reeval_cmd |
 | E | 34.0 | src/felvi_games/app.py:647 _render_kerdes |
-| E | 31.0 | src/felvi_games/cli.py:2328 _medal_promote_candidates_cmd |
+| E | 31.0 | src/felvi_games/cli.py:2910 _medal_promote_candidates_cmd |
 | D | 29.0 | src/felvi_games/pdf_parser.py:711 run |
 | D | 28.0 | src/felvi_games/app.py:254 _render_sidebar |
-| D | 25.0 | src/felvi_games/cli.py:164 usage |
+| D | 25.0 | src/felvi_games/cli.py:172 usage |
 | D | 23.0 | src/felvi_games/achievements.py:396 check_new_medals |
 | D | 23.0 | src/felvi_games/app.py:854 _render_eredmeny |
-| D | 23.0 | src/felvi_games/cli.py:1435 _medal_check_simulate |
-| D | 23.0 | src/felvi_games/cli.py:1555 _medal_check_dry_run |
+| D | 23.0 | src/felvi_games/cli.py:1488 _medal_check_simulate |
+| D | 23.0 | src/felvi_games/cli.py:1608 _medal_check_dry_run |
+| D | 23.0 | src/felvi_games/cli.py:2778 review_chat_marked_cmd |
 | D | 22.0 | src/felvi_games/app.py:370 _render_settings_page |
-| D | 22.0 | src/felvi_games/cli.py:1969 user_stats_cmd |
-| D | 22.0 | src/felvi_games/cli.py:2694 _medal_compare_cmd |
+| D | 22.0 | src/felvi_games/cli.py:2125 user_stats_cmd |
+| D | 22.0 | src/felvi_games/cli.py:3276 _medal_compare_cmd |
 
 ## Copilot Summary
 
-- Quality gate passed: no significant complexity or coverage regression detected.
+- Quality gate passed with warnings: small regressions detected (within tolerance).
+- Review warnings above; refactor if the trend continues.
