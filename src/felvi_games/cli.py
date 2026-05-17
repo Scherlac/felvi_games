@@ -176,6 +176,9 @@ def usage(
     user: Annotated[
         str | None, typer.Option("--user", help="Csak egy felhasználó adatai")
     ] = None,
+    days: Annotated[
+        int, typer.Option("--days", help="Időablak napokban (0 = teljes időszak)")
+    ] = 0,
     limit: Annotated[
         int, typer.Option("--limit", help="Max. kilistázott menetszám felhasználónként")
     ] = 5,
@@ -183,14 +186,17 @@ def usage(
     """Felhasználói aktivitás és haladás riport a játék DB-ből."""
     from sqlalchemy import case, func, select
     from sqlalchemy.orm import Session
+    from datetime import datetime, timedelta, timezone
 
     from felvi_games.config import get_db_path
     from felvi_games.db import (
+        FeladatRecord,
         FelhasznaloRecord,
         MegoldasRecord,
         MenetRecord,
         get_engine,
     )
+    from felvi_games.usage_metrics import aggregate_attempt_rows, is_ghost_session
 
     db_path = db or get_db_path()
     if not db_path.exists():
@@ -199,51 +205,115 @@ def usage(
     if limit < 1:
         typer.echo("[!] A --limit értéke legalább 1 legyen.")
         raise typer.Exit(code=2)
+    if days < 0:
+        typer.echo("[!] A --days értéke nem lehet negatív.")
+        raise typer.Exit(code=2)
+
+    now_utc = datetime.now(timezone.utc)
+    cutoff_utc = now_utc - timedelta(days=days) if days > 0 else None
 
     engine = get_engine(db_path)
     with Session(engine) as sess:
         total_users = sess.scalar(select(func.count()).select_from(FelhasznaloRecord)) or 0
-        total_sessions = sess.scalar(select(func.count()).select_from(MenetRecord)) or 0
-        total_attempts = sess.scalar(select(func.count()).select_from(MegoldasRecord)) or 0
+        total_sessions_stmt = select(func.count()).select_from(MenetRecord)
+        total_attempts_stmt = select(func.count()).select_from(MegoldasRecord)
+        if cutoff_utc is not None:
+            total_sessions_stmt = total_sessions_stmt.where(MenetRecord.started_at >= cutoff_utc)
+            total_attempts_stmt = total_attempts_stmt.where(MegoldasRecord.created_at >= cutoff_utc)
+        total_sessions = sess.scalar(total_sessions_stmt) or 0
+        total_attempts = sess.scalar(total_attempts_stmt) or 0
 
-        attempt_rows = sess.execute(
+        # --- per-user attempt stats keyed by felhasznalo_id (FK, not legacy name) ---
+        attempt_stmt = (
             select(
+                MegoldasRecord.felhasznalo_id,
                 MegoldasRecord.felhasznalo_nev,
-                func.count().label("attempts"),
-                func.sum(case((MegoldasRecord.helyes.is_(True), 1), else_=0)).label("correct"),
-                func.avg(MegoldasRecord.elapsed_sec).label("avg_sec"),
+                MegoldasRecord.helyes,
+                MegoldasRecord.pont,
+                MegoldasRecord.elapsed_sec,
+                MegoldasRecord.created_at,
             )
-            .where(MegoldasRecord.felhasznalo_nev != "")
-            .group_by(MegoldasRecord.felhasznalo_nev)
-        ).all()
-        attempt_map = {
-            r.felhasznalo_nev: {
-                "attempts": int(r.attempts or 0),
-                "correct": int(r.correct or 0),
-                "avg_sec": float(r.avg_sec) if r.avg_sec is not None else None,
+            .where(
+                (MegoldasRecord.felhasznalo_id.is_not(None))
+                | (MegoldasRecord.felhasznalo_nev != "")
+            )
+        )
+        if cutoff_utc is not None:
+            attempt_stmt = attempt_stmt.where(MegoldasRecord.created_at >= cutoff_utc)
+        attempt_user_rows = sess.execute(attempt_stmt).all()
+        by_user_attempt_rows: dict[int, list] = {}
+        by_name_attempt_rows: dict[str, list] = {}
+        for row in attempt_user_rows:
+            if row.felhasznalo_id is not None:
+                by_user_attempt_rows.setdefault(int(row.felhasznalo_id), []).append(row)
+            if row.felhasznalo_nev:
+                by_name_attempt_rows.setdefault(str(row.felhasznalo_nev), []).append(row)
+        attempt_map: dict[int, dict] = {}
+        for uid, rows in by_user_attempt_rows.items():
+            agg = aggregate_attempt_rows(rows)
+            attempt_map[uid] = {
+                "attempts": agg.attempts,
+                "correct": agg.correct,
+                "partial": agg.partial,
+                "avg_sec": agg.avg_sec,
             }
-            for r in attempt_rows
+
+        # --- max achievable points from actual feladatok attempted ---
+        max_pts_stmt = (
+            select(
+                MegoldasRecord.felhasznalo_id,
+                func.sum(FeladatRecord.max_pont).label("max_pts"),
+            )
+            .join(FeladatRecord, MegoldasRecord.feladat_id == FeladatRecord.id)
+            .where(MegoldasRecord.felhasznalo_id.is_not(None))
+            .group_by(MegoldasRecord.felhasznalo_id)
+        )
+        if cutoff_utc is not None:
+            max_pts_stmt = max_pts_stmt.where(MegoldasRecord.created_at >= cutoff_utc)
+        max_pts_rows = sess.execute(max_pts_stmt).all()
+        max_pts_map: dict[int, int] = {
+            r.felhasznalo_id: int(r.max_pts or 0) for r in max_pts_rows
         }
 
+        # --- per-user session stats keyed by felhasznalo_id ---
         session_stmt = (
             select(
-                MenetRecord.felhasznalo_nev,
+                MenetRecord.felhasznalo_id,
+                FelhasznaloRecord.nev.label("nev"),
                 func.count(MenetRecord.id).label("sessions"),
+                func.sum(case((MenetRecord.megoldott > 0, 1), else_=0)).label("real_sessions"),
                 func.sum(MenetRecord.megoldott).label("solved"),
-                func.sum(MenetRecord.feladat_limit).label("planned"),
+                func.sum(MenetRecord.feladat_limit).label("point_target_sum"),
                 func.sum(MenetRecord.pont).label("points"),
                 func.sum(case((MenetRecord.ended_at.is_not(None), 1), else_=0)).label("closed"),
+                func.sum(
+                    case(
+                        (
+                            (MenetRecord.ended_at.is_not(None)) & (MenetRecord.megoldott > 0),
+                            1,
+                        ),
+                        else_=0,
+                    )
+                ).label("real_closed"),
                 func.max(MenetRecord.started_at).label("last_started"),
             )
-            .group_by(MenetRecord.felhasznalo_nev)
-            .order_by(MenetRecord.felhasznalo_nev)
+            .join(FelhasznaloRecord, MenetRecord.felhasznalo_id == FelhasznaloRecord.id)
+            .where(MenetRecord.felhasznalo_id.is_not(None))
+            .group_by(MenetRecord.felhasznalo_id)
+            .order_by(FelhasznaloRecord.nev)
         )
+        if cutoff_utc is not None:
+            session_stmt = session_stmt.where(MenetRecord.started_at >= cutoff_utc)
         if user:
-            session_stmt = session_stmt.where(MenetRecord.felhasznalo_nev == user)
+            session_stmt = session_stmt.where(FelhasznaloRecord.nev == user)
         session_rows = sess.execute(session_stmt).all()
 
         typer.echo("\n=== Usage Report ===")
         typer.echo(f"DB: {db_path}")
+        if cutoff_utc is not None:
+            typer.echo(f"Window: last {days} days (since {cutoff_utc.isoformat()})")
+        else:
+            typer.echo("Window: all-time")
         typer.echo(
             f"Users: {total_users} | Sessions: {total_sessions} | Attempts: {total_attempts}"
         )
@@ -256,33 +326,57 @@ def usage(
             return
 
         typer.echo("\nPer-user summary:")
-        typer.echo("  Megjegyzés: a MenetRecord.feladat_limit mező jelenleg pont-célként működik (legacy mezőnév).")
         for row in session_rows:
+            uid: int = row.felhasznalo_id
             solved = int(row.solved or 0)
-            point_target = int(row.planned or 0)
+            point_target_sum = int(row.point_target_sum or 0)
             points = int(row.points or 0)
             sessions = int(row.sessions or 0)
+            real_sessions = int(row.real_sessions or 0)
+            ghost_sessions = sessions - real_sessions
             closed = int(row.closed or 0)
-            point_progress_pct = (100.0 * points / point_target) if point_target else 0.0
+            real_closed = int(row.real_closed or 0)
+            point_target_pct = (100.0 * points / point_target_sum) if point_target_sum else 0.0
 
-            a = attempt_map.get(row.felhasznalo_nev, {"attempts": 0, "correct": 0, "avg_sec": None})
+            max_achievable = max_pts_map.get(uid, 0)
+            pts_efficiency_pct = (100.0 * points / max_achievable) if max_achievable else 0.0
+
+            a = attempt_map.get(uid)
+            if a is None:
+                fallback_agg = aggregate_attempt_rows(by_name_attempt_rows.get(row.nev, []))
+                a = {
+                    "attempts": fallback_agg.attempts,
+                    "correct": fallback_agg.correct,
+                    "partial": fallback_agg.partial,
+                    "avg_sec": fallback_agg.avg_sec,
+                }
             attempts = a["attempts"]
             correct = a["correct"]
+            partial = a["partial"]
             accuracy = (100.0 * correct / attempts) if attempts else 0.0
+            accuracy_incl_partial = (100.0 * (correct + partial) / attempts) if attempts else 0.0
             avg_sec = a["avg_sec"]
             avg_sec_text = f"{avg_sec:.1f}s" if avg_sec is not None else "-"
 
+            ghost_note = f" (ghost={ghost_sessions})" if ghost_sessions else ""
+            partial_note = f", partial={partial}" if partial else ""
+            pts_max_note = f" [max={max_achievable}, eff={pts_efficiency_pct:.1f}%]" if max_achievable else ""
+            accuracy_note = (
+                f" (+partial={accuracy_incl_partial:.1f}%)" if partial else ""
+            )
+
             typer.echo(
                 "- "
-                f"{row.felhasznalo_nev}: "
-                f"sessions={sessions}, closed={closed}, "
+                f"{row.nev}: "
+                f"sessions={real_sessions}/{sessions}{ghost_note}, closed={real_closed}/{closed}, "
                 f"tasks_solved={solved}, "
-                f"points={points}/{point_target} ({point_progress_pct:.1f}%), "
-                f"attempts={attempts}, accuracy={accuracy:.1f}%, avg_time={avg_sec_text}, "
+                f"points={points}/{point_target_sum} ({point_target_pct:.1f}%){pts_max_note}, "
+                f"attempts={attempts} (correct={correct}{partial_note}), "
+                f"accuracy={accuracy:.1f}%{accuracy_note}, avg_time={avg_sec_text}, "
                 f"last_started={row.last_started}"
             )
 
-            details = sess.execute(
+            details_stmt = (
                 select(
                     MenetRecord.id,
                     MenetRecord.targy,
@@ -293,16 +387,20 @@ def usage(
                     MenetRecord.started_at,
                     MenetRecord.ended_at,
                 )
-                .where(MenetRecord.felhasznalo_nev == row.felhasznalo_nev)
+                .where(MenetRecord.felhasznalo_id == uid)
                 .order_by(MenetRecord.started_at.desc())
                 .limit(limit)
-            ).all()
+            )
+            if cutoff_utc is not None:
+                details_stmt = details_stmt.where(MenetRecord.started_at >= cutoff_utc)
+            details = sess.execute(details_stmt).all()
 
             for d in details:
                 done_flag = "done" if d.ended_at else "open"
+                ghost_flag = " [ghost]" if is_ghost_session(megoldott=d.megoldott, ended_at=d.ended_at) else ""
                 typer.echo(
                     "    "
-                    f"#{d.id} [{done_flag}] {d.targy}/{d.szint} "
+                    f"#{d.id} [{done_flag}]{ghost_flag} {d.targy}/{d.szint} "
                     f"tasks={d.megoldott} point_target={d.feladat_limit} points={d.pont} "
                     f"start={d.started_at}"
                 )

@@ -47,6 +47,11 @@ from felvi_games.models import (
     Menet,
     _list_to_json,
 )
+from felvi_games.usage_metrics import (
+    aggregate_attempt_rows,
+    compute_attempt_streak,
+    is_same_local_day,
+)
 
 # ---------------------------------------------------------------------------
 # Engine
@@ -1293,30 +1298,17 @@ class FeladatRepository:
         today_attempts: list[MegoldasRecord] = []
         for a in attempts:
             created = a.created_at
-            created_local = (
-                created.replace(tzinfo=timezone.utc).astimezone(local_tz)
-                if created.tzinfo is None
-                else created.astimezone(local_tz)
-            )
-            if created_local.date() == today:
+            if is_same_local_day(ts=created, local_day=today, local_tz=local_tz):
                 today_attempts.append(a)
 
-        current_streak = 0
-        max_streak = 0
-        streak = 0
-        for a in today_attempts:
-            if a.helyes:
-                streak += 1
-            elif a.pont == 0:
-                streak = 0
-            max_streak = max(max_streak, streak)
-        current_streak = streak
+        agg = aggregate_attempt_rows(today_attempts)
+        streak = compute_attempt_streak(today_attempts)
 
         return {
-            "pont": sum(a.pont for a in today_attempts),
-            "streak": current_streak,
-            "max_streak": max_streak,
-            "megoldott": len(today_attempts),
+            "pont": agg.points,
+            "streak": streak.current,
+            "max_streak": streak.best,
+            "megoldott": agg.attempts,
         }
 
     def get_feladat_attempt_counts(

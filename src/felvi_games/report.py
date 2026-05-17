@@ -45,6 +45,7 @@ class UserSummary(AccuracyPctMixin):
     play_time_min: float = 0.0
     attempts: int = 0
     correct: int = 0
+    partial: int = 0
     points: int = 0
     new_achievements: int = 0
 
@@ -56,6 +57,7 @@ class UserTargySzintRow(AccuracyPctMixin):
     szint: str
     attempts: int = 0
     correct: int = 0
+    partial: int = 0
     points: int = 0
 
 
@@ -83,6 +85,7 @@ class DailyDetail(AccuracyPctMixin):
     targy: str
     attempts: int = 0
     correct: int = 0
+    partial: int = 0
     points: int = 0
 
 
@@ -105,15 +108,18 @@ class ReportData:
 def gather_data(engine, days: int, user_filter: str | None = None) -> ReportData:
     from collections import defaultdict
 
-    from sqlalchemy import select
+    from sqlalchemy import func, select
     from sqlalchemy.orm import Session
 
     from felvi_games.db import (
         EremRecord,
+        FeladatRecord,
+        FelhasznaloRecord,
         FelhasznaloEremRecord,
         MegoldasRecord,
         MenetRecord,
     )
+    from felvi_games.usage_metrics import classify_attempt
 
     date_to = datetime.now(timezone.utc)
     date_from = date_to - timedelta(days=days)
@@ -123,7 +129,7 @@ def gather_data(engine, days: int, user_filter: str | None = None) -> ReportData
         # sessions in window
         q_sessions = (
             select(
-                MenetRecord.felhasznalo_nev,
+                func.coalesce(FelhasznaloRecord.nev, MenetRecord.felhasznalo_nev).label("felhasznalo_nev"),
                 MenetRecord.targy,
                 MenetRecord.szint,
                 MenetRecord.megoldott,
@@ -131,43 +137,56 @@ def gather_data(engine, days: int, user_filter: str | None = None) -> ReportData
                 MenetRecord.started_at,
                 MenetRecord.ended_at,
             )
+            .outerjoin(FelhasznaloRecord, MenetRecord.felhasznalo_id == FelhasznaloRecord.id)
             .where(MenetRecord.started_at >= date_from)
         )
         if user_filter:
-            q_sessions = q_sessions.where(MenetRecord.felhasznalo_nev == user_filter)
+            q_sessions = q_sessions.where(
+                func.coalesce(FelhasznaloRecord.nev, MenetRecord.felhasznalo_nev) == user_filter
+            )
         sessions = s.execute(q_sessions).all()
 
-        # answers in window (joined to menetek for targy/szint)
+        # Answers in window. Subject/level come from session when present,
+        # otherwise from the task row so orphan attempts are still counted.
         q_answers = (
             select(
-                MegoldasRecord.felhasznalo_nev,
+                func.coalesce(FelhasznaloRecord.nev, MegoldasRecord.felhasznalo_nev).label("felhasznalo_nev"),
                 MenetRecord.targy,
                 MenetRecord.szint,
+                FeladatRecord.targy.label("feladat_targy"),
+                FeladatRecord.szint.label("feladat_szint"),
                 MegoldasRecord.helyes,
                 MegoldasRecord.pont,
                 MegoldasRecord.created_at,
             )
-            .join(MenetRecord, MenetRecord.id == MegoldasRecord.menet_id)
+            .outerjoin(FelhasznaloRecord, MegoldasRecord.felhasznalo_id == FelhasznaloRecord.id)
+            .outerjoin(MenetRecord, MenetRecord.id == MegoldasRecord.menet_id)
+            .outerjoin(FeladatRecord, FeladatRecord.id == MegoldasRecord.feladat_id)
             .where(MegoldasRecord.created_at >= date_from)
         )
         if user_filter:
-            q_answers = q_answers.where(MegoldasRecord.felhasznalo_nev == user_filter)
+            q_answers = q_answers.where(
+                func.coalesce(FelhasznaloRecord.nev, MegoldasRecord.felhasznalo_nev) == user_filter
+            )
         answers = s.execute(q_answers).all()
 
         # achievements earned in window
         q_ach = (
             select(
-                FelhasznaloEremRecord.felhasznalo_nev,
+                func.coalesce(FelhasznaloRecord.nev, FelhasznaloEremRecord.felhasznalo_nev).label("felhasznalo_nev"),
                 FelhasznaloEremRecord.erem_id,
                 FelhasznaloEremRecord.szerzett_at,
                 EremRecord.nev,
                 EremRecord.ikon,
             )
             .join(EremRecord, EremRecord.id == FelhasznaloEremRecord.erem_id)
+            .outerjoin(FelhasznaloRecord, FelhasznaloRecord.id == FelhasznaloEremRecord.felhasznalo_id)
             .where(FelhasznaloEremRecord.szerzett_at >= date_from)
         )
         if user_filter:
-            q_ach = q_ach.where(FelhasznaloEremRecord.felhasznalo_nev == user_filter)
+            q_ach = q_ach.where(
+                func.coalesce(FelhasznaloRecord.nev, FelhasznaloEremRecord.felhasznalo_nev) == user_filter
+            )
         achievements = s.execute(q_ach).all()
 
     # --- aggregate ---
@@ -190,31 +209,43 @@ def gather_data(engine, days: int, user_filter: str | None = None) -> ReportData
         u = row.felhasznalo_nev
         if u not in user_data:
             user_data[u] = UserSummary(nev=u)
+        outcome = classify_attempt(helyes=bool(row.helyes), pont=row.pont)
         user_data[u].attempts += 1
-        if row.helyes:
+        if outcome.full_correct:
             user_data[u].correct += 1
-        user_data[u].points += row.pont or 0
+        elif outcome.partial_correct:
+            user_data[u].partial += 1
+        user_data[u].points += outcome.points
 
-        key = (u, row.targy, row.szint)
+        # Attempt-level subject/level should come from the attempted task itself.
+        # Session metadata can be broader/mixed and would skew per-subject charts.
+        targy = row.feladat_targy or row.targy or "ismeretlen"
+        szint = row.feladat_szint or row.szint or "ismeretlen"
+
+        key = (u, targy, szint)
         if key not in targy_szint_data:
-            targy_szint_data[key] = UserTargySzintRow(nev=u, targy=row.targy, szint=row.szint)
+            targy_szint_data[key] = UserTargySzintRow(nev=u, targy=targy, szint=szint)
         targy_szint_data[key].attempts += 1
-        if row.helyes:
+        if outcome.full_correct:
             targy_szint_data[key].correct += 1
-        targy_szint_data[key].points += row.pont or 0
+        elif outcome.partial_correct:
+            targy_szint_data[key].partial += 1
+        targy_szint_data[key].points += outcome.points
 
         datum = row.created_at.strftime("%Y-%m-%d")
         daily_dict[(datum, u)] += 1
 
         # per-day × user × tárgy breakdown
-        targy = row.targy or "ismeretlen"
         daily_detail_dict[(datum, u, targy)].setdefault("attempts", 0)
         daily_detail_dict[(datum, u, targy)]["attempts"] += 1
         daily_detail_dict[(datum, u, targy)].setdefault("correct", 0)
-        if row.helyes:
+        if outcome.full_correct:
             daily_detail_dict[(datum, u, targy)]["correct"] += 1
+        daily_detail_dict[(datum, u, targy)].setdefault("partial", 0)
+        if outcome.partial_correct:
+            daily_detail_dict[(datum, u, targy)]["partial"] += 1
         daily_detail_dict[(datum, u, targy)].setdefault("points", 0)
-        daily_detail_dict[(datum, u, targy)]["points"] += row.pont or 0
+        daily_detail_dict[(datum, u, targy)]["points"] += outcome.points
 
     for row in achievements:
         user_data.setdefault(row.felhasznalo_nev, UserSummary(nev=row.felhasznalo_nev))
@@ -235,6 +266,7 @@ def gather_data(engine, days: int, user_filter: str | None = None) -> ReportData
             datum=datum, nev=nev, targy=targy,
             attempts=vals.get("attempts", 0),
             correct=vals.get("correct", 0),
+            partial=vals.get("partial", 0),
             points=vals.get("points", 0),
         ))
 
@@ -279,13 +311,15 @@ def _build_date_range(data: ReportData) -> list[str]:
 
 def _build_daily_detail_context(
     data: ReportData, user_names: list[str]
-) -> tuple[list[tuple[str, str]], dict[str, str], dict]:
+) -> tuple[list[tuple[str, str]], dict[str, str], dict[str, str], dict]:
     ut_pairs = sorted({(r.nev, r.targy) for r in data.daily_detail if r.nev in user_names})
-    targy_list = sorted({t for _, t in ut_pairs})
     _LINESTYLES = ["-", "--", "-.", ":"]
+    _MARKERS = ["o", "s", "^", "D", "P", "X"]
+    targy_list = sorted({t for _, t in ut_pairs})
     ls_map = {t: _LINESTYLES[i % len(_LINESTYLES)] for i, t in enumerate(targy_list)}
+    marker_map = {t: _MARKERS[i % len(_MARKERS)] for i, t in enumerate(targy_list)}
     detail_idx = {(r.datum, r.nev, r.targy): r for r in data.daily_detail}
-    return ut_pairs, ls_map, detail_idx
+    return ut_pairs, ls_map, marker_map, detail_idx
 
 
 def _chart_overall_summary(
@@ -413,12 +447,13 @@ def _chart_daily_activity(
 
     fig, ax = plt.subplots(figsize=(max(10, len(all_dates) * 1.4), 5))
     fig.suptitle(f"Napi aktivitás – kísérletek száma  |  {subtitle}", fontsize=13, fontweight="bold")
+    xs = list(range(len(all_dates)))
     for u in user_names:
         vals = [daily_by_user[u][d] for d in all_dates]
-        ax.plot(all_dates, vals, marker="o", label=u, color=cmap[u], linewidth=2.2, markersize=6)
-        for d, v in zip(all_dates, vals, strict=False):
+        ax.plot(xs, vals, marker="o", label=u, color=cmap[u], linewidth=2.2, markersize=6)
+        for xi, v in zip(xs, vals, strict=False):
             if v > 0:
-                ax.annotate(str(v), (d, v), textcoords="offset points", xytext=(0, 7),
+                ax.annotate(str(v), (float(xi), float(v)), textcoords="offset points", xytext=(0, 7),
                             ha="center", fontsize=8, color=cmap[u])
     ax.set_xlabel("Dátum", fontsize=10)
     ax.set_ylabel("Kísérletek száma", fontsize=10)
@@ -447,31 +482,71 @@ def _chart_daily_points(
 
     import matplotlib.pyplot as plt
     import matplotlib.ticker as mticker
+    from matplotlib.lines import Line2D
 
-    ut_pairs, ls_map, detail_idx = _build_daily_detail_context(data, user_names)
+    ut_pairs, ls_map, marker_map, detail_idx = _build_daily_detail_context(data, user_names)
 
     fig, ax = plt.subplots(figsize=(max(10, len(all_dates) * 1.4), 5))
     fig.suptitle(f"Napi pontszám (user × tárgy)  |  {subtitle}", fontsize=13, fontweight="bold")
+    xs = list(range(len(all_dates)))
     for (u, t) in ut_pairs:
+        series_color = cmap[u]
         vals = [getattr(detail_idx.get((d, u, t)), "points", 0) for d in all_dates]
-        ax.plot(all_dates, vals, marker="o", label=f"{u} – {t}",
-                color=cmap[u], linestyle=ls_map[t], linewidth=2, markersize=5)
-        for d, v in zip(all_dates, vals, strict=False):
+        ax.plot(
+            xs,
+            vals,
+            marker=marker_map[t],
+            color=series_color,
+            linestyle=ls_map[t],
+            linewidth=2,
+            markersize=5,
+        )
+        for xi, v in zip(xs, vals, strict=False):
             if v > 0:
-                ax.annotate(str(v), (d, v), textcoords="offset points", xytext=(0, 7),
-                            ha="center", fontsize=7.5, color=cmap[u])
+                ax.annotate(str(v), (float(xi), float(v)), textcoords="offset points", xytext=(0, 7),
+                    ha="center", fontsize=7.5, color=series_color)
         if any(v > 0 for v in vals):
             avg = sum(vals) / len(vals)
-            ax.axhline(avg, color=cmap[u], linestyle=":", linewidth=1.2, alpha=0.7)
+            ax.axhline(avg, color=series_color, linestyle=":", linewidth=1.2, alpha=0.7)
             ax.text(len(all_dates) - 0.5, avg, f"∅{avg:.1f} ({t})",
-                    va="bottom", ha="right", fontsize=7.5, color=cmap[u], alpha=0.85)
+                va="bottom", ha="right", fontsize=7.5, color=series_color, alpha=0.85)
     ax.set_xlabel("Dátum", fontsize=10)
     ax.set_ylabel("Pontszám", fontsize=10)
     ax.set_xticks(range(len(all_dates)))
     ax.set_xticklabels(all_dates, rotation=30, ha="right")
     ax.yaxis.set_major_locator(mticker.MaxNLocator(integer=True))
     ax.set_ylim(bottom=0)
-    ax.legend(title="Felhasználó – tárgy", fontsize=9, loc="upper left")
+
+    user_handles = [
+        Line2D([0], [0], color=cmap[u], lw=2.5, label=u) for u in user_names
+    ]
+    targy_handles = [
+        Line2D(
+            [0],
+            [0],
+            color="#444444",
+            lw=2.5,
+            linestyle=ls_map[t],
+            marker=marker_map[t],
+            markersize=6,
+            label=t,
+        )
+        for t in sorted(marker_map)
+    ]
+    user_legend = ax.legend(
+        handles=user_handles,
+        title="Felhasználó (szín)",
+        fontsize=9,
+        loc="upper left",
+    )
+    ax.add_artist(user_legend)
+    ax.legend(
+        handles=targy_handles,
+        title="Tárgy (vonal + marker)",
+        fontsize=9,
+        loc="upper left",
+        bbox_to_anchor=(0.0, 0.72),
+    )
     ax.grid(linestyle="--", alpha=0.35)
     ax.spines[["top", "right"]].set_visible(False)
     plt.tight_layout()
@@ -491,30 +566,70 @@ def _chart_daily_accuracy(
         return None
 
     import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
 
-    ut_pairs, ls_map, detail_idx = _build_daily_detail_context(data, user_names)
+    ut_pairs, ls_map, marker_map, detail_idx = _build_daily_detail_context(data, user_names)
 
     fig, ax = plt.subplots(figsize=(max(10, len(all_dates) * 1.4), 5))
     fig.suptitle(f"Napi pontosság (user × tárgy)  |  {subtitle}", fontsize=13, fontweight="bold")
     for (u, t) in ut_pairs:
+        series_color = cmap[u]
         vals: list[float | None] = []
         for d in all_dates:
             row = detail_idx.get((d, u, t))
             vals.append(row.accuracy_pct if (row and row.attempts > 0) else None)
         xs_idx = [i for i, v in enumerate(vals) if v is not None]
         ys = [vals[i] for i in xs_idx]  # type: ignore[index]
-        ax.plot(xs_idx, ys, marker="o", label=f"{u} – {t}",
-                color=cmap[u], linestyle=ls_map[t], linewidth=2, markersize=5)
-        for xi, v in zip(xs_idx, ys, strict=False):
-            ax.annotate(f"{v:.0f}%", (xi, v), textcoords="offset points", xytext=(0, 7),
-                        ha="center", fontsize=7.5, color=cmap[u])
+        ys_float = [float(v) for v in ys if v is not None]
+        ax.plot(
+            xs_idx,
+            ys_float,
+            marker=marker_map[t],
+            color=series_color,
+            linestyle=ls_map[t],
+            linewidth=2,
+            markersize=5,
+        )
+        for xi, v in zip(xs_idx, ys_float, strict=False):
+            ax.annotate(f"{v:.0f}%", (float(xi), float(v)), textcoords="offset points", xytext=(0, 7),
+                ha="center", fontsize=7.5, color=series_color)
     ax.axhline(80, color="#555", linestyle=":", linewidth=1.2, label="80% cél")
     ax.set_xlabel("Dátum", fontsize=10)
     ax.set_ylabel("Pontosság (%)", fontsize=10)
     ax.set_xticks(range(len(all_dates)))
     ax.set_xticklabels(all_dates, rotation=30, ha="right")
     ax.set_ylim(0, 115)
-    ax.legend(title="Felhasználó – tárgy", fontsize=9, loc="upper left")
+
+    user_handles = [
+        Line2D([0], [0], color=cmap[u], lw=2.5, label=u) for u in user_names
+    ]
+    targy_handles = [
+        Line2D(
+            [0],
+            [0],
+            color="#444444",
+            lw=2.5,
+            linestyle=ls_map[t],
+            marker=marker_map[t],
+            markersize=6,
+            label=t,
+        )
+        for t in sorted(marker_map)
+    ]
+    user_legend = ax.legend(
+        handles=user_handles,
+        title="Felhasználó (szín)",
+        fontsize=9,
+        loc="upper left",
+    )
+    ax.add_artist(user_legend)
+    ax.legend(
+        handles=targy_handles,
+        title="Tárgy (vonal + marker)",
+        fontsize=9,
+        loc="upper left",
+        bbox_to_anchor=(0.0, 0.72),
+    )
     ax.grid(linestyle="--", alpha=0.35)
     ax.spines[["top", "right"]].set_visible(False)
     plt.tight_layout()
@@ -645,15 +760,16 @@ def generate_markdown(data: ReportData, chart_files: list[str], output_dir: Path
         "",
         "## Összefoglaló",
         "",
-        "| Felhasználó | Menetek | Kísérletek | Helyes | Pontosság | Pontszám | Játékidő | Új érmek |",
-        "|-------------|---------|-----------|--------|-----------|----------|----------|----------|",
+        "| Felhasználó | Menetek | Kísérletek | Helyes | Részleges | Pontosság | Pont(+részleges) | Pontszám | Játékidő | Új érmek |",
+        "|-------------|---------|-----------|--------|-----------|-----------|------------------|----------|----------|----------|",
     ]
 
     for u in data.users:
         play = f"{u.play_time_min:.0f} perc" if u.play_time_min >= 1 else "<1 perc"
+        acc_with_partial = ((u.correct + u.partial) / u.attempts * 100) if u.attempts else 0.0
         lines.append(
-            f"| {u.nev} | {u.sessions} | {u.attempts} | {u.correct} "
-            f"| {u.accuracy_pct:.1f}% | {u.points} | {play} | {u.new_achievements} |"
+            f"| {u.nev} | {u.sessions} | {u.attempts} | {u.correct} | {u.partial} "
+            f"| {u.accuracy_pct:.1f}% | {acc_with_partial:.1f}% | {u.points} | {play} | {u.new_achievements} |"
         )
 
     lines += ["", "---", "", "## Részletes bontás: tárgy × szint", ""]
@@ -665,13 +781,14 @@ def generate_markdown(data: ReportData, chart_files: list[str], output_dir: Path
         lines += [
             f"### {u.nev}",
             "",
-            "| Tárgy | Szint | Kísérletek | Helyes | Pontosság | Pontszám |",
-            "|-------|-------|-----------|--------|-----------|----------|",
+            "| Tárgy | Szint | Kísérletek | Helyes | Részleges | Pontosság | Pont(+részleges) | Pontszám |",
+            "|-------|-------|-----------|--------|-----------|-----------|------------------|----------|",
         ]
         for r in sorted(rows, key=lambda x: (x.targy, x.szint)):
+            acc_with_partial = ((r.correct + r.partial) / r.attempts * 100) if r.attempts else 0.0
             lines.append(
-                f"| {r.targy} | {r.szint} | {r.attempts} | {r.correct} "
-                f"| {r.accuracy_pct:.1f}% | {r.points} |"
+                f"| {r.targy} | {r.szint} | {r.attempts} | {r.correct} | {r.partial} "
+                f"| {r.accuracy_pct:.1f}% | {acc_with_partial:.1f}% | {r.points} |"
             )
         lines.append("")
 

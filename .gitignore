@@ -30,3 +30,5 @@ reports/[0-9]*/
 .coverage
 reports/quality/coverage_current.json
 .chainlit
+data/review_chat
+reports/quality/complexity_report.json
