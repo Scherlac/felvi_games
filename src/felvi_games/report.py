@@ -7,6 +7,9 @@ Kimenet: egy mappa, benne:
   overall_summary.png     – Kísérletek / pontosság / pontszám / játékidő összefoglaló
   accuracy_targy.png      – Pontosság tárgyak szerint (csoportos oszlopdiagram)
   daily_activity.png      – Napi aktivitás (vonaldiagram felhasználónként)
+    attempt_time_points.png – Szerzett pont vs. próbálkozási idő (user × tárgy × max pont)
+    session_average_points.png – Menet-átlag: szerzett pont vs. próbálkozási idő (user × tárgy × átlag max pont)
+        session_average_delta_points.png – Menet-átlag eltérés a célhoz képest
   szint_distribution.png  – Kísérletek szint szerint (halmozott oszlopdiagram)
 
 Usage:
@@ -43,6 +46,7 @@ class UserSummary(AccuracyPctMixin):
     nev: str
     sessions: int = 0
     play_time_min: float = 0.0
+    attempt_time_min: float = 0.0
     attempts: int = 0
     correct: int = 0
     partial: int = 0
@@ -90,6 +94,39 @@ class DailyDetail(AccuracyPctMixin):
 
 
 @dataclass
+class AttemptTimingPoint:
+    nev: str
+    targy: str
+    max_pont: int
+    gained_pont: int
+    elapsed_sec: float
+    correct: bool = False
+    partial: bool = False
+
+
+@dataclass
+class SessionAveragePoint:
+    nev: str
+    targy: str
+    menet_id: int
+    session_date: str
+    committed_count: int
+    avg_gained_pont: float
+    avg_elapsed_sec: float
+    avg_max_pont: float
+
+
+@dataclass
+class SessionAverageAccumulator:
+    nev: str
+    targy: str
+    committed_count: int = 0
+    gained_pont_sum: float = 0.0
+    elapsed_sec_sum: float = 0.0
+    max_pont_sum: float = 0.0
+
+
+@dataclass
 class ReportData:
     date_from: datetime
     date_to: datetime
@@ -99,6 +136,8 @@ class ReportData:
     achievements: list[AchievementRow] = field(default_factory=list)
     daily: list[DailyActivity] = field(default_factory=list)
     daily_detail: list[DailyDetail] = field(default_factory=list)
+    attempt_timing: list[AttemptTimingPoint] = field(default_factory=list)
+    session_average_points: list[SessionAveragePoint] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +168,7 @@ def gather_data(engine, days: int, user_filter: str | None = None) -> ReportData
         # sessions in window
         q_sessions = (
             select(
+                MenetRecord.id.label("menet_id"),
                 func.coalesce(FelhasznaloRecord.nev, MenetRecord.felhasznalo_nev).label("felhasznalo_nev"),
                 MenetRecord.targy,
                 MenetRecord.szint,
@@ -151,12 +191,15 @@ def gather_data(engine, days: int, user_filter: str | None = None) -> ReportData
         q_answers = (
             select(
                 func.coalesce(FelhasznaloRecord.nev, MegoldasRecord.felhasznalo_nev).label("felhasznalo_nev"),
+                MegoldasRecord.menet_id,
                 MenetRecord.targy,
                 MenetRecord.szint,
                 FeladatRecord.targy.label("feladat_targy"),
                 FeladatRecord.szint.label("feladat_szint"),
+                FeladatRecord.max_pont,
                 MegoldasRecord.helyes,
                 MegoldasRecord.pont,
+                MegoldasRecord.elapsed_sec,
                 MegoldasRecord.created_at,
             )
             .outerjoin(FelhasznaloRecord, MegoldasRecord.felhasznalo_id == FelhasznaloRecord.id)
@@ -192,16 +235,17 @@ def gather_data(engine, days: int, user_filter: str | None = None) -> ReportData
     # --- aggregate ---
     user_data: dict[str, UserSummary] = {}
     targy_szint_data: dict[tuple, UserTargySzintRow] = {}
+    session_last_attempt: dict[int, datetime] = {}
+    session_dates: dict[int, str] = {}
+    session_average_acc: dict[int, SessionAverageAccumulator] = {}
 
     for row in sessions:
         u = row.felhasznalo_nev
         if u not in user_data:
             user_data[u] = UserSummary(nev=u)
         user_data[u].sessions += 1
-        if row.ended_at and row.started_at:
-            delta_min = (row.ended_at - row.started_at).total_seconds() / 60
-            if 0 < delta_min < 300:  # sanity cap: 5h
-                user_data[u].play_time_min += delta_min
+        if row.menet_id is not None and row.started_at is not None:
+            session_dates[int(row.menet_id)] = row.started_at.strftime("%Y-%m-%d")
 
     daily_dict: dict[tuple[str, str], int] = defaultdict(int)
     daily_detail_dict: dict[tuple[str, str, str], dict] = defaultdict(dict)
@@ -211,6 +255,14 @@ def gather_data(engine, days: int, user_filter: str | None = None) -> ReportData
             user_data[u] = UserSummary(nev=u)
         outcome = classify_attempt(helyes=bool(row.helyes), pont=row.pont)
         user_data[u].attempts += 1
+        elapsed_sec = getattr(row, "elapsed_sec", None)
+        if isinstance(elapsed_sec, (int, float)) and elapsed_sec > 0:
+            user_data[u].attempt_time_min += float(elapsed_sec) / 60
+        menet_id = getattr(row, "menet_id", None)
+        if isinstance(menet_id, int) and row.created_at is not None:
+            prev = session_last_attempt.get(menet_id)
+            if prev is None or row.created_at > prev:
+                session_last_attempt[menet_id] = row.created_at
         if outcome.full_correct:
             user_data[u].correct += 1
         elif outcome.partial_correct:
@@ -221,6 +273,31 @@ def gather_data(engine, days: int, user_filter: str | None = None) -> ReportData
         # Session metadata can be broader/mixed and would skew per-subject charts.
         targy = row.feladat_targy or row.targy or "ismeretlen"
         szint = row.feladat_szint or row.szint or "ismeretlen"
+        if isinstance(elapsed_sec, (int, float)) and elapsed_sec > 0:
+            data.attempt_timing.append(
+                AttemptTimingPoint(
+                    nev=u,
+                    targy=targy,
+                    max_pont=int(row.max_pont or 0),
+                    gained_pont=outcome.points,
+                    elapsed_sec=float(elapsed_sec),
+                    correct=outcome.full_correct,
+                    partial=outcome.partial_correct,
+                )
+            )
+        if isinstance(menet_id, int):
+            acc = session_average_acc.setdefault(
+                menet_id,
+                SessionAverageAccumulator(
+                    nev=u,
+                    targy=targy,
+                ),
+            )
+            acc.committed_count += 1
+            acc.gained_pont_sum += float(outcome.points)
+            acc.max_pont_sum += float(int(row.max_pont or 0))
+            if isinstance(elapsed_sec, (int, float)) and elapsed_sec > 0:
+                acc.elapsed_sec_sum += float(elapsed_sec)
 
         key = (u, targy, szint)
         if key not in targy_szint_data:
@@ -257,6 +334,39 @@ def gather_data(engine, days: int, user_filter: str | None = None) -> ReportData
             ikon=row.ikon,
             szerzett_at=row.szerzett_at,
         ))
+
+    for row in sessions:
+        summary = user_data[row.felhasznalo_nev]
+        delta_min = 0.0
+        if row.ended_at and row.started_at:
+            delta_min = (row.ended_at - row.started_at).total_seconds() / 60
+        else:
+            last_attempt_at = session_last_attempt.get(int(row.menet_id)) if row.menet_id is not None else None
+            if last_attempt_at and row.started_at:
+                delta_min = (last_attempt_at - row.started_at).total_seconds() / 60
+        if 0 < delta_min < 300:
+            summary.play_time_min += delta_min
+
+    for summary in user_data.values():
+        if summary.play_time_min <= 0 and summary.attempt_time_min > 0:
+            summary.play_time_min = summary.attempt_time_min
+
+    for menet_id, acc in sorted(session_average_acc.items()):
+        committed_count = acc.committed_count
+        if committed_count <= 0:
+            continue
+        data.session_average_points.append(
+            SessionAveragePoint(
+                nev=acc.nev,
+                targy=acc.targy,
+                menet_id=menet_id,
+                session_date=session_dates.get(menet_id, "ismeretlen dátum"),
+                committed_count=committed_count,
+                avg_gained_pont=acc.gained_pont_sum / committed_count,
+                avg_elapsed_sec=acc.elapsed_sec_sum / committed_count,
+                avg_max_pont=acc.max_pont_sum / committed_count,
+            )
+        )
 
     for (datum, nev), cnt in sorted(daily_dict.items()):
         data.daily.append(DailyActivity(datum=datum, nev=nev, attempts=cnt))
@@ -687,6 +797,379 @@ def _chart_szint_distribution(
     return fname
 
 
+def _chart_attempt_time_points(
+    data: ReportData, output_dir: Path, cmap: dict, subtitle: str, user_names: list[str]
+) -> str | None:
+    if not data.attempt_timing:
+        return None
+
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+
+    marker_map = {
+        "matek": "o",
+        "magyar": "s",
+        "ismeretlen": "^",
+    }
+    max_ponts = sorted({max(0, row.max_pont) for row in data.attempt_timing})
+    size_map = {
+        max_pont: 30 + (max_pont * 22)
+        for max_pont in max_ponts
+    }
+
+    fig, ax = plt.subplots(figsize=(11, 6))
+    fig.suptitle(
+        f"Szerzett pont vs. próbálkozási idő (user × tárgy × max pont)  |  {subtitle}",
+        fontsize=13,
+        fontweight="bold",
+    )
+
+    x_limit_min = 8.0
+    visible_max_point = max((row.gained_pont for row in data.attempt_timing), default=0)
+    optimal_x = [0.0, x_limit_min]
+    optimal_y = [0.0, x_limit_min / 0.9]
+    ax.plot(
+        optimal_x,
+        optimal_y,
+        linestyle=":",
+        linewidth=2.0,
+        color="#C44E52",
+        alpha=0.9,
+        label="Optimális limit",
+    )
+    ax.text(
+        x_limit_min,
+        min(optimal_y[-1], max(visible_max_point, 1) + 0.35),
+        "0.9 perc / pont",
+        color="#C44E52",
+        fontsize=9,
+        ha="right",
+        va="bottom",
+    )
+
+    for row in data.attempt_timing:
+        marker = marker_map.get(row.targy, "^")
+        color = cmap.get(row.nev, "#666666")
+        size = size_map.get(max(0, row.max_pont), 30)
+        edge = "#111111" if row.correct else ("#555555" if row.partial else "white")
+        ax.scatter(
+            row.elapsed_sec / 60,
+            row.gained_pont,
+            s=size,
+            c=color,
+            marker=marker,
+            alpha=0.75,
+            edgecolors=edge,
+            linewidths=0.8,
+        )
+
+    ax.set_xlabel("Próbálkozási idő (perc)", fontsize=10)
+    ax.set_ylabel("Szerzett pont", fontsize=10)
+    ax.set_xlim(0, x_limit_min)
+    ax.set_ylim(bottom=0)
+    ax.grid(linestyle="--", alpha=0.35)
+    ax.spines[["top", "right"]].set_visible(False)
+
+    user_handles = [
+        Line2D([0], [0], marker="o", color="w", label=u, markerfacecolor=cmap[u],
+               markeredgecolor=cmap[u], markersize=8)
+        for u in user_names
+    ]
+    targy_handles = [
+        Line2D([0], [0], marker=marker_map[t], color="#444444", label=t,
+               linestyle="None", markersize=8)
+        for t in sorted({row.targy for row in data.attempt_timing})
+    ]
+    size_handles = [
+        plt.scatter([], [], s=size_map[max_pont], color="#999999", alpha=0.6, label=f"max {max_pont}p")
+        for max_pont in max_ponts
+    ]
+
+    user_legend = ax.legend(
+        handles=user_handles,
+        title="Felhasználó (szín)",
+        fontsize=9,
+        loc="upper left",
+        bbox_to_anchor=(1.02, 1.0),
+        borderaxespad=0.0,
+    )
+    ax.add_artist(user_legend)
+    targy_legend = ax.legend(
+        handles=targy_handles,
+        title="Tárgy (marker)",
+        fontsize=9,
+        loc="upper left",
+        bbox_to_anchor=(1.02, 0.72),
+        borderaxespad=0.0,
+    )
+    ax.add_artist(targy_legend)
+    ax.legend(
+        handles=size_handles,
+        title="Max pont (méret)",
+        fontsize=9,
+        loc="upper left",
+        bbox_to_anchor=(1.02, 0.42),
+        borderaxespad=0.0,
+    )
+    plt.tight_layout(rect=(0, 0, 0.78, 1))
+
+    fname = "attempt_time_points.png"
+    fig.savefig(output_dir / fname, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+    logger.info("report: chart saved %s", fname)
+    return fname
+
+
+def _chart_session_average_points(
+    data: ReportData, output_dir: Path, cmap: dict, subtitle: str, user_names: list[str]
+) -> str | None:
+    if not data.session_average_points:
+        return None
+
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+
+    marker_map = {
+        "matek": "o",
+        "magyar": "s",
+        "ismeretlen": "^",
+    }
+    avg_max_values = sorted({round(max(0.0, row.avg_max_pont), 1) for row in data.session_average_points})
+    size_map = {
+        avg_max: 35 + (avg_max * 28)
+        for avg_max in avg_max_values
+    }
+
+    fig, ax = plt.subplots(figsize=(11, 6))
+    fig.suptitle(
+        f"Menet-átlag: szerzett pont vs. próbálkozási idő  |  {subtitle}",
+        fontsize=13,
+        fontweight="bold",
+    )
+
+    x_limit_min = 8.0
+    visible_max_point = max((row.avg_gained_pont for row in data.session_average_points), default=0.0)
+    optimal_x = [0.0, x_limit_min]
+    optimal_y = [0.0, x_limit_min / 0.9]
+    ax.plot(
+        optimal_x,
+        optimal_y,
+        linestyle=":",
+        linewidth=2.0,
+        color="#C44E52",
+        alpha=0.9,
+        label="Optimális limit",
+    )
+    ax.text(
+        x_limit_min,
+        min(optimal_y[-1], max(visible_max_point, 1.0) + 0.35),
+        "0.9 perc / pont",
+        color="#C44E52",
+        fontsize=9,
+        ha="right",
+        va="bottom",
+    )
+
+    for row in data.session_average_points:
+        marker = marker_map.get(row.targy, "^")
+        color = cmap.get(row.nev, "#666666")
+        avg_max_key = round(max(0.0, row.avg_max_pont), 1)
+        size = size_map.get(avg_max_key, 35)
+        x_value = row.avg_elapsed_sec / 60
+        y_value = row.avg_gained_pont
+        ax.scatter(
+            x_value,
+            y_value,
+            s=size,
+            c=color,
+            marker=marker,
+            alpha=0.78,
+            edgecolors="#222222",
+            linewidths=0.8,
+        )
+        ax.annotate(
+            row.session_date,
+            (x_value, y_value),
+            textcoords="offset points",
+            xytext=(6, 6),
+            ha="left",
+            va="bottom",
+            fontsize=8,
+            color="#333333",
+        )
+
+    ax.set_xlabel("Átlag próbálkozási idő (perc)", fontsize=10)
+    ax.set_ylabel("Átlag szerzett pont", fontsize=10)
+    ax.set_xlim(0, x_limit_min)
+    ax.set_ylim(bottom=0)
+    ax.grid(linestyle="--", alpha=0.35)
+    ax.spines[["top", "right"]].set_visible(False)
+
+    user_handles = [
+        Line2D([0], [0], marker="o", color="w", label=u, markerfacecolor=cmap[u],
+               markeredgecolor=cmap[u], markersize=8)
+        for u in user_names
+    ]
+    targy_handles = [
+        Line2D([0], [0], marker=marker_map[t], color="#444444", label=t,
+               linestyle="None", markersize=8)
+        for t in sorted({row.targy for row in data.session_average_points})
+    ]
+    size_handles = [
+        plt.scatter([], [], s=size_map[avg_max], color="#999999", alpha=0.6, label=f"átlag max {avg_max:.1f}p")
+        for avg_max in avg_max_values
+    ]
+
+    user_legend = ax.legend(
+        handles=user_handles,
+        title="Felhasználó (szín)",
+        fontsize=9,
+        loc="upper left",
+        bbox_to_anchor=(1.02, 1.0),
+        borderaxespad=0.0,
+    )
+    ax.add_artist(user_legend)
+    targy_legend = ax.legend(
+        handles=targy_handles,
+        title="Tárgy (marker)",
+        fontsize=9,
+        loc="upper left",
+        bbox_to_anchor=(1.02, 0.72),
+        borderaxespad=0.0,
+    )
+    ax.add_artist(targy_legend)
+    ax.legend(
+        handles=size_handles,
+        title="Átlag max pont (méret)",
+        fontsize=9,
+        loc="upper left",
+        bbox_to_anchor=(1.02, 0.42),
+        borderaxespad=0.0,
+    )
+    plt.tight_layout(rect=(0, 0, 0.78, 1))
+
+    fname = "session_average_points.png"
+    fig.savefig(output_dir / fname, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+    logger.info("report: chart saved %s", fname)
+    return fname
+
+
+def _chart_session_average_delta_points(
+    data: ReportData, output_dir: Path, cmap: dict, subtitle: str, user_names: list[str]
+) -> str | None:
+    if not data.session_average_points:
+        return None
+
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+
+    marker_map = {
+        "matek": "o",
+        "magyar": "s",
+        "ismeretlen": "^",
+    }
+    avg_max_values = sorted({round(max(0.0, row.avg_max_pont), 1) for row in data.session_average_points})
+    size_map = {
+        avg_max: 35 + (avg_max * 28)
+        for avg_max in avg_max_values
+    }
+
+    fig, ax = plt.subplots(figsize=(11, 6))
+    fig.suptitle(
+        f"Menet-átlag eltérés a célhoz képest  |  {subtitle}",
+        fontsize=13,
+        fontweight="bold",
+    )
+
+    for row in data.session_average_points:
+        marker = marker_map.get(row.targy, "^")
+        color = cmap.get(row.nev, "#666666")
+        avg_max_key = round(max(0.0, row.avg_max_pont), 1)
+        size = size_map.get(avg_max_key, 35)
+        x_value = (0.9 * row.avg_max_pont) - (row.avg_elapsed_sec / 60)
+        y_value = row.avg_gained_pont - (0.8 * row.avg_max_pont)
+        ax.scatter(
+            x_value,
+            y_value,
+            s=size,
+            c=color,
+            marker=marker,
+            alpha=0.78,
+            edgecolors="#222222",
+            linewidths=0.8,
+        )
+        ax.annotate(
+            row.session_date,
+            (x_value, y_value),
+            textcoords="offset points",
+            xytext=(6, 6),
+            ha="left",
+            va="bottom",
+            fontsize=8,
+            color="#333333",
+        )
+
+    ax.axvline(0, color="#666666", linestyle=":", linewidth=1.5)
+    ax.axhline(0, color="#666666", linestyle=":", linewidth=1.5)
+    ax.text(3.9, 2.85, "jobb mint cél", fontsize=9, color="#444444", ha="right", va="top")
+    ax.set_xlabel("Időeltérés a 0.9 perc/pont célhoz képest (perc)", fontsize=10)
+    ax.set_ylabel("Ponteltérés a 80% célhoz képest", fontsize=10)
+    ax.set_xlim(-4, 4)
+    ax.set_ylim(-2, 3)
+    ax.grid(linestyle="--", alpha=0.35)
+    ax.spines[["top", "right"]].set_visible(False)
+
+    user_handles = [
+        Line2D([0], [0], marker="o", color="w", label=u, markerfacecolor=cmap[u],
+               markeredgecolor=cmap[u], markersize=8)
+        for u in user_names
+    ]
+    targy_handles = [
+        Line2D([0], [0], marker=marker_map[t], color="#444444", label=t,
+               linestyle="None", markersize=8)
+        for t in sorted({row.targy for row in data.session_average_points})
+    ]
+    size_handles = [
+        plt.scatter([], [], s=size_map[avg_max], color="#999999", alpha=0.6, label=f"átlag max {avg_max:.1f}p")
+        for avg_max in avg_max_values
+    ]
+
+    user_legend = ax.legend(
+        handles=user_handles,
+        title="Felhasználó (szín)",
+        fontsize=9,
+        loc="upper left",
+        bbox_to_anchor=(1.02, 1.0),
+        borderaxespad=0.0,
+    )
+    ax.add_artist(user_legend)
+    targy_legend = ax.legend(
+        handles=targy_handles,
+        title="Tárgy (marker)",
+        fontsize=9,
+        loc="upper left",
+        bbox_to_anchor=(1.02, 0.72),
+        borderaxespad=0.0,
+    )
+    ax.add_artist(targy_legend)
+    ax.legend(
+        handles=size_handles,
+        title="Átlag max pont (méret)",
+        fontsize=9,
+        loc="upper left",
+        bbox_to_anchor=(1.02, 0.42),
+        borderaxespad=0.0,
+    )
+    plt.tight_layout(rect=(0, 0, 0.78, 1))
+
+    fname = "session_average_delta_points.png"
+    fig.savefig(output_dir / fname, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+    logger.info("report: chart saved %s", fname)
+    return fname
+
+
 # ---------------------------------------------------------------------------
 # Chart generation
 # ---------------------------------------------------------------------------
@@ -716,6 +1199,9 @@ def generate_charts(data: ReportData, output_dir: Path) -> list[str]:
         _chart_daily_activity(data, output_dir, cmap, subtitle, user_names, all_dates),
         _chart_daily_points(data, output_dir, cmap, subtitle, user_names, all_dates),
         _chart_daily_accuracy(data, output_dir, cmap, subtitle, user_names, all_dates),
+        _chart_attempt_time_points(data, output_dir, cmap, subtitle, user_names),
+        _chart_session_average_points(data, output_dir, cmap, subtitle, user_names),
+        _chart_session_average_delta_points(data, output_dir, cmap, subtitle, user_names),
         _chart_szint_distribution(data, output_dir, subtitle, user_names),
     ]:
         if fname:
@@ -733,6 +1219,9 @@ _CHART_TITLES = {
     "daily_activity.png":    "Napi aktivitás – kísérletek száma",
     "daily_points.png":      "Napi aktivitás – pontszám (user × tárgy)",
     "daily_accuracy.png":    "Napi aktivitás – pontosság (user × tárgy)",
+    "attempt_time_points.png": "Szerzett pont vs. próbálkozási idő",
+    "session_average_points.png": "Menet-átlag: szerzett pont vs. próbálkozási idő",
+    "session_average_delta_points.png": "Menet-átlag eltérés a célhoz képest",
     "szint_distribution.png": "Kísérletek szint szerint",
 }
 
@@ -742,6 +1231,9 @@ _CHART_SECTIONS = {
     "daily_activity.png":    "Napi aktivitás",
     "daily_points.png":      "Napi aktivitás",
     "daily_accuracy.png":    "Napi aktivitás",
+    "attempt_time_points.png": "Próbálkozási idő vs pont",
+    "session_average_points.png": "Menet-átlagok",
+    "session_average_delta_points.png": "Menet-átlag eltérések",
     "szint_distribution.png": "Kísérletek szint szerint",
 }
 
