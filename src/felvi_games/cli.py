@@ -2816,6 +2816,33 @@ def _launch_chainlit_review_chat(context_path: Path) -> None:
         raise typer.Exit(code=1) from exc
 
 
+def _launch_chainlit_teacher_chat(context_path: Path) -> None:
+    import os
+    import subprocess
+    import sys
+
+    app_path = Path(__file__).with_name("teacher_chainlit_app.py")
+    if not app_path.exists():
+        typer.echo(f"[!] Teacher Chainlit app fájl hiányzik: {app_path}")
+        raise typer.Exit(code=1)
+
+    env = os.environ.copy()
+    env["FELVI_TEACHER_CHAT_CONTEXT"] = str(context_path.resolve())
+
+    cmd = [sys.executable, "-m", "chainlit", "run", str(app_path), "-w"]
+    typer.echo("Teacher chat indul… (leállítás: Ctrl+C)")
+    typer.echo(f"Parancs: {' '.join(cmd)}")
+
+    try:
+        subprocess.run(cmd, check=True, env=env)
+    except FileNotFoundError:
+        typer.echo("[!] A chainlit nincs telepítve. Telepítés: pip install chainlit")
+        raise typer.Exit(code=1) from None
+    except subprocess.CalledProcessError as exc:
+        typer.echo(f"[!] Teacher Chainlit futtatási hiba: {exc}")
+        raise typer.Exit(code=1) from exc
+
+
 @app.command("review-chat")
 def review_chat_cmd(
     feladat_id: Annotated[
@@ -2918,6 +2945,104 @@ def review_chat_cmd(
         context_out=out_path,
         prepare_only=prepare_only,
     )
+
+
+@app.command(
+    "teacher-chat",
+    context_settings={"allow_extra_args": True},
+)
+def teacher_chat_cmd(
+    ctx: typer.Context,
+    user: Annotated[
+        str | None, typer.Option("--user", help="Tanuló neve (pl. 'Lóri')")
+    ] = None,
+    targy: Annotated[
+        Targy | None, typer.Option("--targy", help="Tantárgy szűrő: matek vagy magyar")
+    ] = None,
+    szint: Annotated[
+        str, typer.Option("--szint", help="Opcionális évfolyam szint szűrő (alap: minden szint)")
+    ] = "mind",
+    attempts_limit: Annotated[
+        int, typer.Option("--attempts-limit", help="Max. betöltött próbálkozás a chat kontextusba")
+    ] = 200,
+    db: Annotated[
+        Path | None, typer.Option("--db", help="SQLite DB útvonala (alap: FELVI_DB env)")
+    ] = None,
+    context_out: Annotated[
+        Path | None,
+        typer.Option(
+            "--context-out",
+            help="Kontekstus JSON mentése ide (alap: data/review_chat/teacher_<user>_<targy>.json)",
+        ),
+    ] = None,
+    prepare_only: Annotated[
+        bool,
+        typer.Option("--prepare-only", help="Csak kontextusfájl készítése, Chainlit indítás nélkül"),
+    ] = False,
+) -> None:
+    """Tanári elemző chat egy tanuló + tantárgy teljesítményéről.
+
+    Alapértelmezésben minden szintről betölti a kiválasztott tanuló és tantárgy
+    próbálkozásait. A --szint csak opcionális szűkítés.
+
+    A chat a kiválasztott tanuló és tantárgy próbálkozásait, kapcsolódó feladatait,
+    erősség/gyengeség profilját és személyre szabott javaslatokat tud adni.
+    """
+    import json
+
+    from felvi_games.config import get_db_path
+    from felvi_games.db import FeladatRepository
+    from felvi_games.teacher_chat import build_teacher_chat_context
+
+    db_path = db or get_db_path()
+    if not db_path.exists():
+        typer.echo(f"[!] DB nem található: {db_path}")
+        raise typer.Exit(code=1)
+    if attempts_limit < 1:
+        typer.echo("[!] --attempts-limit legalább 1 legyen.")
+        raise typer.Exit(code=2)
+
+    user_name = (user or "").strip()
+    if not user_name:
+        typer.echo("[!] --user megadása kötelező.")
+        raise typer.Exit(code=2)
+    if targy is None:
+        typer.echo("[!] --targy megadása kötelező.")
+        raise typer.Exit(code=2)
+
+    extra_args = [str(arg).strip() for arg in (ctx.args or []) if str(arg).strip()]
+    normalized_szint = str(szint or "mind").strip()
+    if extra_args:
+        normalized_szint = " ".join([normalized_szint, *extra_args]).strip()
+
+    repo = FeladatRepository(db_path)
+    try:
+        context = build_teacher_chat_context(
+            repo,
+            user=user_name,
+            targy=targy.value,
+            szint=normalized_szint,
+            attempts_limit=attempts_limit,
+        )
+    except ValueError as exc:
+        typer.echo(f"[!] Kontextus építési hiba: {exc}")
+        raise typer.Exit(code=2) from exc
+
+    safe_user = "".join(c for c in user_name if c.isalnum() or c in {"_", "-"}) or "user"
+    out_path = context_out or (Path("data") / "review_chat" / f"teacher_{safe_user}_{targy.value}.json")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    context["meta"] = {
+        "db_path": str(db_path),
+    }
+    out_path.write_text(json.dumps(context, ensure_ascii=False, indent=2), encoding="utf-8")
+    typer.echo(f"✓ Teacher chat kontextus mentve: {out_path}")
+
+    if prepare_only:
+        typer.echo("[prepare-only] Chainlit indítás kihagyva.")
+        return
+
+    _launch_chainlit_teacher_chat(out_path)
 
 
 @app.command("review-chat-marked")
