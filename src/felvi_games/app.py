@@ -15,6 +15,7 @@ from felvi_games.ai import check_answer, kerdes_to_tts_szoveg, speech_to_text, t
 from felvi_games.config import get_exams_dir, resolve_asset, setup_logging
 from felvi_games.db import FeladatRepository
 from felvi_games.models import KATEGORIA_INFO, Ertekeles, Fazis, Feladat, GameState, InterakcioTipus
+from felvi_games.ui.daily_insight import render_daily_insight
 
 setup_logging()
 
@@ -311,6 +312,15 @@ def _render_sidebar(gs: GameState) -> None:
             if st.button("🎮 Vissza a játékhoz", use_container_width=True):
                 st.session_state["_active_page"] = "game"
                 st.rerun()
+
+        if st.button(
+            "📅 Napi áttekintés",
+            use_container_width=True,
+            disabled=not bool(st.session_state.get("_napi_insight")),
+            help="A mai napi áttekintés újbóli megnyitása.",
+        ):
+            st.session_state["_napi_insight_seen"] = False
+            st.rerun()
 
         if gs.fazis in (Fazis.KERDES, Fazis.EREDMENY):
             st.divider()
@@ -1141,92 +1151,6 @@ def _load_active_challenges(user: str) -> list[dict]:
     return result
 
 
-def _show_daily_insight_dialog(insight_data: dict) -> None:
-    """Display the AI-generated daily progress insight."""
-    from felvi_games.medal_assets import get_medal_asset
-
-    greeting = insight_data.get("greeting", "")
-    if greeting:
-        st.markdown(f"### {greeting}")
-
-    awardable_now = insight_data.get("awardable_now", [])
-    would_repeat_now = insight_data.get("would_repeat_now", [])
-    if awardable_now:
-        st.markdown("#### ⚡ Most megszerezhető:")
-        for erem in awardable_now:
-            st.success(
-                f"{erem.get('ikon', '🏅')} **{erem.get('nev', 'Ismeretlen érem')}**",
-                icon=None,
-            )
-        st.markdown("---")
-
-    if would_repeat_now:
-        st.markdown("#### 🔁 Ismételhető érmek most teljesülnek:")
-        st.caption("Ezeket már egyszer megszerezted, de a feltétel most újra teljesült.")
-        for erem in would_repeat_now:
-            name = erem.get("nev", "Ismételhető érem")
-            icon = erem.get("ikon", "🏅")
-            desc = str(erem.get("leiras", "") or "").strip()
-            line = f"{icon} **{name}** — most újra megszerezhető"
-            if desc:
-                line += f"  \\n{desc}"
-            st.info(line, icon="🔁")
-        st.markdown("---")
-
-    # Active challenges — always shown
-    challenges = insight_data.get("active_challenges", [])
-    if challenges:
-        st.markdown("#### 🏆 Aktív kihívásaid:")
-        for ch in challenges:
-            cur = ch.get("current")
-            target = ch.get("target")
-            if ch["teljesul"]:
-                st.success(f"{ch['ikon']} **{ch['nev']}** — ✅ Teljesítetted!", icon=None)
-            else:
-                progress_str = ""
-                if cur is not None and target is not None and target > 0:
-                    pct = min(int(cur / target * 100), 100)
-                    progress_str = f"  {cur}/{target} ({pct}%)"
-                    st.info(f"{ch['ikon']} **{ch['nev']}**  {progress_str}\n\n{ch['leiras']}", icon="⏳")
-                    st.progress(pct / 100)
-                else:
-                    st.info(f"{ch['ikon']} **{ch['nev']}**\n\n{ch['leiras']}", icon="⏳")
-        st.markdown("---")
-
-    close = insight_data.get("close_medals", [])
-    if close:
-        st.markdown("#### 🎯 Hamarosan megszerezheted:")
-        for cm in close:
-            pct = int(cm["progress"] * 100)
-            bar = "█" * (pct // 10) + "░" * (10 - pct // 10)
-            st.markdown(f"{cm['ikon']} **{cm['nev']}** `{bar}` {pct}%")
-            st.caption(cm["hint"])
-
-    teaser = insight_data.get("teaser_medal")
-    if teaser:
-        st.markdown("---")
-        new_flag = " 🆕" if insight_data.get("new_medal_created") else ""
-        st.markdown(f"#### ⭐ Következő cél{new_flag}")
-        st.markdown(f"{teaser['ikon']} **{teaser['nev']}**")
-        st.caption(teaser["leiras"])
-        # Show image if available — but we need the Erem object; use id from dict
-        if teaser.get("id"):
-            from sqlalchemy.orm import Session as _S
-
-            from felvi_games.db import EremRecord
-            with _S(get_repo()._engine) as _sess:
-                rec = _sess.get(EremRecord, teaser["id"])
-            if rec:
-                erem_obj = rec.to_domain()
-                kep = get_medal_asset(erem_obj, "kep")
-                if kep:
-                    st.image(kep if isinstance(kep, bytes) else kep, width=160)
-
-    if st.button("💪 Rajta, nézzük!", use_container_width=True, type="primary"):
-        st.session_state["_napi_insight"] = None
-        st.rerun()
-
-
 # ---------------------------------------------------------------------------
 # Medal award dialog
 # ---------------------------------------------------------------------------
@@ -1371,7 +1295,7 @@ def main() -> None:
     if st.session_state.get("_napi_insight") and not st.session_state.get("_napi_insight_seen"):
         logger.debug("main | showing insight page, returning early")
         st.session_state["_napi_insight_seen"] = True
-        _show_daily_insight_dialog(st.session_state["_napi_insight"])
+        render_daily_insight(st.session_state["_napi_insight"], get_repo())
         return
 
     logger.debug("main | rendering fazis=%s", gs.fazis)
