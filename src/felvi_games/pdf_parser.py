@@ -45,8 +45,9 @@ logger = logging.getLogger(__name__)
 # Filename prefix → subject name
 _TARGY_MAP: dict[str, str] = {"A": "magyar", "M": "matek"}
 
-# Filename numeric level → internal szint label.
-_SZINT_MAP: dict[int, str] = {8: "8 osztályos", 6: "6 osztályos", 4: "4 osztályos"}
+# Filename primary-school grade → destination gymnasium programme length.
+# E.g. M8 exams are written by eighth graders applying to a four-year programme.
+_SZINT_MAP: dict[int, str] = {8: "4 osztályos", 6: "6 osztályos", 4: "8 osztályos"}
 
 # CLI --szint érték (gimnázium osztályszám) → szint label
 _CLI_SZINT_MAP: dict[str, str] = {"4": "4 osztályos", "6": "6 osztályos", "8": "8 osztályos"}
@@ -432,7 +433,7 @@ def extract_feladatok_batched(
 
 
 def _id_prefix_from_source(pdf_source: str, targy: str) -> str:
-    """'M8_2025_1_fl.pdf' → 'mat4_2025_1' / 'mat8_2025_1'."""
+    """'M8_2025_1_fl.pdf' → 'mat4_2025_1'."""
     meta = parse_filename_meta(pdf_source)
     year = str(meta["ev"]) if meta["ev"] else "xx"
     seq = str(meta["valtozat"]) if meta["valtozat"] else "1"
@@ -445,8 +446,10 @@ def _id_prefix_from_source(pdf_source: str, targy: str) -> str:
 def parse_filename_meta(filename: str) -> dict:
     """Extract structured metadata from a felvételi PDF filename.
 
-    'M8_2025_1_fl.pdf' → {'ev': 2025, 'valtozat': 1, 'kind': 'fl', 'targy': 'matek', 'szint': '8 osztályos'}
-    'A4_2025_2_ut.pdf' → {'ev': 2025, 'valtozat': 2, 'kind': 'ut', 'targy': 'magyar', 'szint': '4 osztályos'}
+    The number in the filename is the student's primary-school grade, while
+    ``szint`` is the length of the destination gymnasium programme.
+    'M8_2025_1_fl.pdf' → {'ev': 2025, 'valtozat': 1, 'kind': 'fl', 'targy': 'matek', 'szint': '4 osztályos'}
+    'A4_2025_2_ut.pdf' → {'ev': 2025, 'valtozat': 2, 'kind': 'ut', 'targy': 'magyar', 'szint': '8 osztályos'}
     Returns None values for any field that cannot be parsed.
     """
     m = re.match(
