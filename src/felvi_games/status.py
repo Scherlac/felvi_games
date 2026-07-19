@@ -59,21 +59,46 @@ def _pdf_summary(exams_dir: Path, szint_filter: str | None) -> None:
 
 
 def _db_summary(db_path: Path, szint_filter: str | None) -> None:
-    """Kiírja a DB feladat-statisztikákat szint/tárgy bontásban."""
+    """Kiírja a DB feladat- és vizsgastatisztikákat."""
     from sqlalchemy import func, select
     from sqlalchemy.orm import Session
 
-    from felvi_games.db import FeladatRecord, get_engine
+    from felvi_games.db import FeladatCsoportRecord, FeladatRecord, get_engine
 
     engine = get_engine(db_path)
     with Session(engine) as sess:
         total = sess.scalar(select(func.count()).select_from(FeladatRecord)) or 0
-        print(f"  Összes feladat: {total}")
+        total_groups = sess.scalar(select(func.count()).select_from(FeladatCsoportRecord)) or 0
+        print(f"  Összes részfeladat: {total}")
+        print(f"  Összes feladatcsoport: {total_groups}")
 
         rows = sess.execute(
             select(FeladatRecord.szint, FeladatRecord.targy, func.count())
             .group_by(FeladatRecord.szint, FeladatRecord.targy)
             .order_by(FeladatRecord.szint, FeladatRecord.targy)
+        ).all()
+
+        exam_rows = sess.execute(
+            select(
+                FeladatCsoportRecord.ev,
+                FeladatCsoportRecord.fl_pdf_path,
+                FeladatCsoportRecord.targy,
+                FeladatCsoportRecord.szint,
+                FeladatCsoportRecord.valtozat,
+                func.count(FeladatCsoportRecord.id),
+                func.coalesce(func.sum(FeladatCsoportRecord.max_pont_ossz), 0),
+            )
+            .group_by(
+                FeladatCsoportRecord.ev,
+                FeladatCsoportRecord.fl_pdf_path,
+                FeladatCsoportRecord.targy,
+                FeladatCsoportRecord.szint,
+                FeladatCsoportRecord.valtozat,
+            )
+            .order_by(
+                FeladatCsoportRecord.ev.desc(),
+                FeladatCsoportRecord.fl_pdf_path,
+            )
         ).all()
 
     if not rows:
@@ -86,6 +111,26 @@ def _db_summary(db_path: Path, szint_filter: str | None) -> None:
         if szint_filter and szint_filter not in (row_szint or ""):
             continue
         print(f"  {row_szint or '?':<18} {row_targy or '?':<10} {cnt:>8}")
+
+    filtered_exam_rows = [
+        row for row in exam_rows
+        if not szint_filter or szint_filter in (row.szint or "")
+    ]
+    if not filtered_exam_rows:
+        return
+
+    print("\n=== Feldolgozott vizsgák (feladatcsoportok) ===")
+    current_year: int | None | object = object()
+    for row in filtered_exam_rows:
+        if row.ev != current_year:
+            current_year = row.ev
+            print(f"\n  {row.ev if row.ev is not None else '?'}:")
+        variant = f"{row.valtozat}. változat" if row.valtozat is not None else "? változat"
+        print(
+            f"    {row.targy or '?':<8} {row.szint or '?':<18} {variant:<12} "
+            f"{row.count:>3} csoport  {row.coalesce:>3} max. pont"
+        )
+        print(f"      {row.fl_pdf_path or '(ismeretlen forrás PDF)'}")
 
 
 def run(szint: str | None = None) -> None:

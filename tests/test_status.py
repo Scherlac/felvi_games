@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
 from felvi_games import status
+from felvi_games.models import FeladatCsoport
 
 
 def test_pdf_summary_empty_dir_prints_hint(tmp_path: Path, capsys) -> None:
@@ -33,6 +35,42 @@ def test_pdf_summary_unrecognized_names_are_reported(tmp_path: Path, capsys) -> 
     out = capsys.readouterr().out
 
     assert "ismeretlen nev" in out
+
+
+def test_db_summary_groups_exam_tasks_and_max_points_by_pdf_and_year(repo, feladat_matek, capsys) -> None:
+    first = dataclasses.replace(
+        feladat_matek,
+        id="mat4_2023_1_1_a",
+        szint="4 osztályos",
+        ev=2023,
+        valtozat=1,
+        max_pont=2,
+        fl_pdf_path="9_evfolyam/2023/M8_2023_1_fl.pdf",
+    )
+    second = dataclasses.replace(first, id="mat4_2023_1_1_b", max_pont=3)
+    repo.upsert_many([first, second])
+    repo.upsert_csoport(
+        FeladatCsoport(
+            id="mat4_2023_1_1",
+            targy="matek",
+            szint="4 osztályos",
+            feladat_sorszam="1",
+            ev=2023,
+            valtozat=1,
+            fl_pdf_path="9_evfolyam/2023/M8_2023_1_fl.pdf",
+            max_pont_ossz=5,
+        )
+    )
+
+    db_path = Path(str(repo._engine.url.database))
+    status._db_summary(db_path, szint_filter="4")
+    out = capsys.readouterr().out
+
+    assert "Feldolgozott vizsgák (feladatcsoportok)" in out
+    assert "2023:" in out
+    assert "1 csoport" in out
+    assert "5 max. pont" in out
+    assert "9_evfolyam/2023/M8_2023_1_fl.pdf" in out
 
 
 def test_run_missing_paths_prints_missing_hints(tmp_path: Path, monkeypatch, capsys) -> None:

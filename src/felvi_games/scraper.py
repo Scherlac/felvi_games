@@ -169,6 +169,26 @@ def kategoria_mappa(href: str) -> str:
     return "6_osztaly"
 
 
+def kategoria_mappak(href: str) -> tuple[str, ...]:
+    """Return every programme category represented by an index-page URL."""
+    if "6_8osztalyos" in href.lower():
+        return "6_osztaly", "8_osztaly"
+    return (kategoria_mappa(href),)
+
+
+def _shared_page_file_matches_category(filename: str, kategoria: str) -> bool:
+    """Select the requested programme's PDFs from a shared 6/8-year page."""
+    grade_by_category = {"6_osztaly": "6", "8_osztaly": "4"}
+    grade = grade_by_category.get(kategoria)
+    return grade is None or bool(re.match(rf"^[AM]{grade}_", filename, re.IGNORECASE))
+
+
+def _archive_year(href: str, fallback: str) -> str:
+    """Read the archive year from a page URL, falling back to its table row."""
+    match = re.search(r"(?<!\d)(20\d{2})(?=evi|_)", href)
+    return match.group(1) if match else fallback
+
+
 # ---------------------------------------------------------------------------
 # 1. lépés: Főoldal – évenkénti linkek összegyűjtése
 # ---------------------------------------------------------------------------
@@ -200,16 +220,22 @@ def scrape_year_links() -> list[dict]:
                 for a in cell.find_all("a", href=True):
                     href = a["href"]
                     full_url = urljoin(BASE_URL, href)
-                    kat = kategoria_mappa(href)
-                    results.append(
-                        {"year": year_text, "kategoria": kat, "url": full_url}
-                    )
+                    shared_page = "6_8osztalyos" in href.lower()
+                    for kat in kategoria_mappak(href):
+                        results.append(
+                            {
+                                "year": _archive_year(href, year_text),
+                                "kategoria": kat,
+                                "url": full_url,
+                                "shared_page": shared_page,
+                            }
+                        )
 
     # Deduplikáció
     seen = set()
     unique = []
     for r in results:
-        key = r["url"]
+        key = r["url"], r["kategoria"]
         if key not in seen:
             seen.add(key)
             unique.append(r)
@@ -358,6 +384,12 @@ def run(
         print(f"\n[{year}] {kat} — {url}")
 
         pdf_links = scrape_pdf_links(url)
+
+        if entry.get("shared_page"):
+            pdf_links = [
+                item for item in pdf_links
+                if _shared_page_file_matches_category(item["filename"], kat)
+            ]
 
         if not pdf_links:
             print("  (nem találtunk letölthető fájlt ezen az oldalon)")
