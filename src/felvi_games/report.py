@@ -91,6 +91,8 @@ class DailyDetail(AccuracyPctMixin):
     correct: int = 0
     partial: int = 0
     points: int = 0
+    max_points: int = 0
+    elapsed_sec: float = 0.0
 
 
 @dataclass
@@ -114,6 +116,33 @@ class SessionAveragePoint:
     avg_gained_pont: float
     avg_elapsed_sec: float
     avg_max_pont: float
+
+
+@dataclass(frozen=True)
+class PerformanceMetrics:
+    achievable_points: float
+    earned_points: float
+    time_sec: float
+    earned_pct: float
+    time_per_earned_point: float
+    average_achievable_points: float
+
+
+def _calculate_performance_metrics(
+    achievable_points: float,
+    earned_points: float,
+    time_sec: float,
+    count: int,
+) -> PerformanceMetrics:
+    safe_count = max(count, 1)
+    return PerformanceMetrics(
+        achievable_points=achievable_points,
+        earned_points=earned_points,
+        time_sec=time_sec,
+        earned_pct=(earned_points / achievable_points * 100) if achievable_points > 0 else 0.0,
+        time_per_earned_point=(time_sec / earned_points) if earned_points > 0 else 0.0,
+        average_achievable_points=achievable_points / safe_count,
+    )
 
 
 @dataclass
@@ -323,6 +352,11 @@ def gather_data(engine, days: int, user_filter: str | None = None) -> ReportData
             daily_detail_dict[(datum, u, targy)]["partial"] += 1
         daily_detail_dict[(datum, u, targy)].setdefault("points", 0)
         daily_detail_dict[(datum, u, targy)]["points"] += outcome.points
+        daily_detail_dict[(datum, u, targy)].setdefault("max_points", 0)
+        daily_detail_dict[(datum, u, targy)]["max_points"] += int(row.max_pont or 0)
+        daily_detail_dict[(datum, u, targy)].setdefault("elapsed_sec", 0.0)
+        if isinstance(elapsed_sec, (int, float)) and elapsed_sec > 0:
+            daily_detail_dict[(datum, u, targy)]["elapsed_sec"] += float(elapsed_sec)
 
     for row in achievements:
         user_data.setdefault(row.felhasznalo_nev, UserSummary(nev=row.felhasznalo_nev))
@@ -378,6 +412,8 @@ def gather_data(engine, days: int, user_filter: str | None = None) -> ReportData
             correct=vals.get("correct", 0),
             partial=vals.get("partial", 0),
             points=vals.get("points", 0),
+            max_points=vals.get("max_points", 0),
+            elapsed_sec=vals.get("elapsed_sec", 0.0),
         ))
 
     data.users = sorted(user_data.values(), key=lambda u: u.nev)
@@ -406,17 +442,58 @@ def _user_colors(user_names: list[str]) -> dict[str, str]:
     return {u: _USER_PALETTE[i % len(_USER_PALETTE)] for i, u in enumerate(user_names)}
 
 
+def _daily_performance_rows(
+    data: ReportData,
+) -> list[tuple[str, str, str, int, PerformanceMetrics]]:
+    return [
+        (
+            row.nev,
+            f"{row.datum} / {row.targy}",
+            row.targy,
+            row.attempts,
+            _calculate_performance_metrics(
+                row.max_points,
+                row.points,
+                row.elapsed_sec,
+                row.attempts,
+            ),
+        )
+        for row in data.daily_detail
+    ]
+
+
+def _session_performance_rows(
+    data: ReportData,
+) -> list[tuple[str, str, str, int, PerformanceMetrics, SessionAveragePoint]]:
+    rows = []
+    for row in data.session_average_points:
+        metrics = _calculate_performance_metrics(
+            row.avg_max_pont * row.committed_count,
+            row.avg_gained_pont * row.committed_count,
+            row.avg_elapsed_sec * row.committed_count,
+            row.committed_count,
+        )
+        rows.append((
+            row.nev,
+            f"{row.session_date} / {row.menet_id}",
+            row.targy,
+            row.committed_count,
+            metrics,
+            row,
+        ))
+    return rows
+
+
 # ---------------------------------------------------------------------------
 # Chart helpers
 # ---------------------------------------------------------------------------
 
 def _build_date_range(data: ReportData) -> list[str]:
-    all_dates: list[str] = []
-    cur = data.date_from.replace(hour=0, minute=0, second=0, microsecond=0)
-    while cur <= data.date_to:
-        all_dates.append(cur.strftime("%Y-%m-%d"))
-        cur += timedelta(days=1)
-    return all_dates
+    start = data.date_from.replace(hour=0, minute=0, second=0, microsecond=0)
+    return [
+        (start + timedelta(days=offset)).strftime("%Y-%m-%d")
+        for offset in range(data.days)
+    ]
 
 
 def _build_daily_detail_context(
@@ -1082,13 +1159,18 @@ def _chart_session_average_delta_points(
         fontweight="bold",
     )
 
-    for row in data.session_average_points:
+    for _, _, _, _, metrics, row in _session_performance_rows(data):
         marker = marker_map.get(row.targy, "^")
         color = cmap.get(row.nev, "#666666")
-        avg_max_key = round(max(0.0, row.avg_max_pont), 1)
+        avg_max_key = round(max(0.0, metrics.average_achievable_points), 1)
         size = size_map.get(avg_max_key, 35)
-        x_value = (0.9 * row.avg_max_pont) - (row.avg_elapsed_sec / 60)
-        y_value = row.avg_gained_pont - (0.8 * row.avg_max_pont)
+        x_value = (0.9 * metrics.average_achievable_points) - (
+            metrics.time_sec / row.committed_count / 60
+        )
+        y_value = (
+            metrics.earned_points / row.committed_count
+            - (0.8 * metrics.average_achievable_points)
+        )
         ax.scatter(
             x_value,
             y_value,
@@ -1238,6 +1320,27 @@ _CHART_SECTIONS = {
 }
 
 
+def _append_performance_table(
+    lines: list[str],
+    title: str,
+    rows: list[tuple[str, str, str, int, PerformanceMetrics]],
+) -> None:
+    lines += [
+        f"### {title}",
+        "",
+        "| Felhasználó | Tény | Feladatok száma | Elérhető pont összesen | Szerzett pont összesen | Idő összesen | Szerzett / elérhető átlag [%] | Idő / szerzett pont átlag (perc/pont) | Elérhető pont átlag |",
+        "|-------------|------|-----------------|------------------------|------------------------|--------------|-------------------------------|----------------------------------------|---------------------|",
+    ]
+    for user, fact, _, task_count, metrics in rows:
+        lines.append(
+            f"| {user} | {fact} | {task_count} | {metrics.achievable_points:.1f} | "
+            f"{metrics.earned_points:.1f} | {metrics.time_sec / 60:.1f} perc | "
+            f"{metrics.earned_pct:.1f}% | {metrics.time_per_earned_point / 60:.2f} | "
+            f"{metrics.average_achievable_points:.1f} |"
+        )
+    lines.append("")
+
+
 def generate_markdown(data: ReportData, chart_files: list[str], output_dir: Path) -> Path:
     fmt_from = data.date_from.strftime("%Y-%m-%d")
     fmt_to = (data.date_to - timedelta(seconds=1)).strftime("%Y-%m-%d")
@@ -1323,7 +1426,18 @@ def generate_markdown(data: ReportData, chart_files: list[str], output_dir: Path
     else:
         lines.append("_(Ebben az időszakban nem szerzett senki új érmet.)_")
 
-    lines += ["", "---", "", "## Grafikonok", ""]
+    lines += ["", "---", "", "## Célhoz viszonyított teljesítmény táblázatok", ""]
+    _append_performance_table(lines, "Napi aggregáció", _daily_performance_rows(data))
+    _append_performance_table(
+        lines,
+        "Menet alapú aggregáció",
+        [
+            (user, fact, subject, task_count, metrics)
+            for user, fact, subject, task_count, metrics, _ in _session_performance_rows(data)
+        ],
+    )
+
+    lines += ["---", "", "## Grafikonok", ""]
 
     _DAILY_CHARTS = {"daily_activity.png", "daily_points.png", "daily_accuracy.png"}
     daily_printed = False

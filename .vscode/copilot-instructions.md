@@ -1,3 +1,6 @@
+<!--
+file: .vscode\copilot-instructions.md
+-->
 # GitHub Copilot Terminal & Environment Rules
 
 ## Chat language

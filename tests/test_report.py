@@ -7,7 +7,12 @@ from sqlalchemy.orm import Session
 
 from felvi_games.db import FeladatRepository, MenetRecord, get_engine
 from felvi_games.models import Ertekeles, Feladat
-from felvi_games.report import gather_data
+from felvi_games.report import (
+    ReportData,
+    _build_date_range,
+    _calculate_performance_metrics,
+    gather_data,
+)
 
 
 def test_gather_data_falls_back_to_attempt_time_when_sessions_are_open(tmp_path: Path) -> None:
@@ -79,3 +84,35 @@ def test_gather_data_falls_back_to_attempt_time_when_sessions_are_open(tmp_path:
     assert round(session_points[0].avg_gained_pont, 2) == 0.5
     assert round(session_points[0].avg_elapsed_sec, 2) == 150.0
     assert round(session_points[0].avg_max_pont, 2) == 1.0
+
+
+def test_build_date_range_contains_exactly_the_report_days() -> None:
+    start = datetime(2026, 9, 26, 10, 52, tzinfo=timezone.utc)
+    data = ReportData(
+        date_from=start,
+        date_to=start + timedelta(days=7),
+        days=7,
+    )
+
+    assert _build_date_range(data) == [
+        "2026-09-26",
+        "2026-09-27",
+        "2026-09-28",
+        "2026-09-29",
+        "2026-09-30",
+        "2026-10-01",
+        "2026-10-02",
+    ]
+
+
+def test_performance_metrics_use_totals_for_shared_chart_and_table_calculation() -> None:
+    metrics = _calculate_performance_metrics(
+        achievable_points=100,
+        earned_points=80,
+        time_sec=240,
+        count=10,
+    )
+
+    assert metrics.earned_pct == 80.0
+    assert metrics.time_per_earned_point == 3.0
+    assert metrics.average_achievable_points == 10.0
