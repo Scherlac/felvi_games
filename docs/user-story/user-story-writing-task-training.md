@@ -281,6 +281,8 @@ These gates need a sufficiently varied, permissioned sample and educator agreeme
 3. Which remaining years, variants, and grades should be manually reviewed to complete the exam-corpus inventory?
 4. Should initial focus practice cover argumentation first, or launch with narrative and functional-writing tasks as well?
 5. What draft-retention period and parent/teacher visibility are appropriate for child users?
+6. Should the tutor chat be native Streamlit (`st.chat_message`/`st.chat_input`, recommended: same entry point as the main-page buttons, shared session state) or a separate Chainlit app like the teacher chat?
+7. Who reviews and approves generated "practice review guides" before learners see them (educator sign-off flag)?
 
 ---
 
@@ -552,3 +554,98 @@ Preserving the draft verbatim keeps the source prompt wording available, but doe
 - Treat “objective, balanced tone” and “higher-tier vocabulary” as draft teaching ideas, not exam marking rules. Do not reward a particular viewpoint or unnecessarily penalize age-appropriate language.
 - Apply the fairness cautions in the assessment table. Do not describe a scenario as universally accessible without review; allow hypothetical reasoning and avoid requiring private family, financial, travel, or pet experience.
 - Keep any rewritten prompt as a separately versioned derivative so this original wording and its provenance remain retrievable.
+
+---
+
+## Implementation Details
+
+Follows [swe.md](../swe.md): high cohesion/low coupling, SSOT, explicit types, KISS/YAGNI, spike-before-scale, TDD (red-green-refactor, mocked LLM), quality gate (`python tools/quality_gate_report.py`, ruff, CC ≤ 10). Names follow the existing Hungarian-domain/English-technical mix of [db.py](../../src/felvi_games/db.py) and [models.py](../../src/felvi_games/models.py). Datetime handling follows [user-story-datetime-policy.md](./user-story-datetime-policy.md): UTC persisted (`utc_*`), local time derived for display only.
+
+### Module layout (new code, one responsibility each)
+
+| Module | Responsibility | Requirement |
+|---|---|---|
+| `writing_models.py` | Frozen dataclasses/enums: `WritingTask`, `ReviewGuide`, `Criterion`, `WritingSession`, `TutorMessage`, `DraftRevision`, `CriterionFeedback`, `WritingStage`, `FocusSkill`, `Genre`, `GuideOrigin` (`OFFICIAL`/`PRACTICE`) | all |
+| `writing_rules.py` | Pure functions: sentence counter (title excluded per guide), under-minimum rule, point-bound clamping, active-time accumulation | WR-03, WR-06 |
+| `writing_review.py` | LLM criterion review → validated structured result; applies `writing_rules`; uncertainty flag | WR-05 |
+| `writing_tutor.py` | Tutor system prompt, stage state machine, message building; no UI/DB imports | WR-04 |
+| `writing_repo.py` | Persistence (tasks, guides, sessions, messages, drafts, feedback, skill progress) | WR-07 |
+| `writing_ui.py` | Streamlit workspace, saved-session review page, main-page entry helpers | WR-08 |
+| `writing_import.py` | Task 10 extraction from `_fl`/`_ut` text + guide structuring; practice-topic loader | WR-01 |
+
+`app.py` only gains routing and two buttons; logic stays out of it (it is already large).
+
+### Data model (Alembic migration + `_ensure_*` pattern as in `db.py`)
+
+- `writing_tasks`: id, source (`exam`/`practice`), exam_year, variant, task_no, genre, prompt_text (verbatim), constraints_json (sentence min/max, arguments, personal experience), suggested_minutes (nullable, shown as guidance only), provenance (file names / RAG archive id), parent_task_id (derived rewrites keep original retrievable), version.
+- `review_guides`: id, task_id, origin (`official`/`practice`), version, max_points, assessable_max, criteria_json (name, max, level descriptors, rules such as zero-below-4-sentences, `assessable` flag for appearance), educator_approved (bool), approved_by, utc_approved_at.
+- `writing_sessions`: id, user_id, task_id, guide_id, mode (`guided`/`simulation`), stage, focus_skill, status (`active`/`paused`/`submitted`/`closed`), utc_started_at, utc_ended_at, active_seconds, confidence_before/after.
+- `writing_time_segments`: session_id, utc_start, utc_end (pause/resume; active_seconds = sum; SSOT for time).
+- `tutor_messages`: session_id, seq, role (`learner`/`tutor`/`system`), content, kind (`chat`/`example`/`hint`), utc_created_at. `example` kind is excluded from scoring.
+- `draft_revisions`: session_id, rev_no, text (never overwritten), sentence_count, is_submission, utc_saved_at.
+- `criterion_feedback`: revision_id, guide_id, criterion, score (nullable = not assessed), max, comment, uncertain (bool), model, prompt_version.
+- `writing_skill_progress`: user_id, focus_skill, stage, successes, last_confidence, utc_updated_at (derived/cacheable from sessions; recompute possible).
+
+Indexes: `(user_id, utc_started_at)` on sessions, `(session_id, seq)` on messages. Retention and parent/teacher visibility are configurable per Open Decision 5 (default: owner + linked adult, no auto-delete until decided).
+
+### Import and content pipeline
+
+1. `pdf_parser.py`: remove the "skip composition tasks" instruction in `_SYSTEM_PROMPT`; route `feladat_tipus == "fogalmazas"` items to `writing_import.py` instead of `FeladatRepository` short-answer storage (keeps `check_answer` path untouched).
+2. `writing_import.py` reads Task 10 from `_fl` and the matching Item 10 block of `_ut`, producing task + official guide with the verbatim prompt; unit-tested against fixtures copied from the files cited in the traceability table (2026_1, 2026_2, 2025_2, 2019_2, 2009_1, 2006_1).
+3. Practice topics: load the 10 archived RAG topics from a versioned data file (`data/writing/practice_topics.json`) keeping original wording; a generation script drafts a `practice` guide per topic, marked `educator_approved=false`. Unapproved guides are usable only behind a "pilot" setting, always labelled practice.
+
+### Tutor prompt and workflow
+
+- System prompt (Hungarian, versioned `tutor_prompt_v1`): supportive, age-appropriate; one short question or step at a time; never writes the learner's composition; examples are short, on a different topic or a fragment, and tagged `example`; praises concrete things first; does not judge the learner's opinion; reminds that time is shown for information only.
+- Inputs: task prompt, guide criteria, stage, focus skill, current draft, last N messages (token-bounded), learner confidence.
+- Stage state machine (`writing_tutor.py`): `understand_task → choose_stance → plan_arguments → write_part → revise → full_composition → reflect`; the focus skill restricts the criteria the tutor discusses. Learner can jump or repeat any stage (no lock).
+- Simulation mode: tutor and feedback disabled until submit; then the review runs and the tutor may discuss results.
+- Reuse the OpenAI client setup from `ai.py` (`LLM_*` env vars); chat loop pattern from [teacher_chainlit_app.py](../../src/felvi_games/teacher_chainlit_app.py) minus tool calling initially (YAGNI).
+
+### Review service
+
+- Deterministic first: `writing_rules` computes sentence count and rule-based zeroing/clamping; the LLM returns JSON per criterion (`score`, `comment`, `evidence_quote`, `uncertain`); schema-validated, scores clamped to guide maxima, retried once on invalid JSON.
+- Total = sum of assessable criteria; appearance stored as `NULL` (not assessed) for typed work; practice guides labelled "AI estimate".
+- Prompt version and model are stored with every feedback row for later calibration against the educator benchmark.
+
+### UI
+
+- Main page (`_render_valasztas`): add "✍️ Fogalmazásműhely" and "📖 Írásnaplóm" (saved sessions) buttons that set `_active_page` to `writing` / `writing_history`; `main` routes accordingly. Existing flow unchanged.
+- Writing page: task prompt panel (with provenance and guide label), draft `st.text_area` (tall, live sentence counter), chat panel (`st.chat_message`/`st.chat_input`), elapsed-time display (`st.fragment(run_every=…)` refresh), pause/resume, submit, confidence prompt.
+- History page: list by date/task/mode, open read-only transcript, revisions with per-criterion comparison, resume paused session.
+- Time: displayed as mm:ss, suggested minutes shown as guidance; no auto-submit, no disabled inputs on overrun.
+- Adult review: expose a read-only session summary through `teacher_chat.build_teacher_chat_context` as a later slice.
+
+### Delivery slices
+
+| Slice | Scope | Done when |
+|---|---|---|
+| 0 Spike | Run review prompt on 3 official tasks + 3 hand-written responses; check JSON stability and score plausibility | Findings recorded; go/no-go |
+| 1 Foundation | Models, rules, migration, repo, importer for official Task 10 + guides | Imported tasks match cited files; rules tests green |
+| 2 Tutor + sessions | Tutor prompt, stage machine, writing page, time tracking, session save/resume, main-page buttons | Learner completes and reopens a guided session |
+| 3 Review + history | Criterion review, revision comparison, history page, simulation mode | Official-guide scoring tests green; simulation hides feedback |
+| 4 Progression + topic bank | Focus skills, progress, practice topics with approved guides | Educator-approved practice guides in use |
+
+### Tests (TDD, LLM mocked)
+
+- `writing_rules`: sentence counts (3/4/5, 9/10, title excluded), under-4 zeroing only for the 2026 MNy2 guide, clamping, active-time sum with pauses.
+- `writing_import`: fixture-based parsing of each cited exam file; verbatim prompt preserved; no cross-variant constraint leakage.
+- `writing_review`: invalid JSON retry, out-of-range clamp, `NULL` appearance, uncertainty propagation.
+- `writing_tutor`: prompt contains guide/stage; simulation mode blocks hints; `example` messages unscored.
+- Repo: session create → pause → resume → reload with transcript, revisions, time intact; UTC stored.
+- CLI/UI smoke through existing `felvi` entry point per swe.md; manual check of timer non-blocking at and beyond suggested time.
+
+### Definition of Done
+
+Acceptance criteria met for the slice; tests and `ruff` pass; quality gate `PASS` without regression; migration applied on a copy of the existing DB; `progress_report.md` and `development_history.md` updated; educator sign-off recorded for any learner-facing practice guide.
+
+### Risks
+
+| Risk | Mitigation |
+|---|---|
+| AI scores inconsistent or too generous | Deterministic rules first, uncertainty flag, benchmark gates, formative labelling |
+| Tutor drifts into writing the essay | Prompt rule + output check for long continuous prose; tests |
+| Unapproved practice guides mistaken as official | Origin label in DB and UI; approval flag gate |
+| Child data retention/privacy | Decide Open Decision 5 before Slice 2 release; owner/adult-only access |
+| `app.py` growth | Keep logic in `writing_*` modules; only routing there |
+| Token cost of long chats | Bounded history, cheap model for chat vs review model (`_CHEAP_MODEL`) |

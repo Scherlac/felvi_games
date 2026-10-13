@@ -1,6 +1,6 @@
 # Progress Report
 
-Last updated: 2026-05-09
+Last updated: 2026-10-13 (backlog update; usage snapshot below remains dated 2026-05-09)
 Data sources:
 - [reports/20260509_7d/report.md](../reports/20260509_7d/report.md)
 - [reports/20260509_30d/report.md](../reports/20260509_30d/report.md)
@@ -194,6 +194,20 @@ Data sources:
 - Why:
   - Last 7 days indicate single-user concentration and drop in multi-user consistency.
 
+### FEAT-008 (P1) Writing Workshop
+- What:
+  - Preserve long-form entrance-exam writing prompts and their task-specific review guides.
+  - Add gradual, selectable writing practice with a supportive learner-facing tutor.
+  - Show and record elapsed practice time without enforcing a time limit.
+  - Save drafts, revisions, feedback, and tutor sessions for later learner/adult review.
+  - Keep official exam guides distinct from clearly labelled practice guides.
+- Why:
+  - Current exam ingestion excludes composition tasks and the existing answer/review flow does not support guided composition, criterion-level feedback, or persistent tutor sessions.
+- Status:
+  - User story and evidence review documented; implementation has not started.
+- Detailed specification:
+  - [US-WRITING-001 — Writing-Task Practice](user-story/user-story-writing-task-training.md)
+
 ---
 
 ## 5) User Stories
@@ -258,6 +272,13 @@ so that I can start the right session in time to earn them.
 
 **Detailed spec:** See [docs/user-story-award-advertising-window.md](user-story-award-advertising-window.md)
 
+### US-009 (P1) — Writing-Task Practice
+As a learner preparing for the Hungarian secondary-school entrance exam,
+I want a supportive tutor to help me practise, draft, and revise writing tasks at my own pace,
+so that I can improve my writing skills and understand how my work meets the relevant review guide.
+
+**Detailed spec:** See [US-WRITING-001 — Writing-Task Practice](user-story/user-story-writing-task-training.md)
+
 ---
 
 ## 6) Suggested Next Sprint Focus
@@ -266,6 +287,7 @@ so that I can start the right session in time to earn them.
 2. Improve weak-spot signal quality: BUG-003 and FEAT-001.
 3. Launch growth loop MVP: FEAT-002 + US-001/US-002 flow.
 4. Add trend visibility for parents/coaches: FEAT-003 + US-003.
+5. Kick off FEAT-008 / US-009 with Slice 0: validate rubric-review behavior on representative official tasks and educator-reviewed sample responses before implementing scoring.
 
 ---
 
@@ -273,3 +295,4 @@ so that I can start the right session in time to earn them.
 
 - This report is intended to be maintained after each major usage snapshot (weekly recommended).
 - Update with fresh CLI evidence before reprioritization.
+- The 2026-10-13 update adds the writing-practice backlog entry only; usage metrics and reports above have not been refreshed.
