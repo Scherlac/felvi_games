@@ -204,7 +204,12 @@ Data sources:
 - Why:
   - Current exam ingestion excludes composition tasks and the existing answer/review flow does not support guided composition, criterion-level feedback, or persistent tutor sessions.
 - Status:
-  - User story and evidence review documented; implementation has not started.
+  - User story and exam evidence documented.
+  - Initial rubric-review scaffold implemented in [writing_review.py](../src/felvi_games/writing_review.py): criterion-specific prompt construction, response validation, score-bound clamping, and one retry for malformed output.
+  - Model adapter added in [ai.py](../src/felvi_games/ai.py), using the configured model, JSON response mode, and deterministic temperature.
+  - Eight focused tests and Ruff checks pass; tests use mocked completion responses and validate the contract only.
+  - One live smoke test with the configured GPT-5.4 model on synthetic, non-personal text and a clearly non-official practice guide returned 5/5 with criterion feedback; this validates provider wiring only, not official-rubric accuracy or educator agreement.
+  - No learner-facing scoring or session persistence is implemented; the local prototype has no automatic expiry per user decision and must not be used in shared/remote or production settings until privacy/access controls are defined.
 - Detailed specification:
   - [US-WRITING-001 — Writing-Task Practice](user-story/user-story-writing-task-training.md)
 
@@ -287,7 +292,7 @@ so that I can improve my writing skills and understand how my work meets the rel
 2. Improve weak-spot signal quality: BUG-003 and FEAT-001.
 3. Launch growth loop MVP: FEAT-002 + US-001/US-002 flow.
 4. Add trend visibility for parents/coaches: FEAT-003 + US-003.
-5. Kick off FEAT-008 / US-009 with Slice 0: validate rubric-review behavior on representative official tasks and educator-reviewed sample responses before implementing scoring.
+5. Continue FEAT-008 / US-009 Slice 0: validate rubric-review quality using representative official tasks and educator-scored responses; only then decide whether to wire scoring into learner-facing flows.
 
 ---
 
@@ -295,4 +300,5 @@ so that I can improve my writing skills and understand how my work meets the rel
 
 - This report is intended to be maintained after each major usage snapshot (weekly recommended).
 - Update with fresh CLI evidence before reprioritization.
-- The 2026-10-13 update adds the writing-practice backlog entry only; usage metrics and reports above have not been refreshed.
+- The usage metrics and reports above have not been refreshed; the 2026-10-13 updates concern writing-practice planning and initial development only.
+- Mocked writing-review tests do not establish scoring quality or educator agreement.

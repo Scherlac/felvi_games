@@ -280,7 +280,7 @@ These gates need a sufficiently varied, permissioned sample and educator agreeme
 2. Which educator-approved sample set and scoring guidance should calibrate the AI evaluator and progression thresholds?
 3. Which remaining years, variants, and grades should be manually reviewed to complete the exam-corpus inventory?
 4. Should initial focus practice cover argumentation first, or launch with narrative and functional-writing tasks as well?
-5. What draft-retention period and parent/teacher visibility are appropriate for child users?
+5. Local-prototype decision: retain writing sessions without automatic expiry. Before production or shared/remote use, define deletion, access controls, parent/teacher visibility, and applicable privacy safeguards.
 6. Should the tutor chat be native Streamlit (`st.chat_message`/`st.chat_input`, recommended: same entry point as the main-page buttons, shared session state) or a separate Chainlit app like the teacher chat?
 7. Who reviews and approves generated "practice review guides" before learners see them (educator sign-off flag)?
 
@@ -586,7 +586,7 @@ Follows [swe.md](../swe.md): high cohesion/low coupling, SSOT, explicit types, K
 - `criterion_feedback`: revision_id, guide_id, criterion, score (nullable = not assessed), max, comment, uncertain (bool), model, prompt_version.
 - `writing_skill_progress`: user_id, focus_skill, stage, successes, last_confidence, utc_updated_at (derived/cacheable from sessions; recompute possible).
 
-Indexes: `(user_id, utc_started_at)` on sessions, `(session_id, seq)` on messages. Retention and parent/teacher visibility are configurable per Open Decision 5 (default: owner + linked adult, no auto-delete until decided).
+Indexes: `(user_id, utc_started_at)` on sessions, `(session_id, seq)` on messages. For local development, sessions have no automatic expiry as requested. Do not enable shared or remote use until deletion, access control, parent/teacher visibility, and applicable privacy safeguards are defined.
 
 ### Import and content pipeline
 
@@ -646,6 +646,6 @@ Acceptance criteria met for the slice; tests and `ruff` pass; quality gate `PASS
 | AI scores inconsistent or too generous | Deterministic rules first, uncertainty flag, benchmark gates, formative labelling |
 | Tutor drifts into writing the essay | Prompt rule + output check for long continuous prose; tests |
 | Unapproved practice guides mistaken as official | Origin label in DB and UI; approval flag gate |
-| Child data retention/privacy | Decide Open Decision 5 before Slice 2 release; owner/adult-only access |
+| Child data retention/privacy | Local prototype only, no automatic expiry per user decision; block production/shared use until deletion, access, visibility, and applicable privacy safeguards are defined |
 | `app.py` growth | Keep logic in `writing_*` modules; only routing there |
 | Token cost of long chats | Bounded history, cheap model for chat vs review model (`_CHEAP_MODEL`) |

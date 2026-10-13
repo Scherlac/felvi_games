@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 from felvi_games.models import Ertekeles
+from felvi_games.writing_review import ReviewGuide, WritingReview, review_writing
 
 load_dotenv(Path(__file__).parent.parent.parent / ".env", override=True)
 
@@ -166,6 +167,25 @@ def check_answer(
         return Ertekeles(helyes=(clamped == max_pont), visszajelzes=ert.visszajelzes, pont=clamped)
     except Exception:
         return Ertekeles.hiba()
+
+
+def review_writing_submission(
+    task_prompt: str,
+    draft: str,
+    guide: ReviewGuide,
+) -> WritingReview:
+    """Review a writing submission using the configured model and task-specific guide."""
+
+    def complete(messages: list[dict[str, str]]) -> str:
+        response = _client.chat.completions.create(
+            model=MODEL,
+            messages=messages,
+            temperature=0,
+            response_format={"type": "json_object"},
+        )
+        return response.choices[0].message.content or ""
+
+    return review_writing(task_prompt, draft, guide, complete=complete)
 
 
 # ---------------------------------------------------------------------------
@@ -574,4 +594,3 @@ def review_time_gate_findings(findings: list[dict]) -> dict:
         "summary": str(parsed.get("summary", "")),
         "actions": actions if isinstance(actions, list) else [],
     }
-
