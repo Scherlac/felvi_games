@@ -6,6 +6,7 @@ import random
 import re
 from collections.abc import Sequence, Set
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
@@ -16,6 +17,14 @@ REFERENCE_PROMPT_SOURCE = "text/A8_2026_2_fl.txt"
 REFERENCE_GUIDE_SOURCE = "text/A8_2026_2_ut.txt"
 _TASK_BLOCK_RE = re.compile(r"^\s{0,4}(?P<number>\d{1,2})\.\s{3,}")
 _LEGACY_GUIDE_HEADING_RE = re.compile(r"^\s{0,4}10\.\s+\S")
+_ANSWER_LINE_RE = re.compile(r"\.{10,}")
+_PAGE_FOOTER_RE = re.compile(r"(?i)\s*\[Oldal\s+\d+\].*$")
+_PAGE_HEADER_RE = re.compile(
+    r"(?i)\s*\d{1,2}\.\s*évfolyam\s*[–—-].*\bfeladatlap\b.*$"
+)
+_EXAM_DATE_FOOTER_RE = re.compile(
+    r"(?i)(?:^|\s)(?:19|20)\d{2}\.\s+[^\W\d_]+\s+\d{1,2}\.\s*$"
+)
 _EXAM_PDF_SUBDIRECTORY = Path(
     "9_evfolyam",
     "Magyar nyelv felveteli feladatsorok 9. evfolyamra",
@@ -122,10 +131,15 @@ def extract_task_prompt(source_text: str) -> str:
         task_body = task_body[: warning.start()]
 
     lines = task_body.splitlines()
-    cleaned_lines = [
-        re.sub(r"\s{2,}[a-e]\s*$", "", line).strip()
-        for line in lines
-    ]
+    cleaned_lines = []
+    for line in lines:
+        line = re.sub(r"\s{2,}[a-e]\s*$", "", line)
+        line = _ANSWER_LINE_RE.sub(" ", line)
+        line = _PAGE_FOOTER_RE.sub("", line)
+        line = _PAGE_HEADER_RE.sub("", line)
+        line = _EXAM_DATE_FOOTER_RE.sub("", line).strip()
+        if line:
+            cleaned_lines.append(line)
     prompt = re.sub(r"\s+", " ", " ".join(line for line in cleaned_lines if line)).strip()
     if not prompt:
         raise ValueError("Task 10 in the official exam source is empty.")
@@ -391,7 +405,18 @@ def _load_source_writing_task(prompt_path: Path, guide_path: Path) -> WritingPra
 
 def load_writing_task_bank(source_dir: Path | None = None) -> tuple[WritingPracticeTask, ...]:
     """Load every configured A8 Task 10 prompt with its matching marking guide."""
-    root = source_dir or resolve_asset("text")
+    if source_dir is None:
+        return _load_configured_writing_task_bank()
+    return _load_writing_task_bank_from_directory(source_dir)
+
+
+@lru_cache(maxsize=1)
+def _load_configured_writing_task_bank() -> tuple[WritingPracticeTask, ...]:
+    """Cache network-backed configured sources for the lifetime of the app process."""
+    return _load_writing_task_bank_from_directory(resolve_asset("text"))
+
+
+def _load_writing_task_bank_from_directory(root: Path) -> tuple[WritingPracticeTask, ...]:
     prompt_paths = sorted(root.glob("A8_*_fl.txt"))
     if not prompt_paths:
         raise FileNotFoundError(f"No A8 writing-task sources were found in {root}.")

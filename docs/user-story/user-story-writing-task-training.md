@@ -184,6 +184,8 @@ Progress is primarily shown as growth by writing skill and independent performan
 - [x] The writing-task bank discovers all 49 configured official A8 prompt files and requires each matching marking-guide file; each prompt remains paired with its own source guide.
 - [x] For each learner profile, choose an unused task randomly until the bank is exhausted, then begin a new cycle without immediately repeating the previous task when alternatives exist.
 - [x] Keep the selected next task stable across page reruns until the learner starts it; persist the chosen prompt and guide snapshots with the session.
+- [x] Cache the configured task bank for the app process lifetime so ordinary UI reruns do not reread network-backed exam files.
+- [x] Remove answer-line dots and exam page/date footers from displayed prompts while preserving the task wording.
 - [x] Display task titles and review criterion labels in Hungarian, including the legacy title shown by previously saved 2026 sessions.
 - [x] Apply the shared 3+3+1+2+1 practice rubric to every task, retain task-specific source requirements, and mark typed appearance as not assessable.
 - [ ] Parsing the reviewed exam sample creates a writing-practice task for Task 10 instead of skipping it.
@@ -571,7 +573,7 @@ Follows [swe.md](../swe.md): high cohesion/low coupling, SSOT, explicit types, K
 
 | Module | Current responsibility |
 |---|---|
-| `writing_tasks.py` | Discovers all configured official A8 Task 10 prompt/guide pairs; extracts the main task block, retains source provenance and guide text, applies the shared practice rubric, and resolves available source PDFs. |
+| `writing_tasks.py` | Discovers and caches configured official A8 Task 10 prompt/guide pairs; extracts clean prompt text, retains source provenance and guide text, applies the shared practice rubric, and resolves available source PDFs. |
 | `writing_review.py` | Builds the task-specific review prompt, validates structured criteria, clamps scores, retries malformed JSON once, and applies the official under-four-sentences zero rule before any model request. |
 | `ai.py` | Reuses the configured provider for rubric review and short, bounded-history tutor coaching; answers sentence-count questions deterministically from the learner-confirmed count rather than counting prior tutor messages. |
 | `db.py` | Defines the writing-practice session, revision, and tutor-message ORM records. |
@@ -591,7 +593,7 @@ The vertical slice snapshots the selected task and guide in each session while d
 
 ### Task source and content pipeline
 
-- Implemented: `writing_tasks.py` discovers all 49 configured `A8_*_fl.txt` files, requires the corresponding `_ut.txt`, extracts Task 10 and its guide (including legacy guide heading spacing), and snapshots both for session reopen. Runtime verification found all 49 prompt/guide pairs load successfully; 43 matching source PDFs are available for optional display.
+- Implemented: `writing_tasks.py` discovers all 49 configured `A8_*_fl.txt` files, requires the corresponding `_ut.txt`, extracts Task 10 and its guide (including legacy guide heading spacing), removes dotted answer lines and page/date footers, and snapshots both for session reopen. The configured bank is cached for the app process lifetime to avoid rereading network-backed assets on every UI rerun. Runtime verification found all 49 prompt/guide pairs load successfully; 43 matching source PDFs are available for optional display.
 - Implemented: tasks are selected randomly without repeats per learner profile until all have been used, then a new cycle begins without an immediate repeat when alternatives exist. The pending choice remains stable across reruns until a session is created.
 - Not implemented: the proposed/generated practice topics are not part of this official exam bank. Add them only as separately labelled practice tasks with their own reviewed practice guides.
 - Do not change the existing short-answer `check_answer` path to accommodate compositions; writing remains a separate, long-form activity.

@@ -4,9 +4,11 @@ import pytest
 
 from felvi_games.writing_tasks import (
     WritingPracticeTask,
+    _load_configured_writing_task_bank,
     _reference_guide,
     choose_next_writing_task,
     estimate_sentence_count,
+    extract_task_prompt,
     load_reference_writing_task,
     load_writing_task_bank,
 )
@@ -103,6 +105,43 @@ def test_task_bank_requires_a_matching_guide(tmp_path) -> None:
 
     with pytest.raises(FileNotFoundError, match="A8_2024_1_ut.txt"):
         load_writing_task_bank(tmp_path)
+
+
+def test_configured_task_bank_is_cached_for_repeated_renders(monkeypatch, tmp_path) -> None:
+    prompt_path = tmp_path / "A8_2024_1_fl.txt"
+    guide_path = tmp_path / "A8_2024_1_ut.txt"
+    prompt_path.write_text("10.   Eredeti feladat.\n", encoding="utf-8")
+    guide_path.write_text("10.   Tartalom\nElfogadható megoldások.\n", encoding="utf-8")
+    resolve_calls = 0
+
+    def resolve_text_asset(asset_name: str):
+        nonlocal resolve_calls
+        assert asset_name == "text"
+        resolve_calls += 1
+        return tmp_path
+
+    monkeypatch.setattr("felvi_games.writing_tasks.resolve_asset", resolve_text_asset)
+    monkeypatch.setattr("felvi_games.writing_tasks._source_pdf_file", lambda stem: None)
+    _load_configured_writing_task_bank.cache_clear()
+    try:
+        first_load = load_writing_task_bank()
+        second_load = load_writing_task_bank()
+    finally:
+        _load_configured_writing_task_bank.cache_clear()
+
+    assert first_load is second_load
+    assert resolve_calls == 1
+
+
+def test_prompt_extraction_removes_answer_lines_and_exam_footer() -> None:
+    source_text = (
+        "10.   Mutasd be a véleményedet!       a\n"
+        "      ........................................................................\n"
+        "      ........................................................................ "
+        "[Oldal 8] 8. évfolyam — AMNy1 feladatlap / 8 2013. január 24.\n"
+    )
+
+    assert extract_task_prompt(source_text) == "Mutasd be a véleményedet!"
 
 
 def test_task_selection_avoids_repeats_until_the_pool_is_exhausted(monkeypatch) -> None:
