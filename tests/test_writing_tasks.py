@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from felvi_games.writing_tasks import estimate_sentence_count, load_reference_writing_task
+from felvi_games.writing_tasks import (
+    _reference_guide,
+    estimate_sentence_count,
+    load_reference_writing_task,
+)
 
 
 def test_reference_task_loads_prompt_metadata_and_task_specific_guide(tmp_path) -> None:
@@ -37,6 +41,22 @@ def test_reference_task_loads_prompt_metadata_and_task_specific_guide(tmp_path) 
     assert task.guide.assessable_max_score == 9
     assert task.guide.criteria[-1].criterion_id == "appearance"
     assert not task.guide.criteria[-1].assessable
+
+
+def test_reference_guide_prompts_for_complete_hungarian_error_scan() -> None:
+    instructions = {
+        criterion.criterion_id: criterion.instructions
+        for criterion in _reference_guide().criteria
+    }
+
+    assert "de" in instructions["spelling"]
+    assert "ha" in instructions["spelling"]
+    assert "mert" in instructions["spelling"]
+    assert "mellett" in instructions["spelling"]
+    assert "melletük" in instructions["spelling"]
+    assert "quotation marks" in instructions["spelling"]
+    assert "telómon" in instructions["style"]
+    assert "unatkozok" in instructions["style"]
 
 
 def test_sentence_count_estimate_handles_closing_quotes_and_empty_text() -> None:

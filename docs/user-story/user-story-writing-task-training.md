@@ -567,7 +567,7 @@ Follows [swe.md](../swe.md): high cohesion/low coupling, SSOT, explicit types, K
 |---|---|
 | `writing_tasks.py` | Loads the verified 2026 MNy2 Task 10 prompt and its matching guide from configured exam assets; validates expected source markers and exposes task provenance/constraints. |
 | `writing_review.py` | Builds the task-specific review prompt, validates structured criteria, clamps scores, retries malformed JSON once, and applies the official under-four-sentences zero rule before any model request. |
-| `ai.py` | Reuses the configured provider for rubric review and brief, bounded-history tutor coaching. |
+| `ai.py` | Reuses the configured provider for rubric review and short, bounded-history tutor coaching; answers sentence-count questions deterministically from the learner-confirmed count rather than counting prior tutor messages. |
 | `db.py` | Defines the writing-practice session, revision, and tutor-message ORM records. |
 | `writing_repo.py` | Persists session snapshots, immutable draft revisions, criterion feedback, tutor turns, pause/resume state, and elapsed active time. |
 | `writing_ui.py` | Renders the source-backed writing workspace, editable draft and sentence-count correction, tutor chat, non-limiting timer, review, and saved-session reopen flow. |
@@ -591,9 +591,10 @@ The current vertical slice deliberately snapshots one loaded task and guide rath
 
 ### Tutor and review behavior
 
-- The current tutor uses the configured AI client, the task, guide, current draft, bounded recent history, and the learner's explicit message. It is designed to respond briefly and supportively with a next step rather than write the composition.
+- The current tutor uses the configured AI client, the task, guide, current draft, bounded recent history, and the learner's explicit message. Its prompt treats only the current draft as learner-authored and requests one short next step/question rather than a ready-made list of arguments or a composition.
+- Sentence-count questions are answered locally from the visible, learner-correctable count; previous tutor suggestions are not included in that count.
 - The staged workflow (`understand_task → choose_stance → plan_arguments → write_part → revise → reflect`), selectable focus skills, confidence checks, and adaptive progression remain future work; learners are not locked into a stage today.
-- Review returns one validated score/feedback item per guide criterion, clamps out-of-range scores, and retries once only for malformed output. The learner-confirmed sentence count triggers deterministic zeroing below four sentences and is retained with feedback for later inspection; typed appearance is stored as not assessable.
+- Review returns one validated score/feedback item per guide criterion, clamps out-of-range scores, and retries once only for malformed output. The learner-confirmed sentence count triggers deterministic zeroing below four sentences and is retained with feedback for later inspection; typed appearance is stored as not assessable. The guide directs a complete scan for missing commas, word-form/spelling issues, named-game capitalization/suffixes, and informal register; `unatkozok` is not treated as categorically incorrect.
 - Reviews are formative and non-official. Educator calibration and comparison against a benchmark set are not implemented.
 
 ### UI and remaining roadmap
@@ -614,7 +615,7 @@ The current vertical slice deliberately snapshots one loaded task and guide rath
 ### Validation
 
 - Implemented tests cover source parsing/metadata, sentence counting and short-text zeroing, review response validation/retry/clamping, configured AI adapter behavior, saved draft/chat/review reopening, and persistence behavior.
-- Current focused validation: 25 writing-practice tests and 87 database regression tests pass; targeted Ruff checks (excluding pre-existing `E501`) and Python compile checks pass. A populated SQLite check verified that the rename migration preserves session, revision, and tutor-message rows.
+- Current focused validation: 27 writing-practice tests and 87 database regression tests pass; targeted Ruff checks (excluding pre-existing `E501`) and Python compile checks pass. A populated SQLite check verified that the rename migration preserves session, revision, and tutor-message rows.
 - Future tests should cover educator-benchmarked scores, additional source variants, guided/focus workflows, and adult-review access controls before those capabilities are exposed.
 
 ### Definition of Done

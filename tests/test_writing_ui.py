@@ -82,8 +82,16 @@ def test_writing_workspace_saves_draft_chat_and_review_for_reopen(tmp_path, monk
         )
         return review
 
-    def fake_coach(task_prompt: str, draft: str, guide, history, learner_message: str) -> str:
-        coached.append((task_prompt, draft, guide.guide_id, history, learner_message))
+    def fake_coach(
+        task_prompt: str,
+        draft: str,
+        guide,
+        history,
+        learner_message: str,
+        *,
+        sentence_count: int | None = None,
+    ) -> str:
+        coached.append((task_prompt, draft, guide.guide_id, history, learner_message, sentence_count))
         if len(coached) == 1:
             raise RuntimeError("temporary provider failure")
         return "Kezdd az álláspontoddal. Melyik érvet írod le először?"
@@ -121,6 +129,7 @@ def test_writing_workspace_saves_draft_chat_and_review_for_reopen(tmp_path, monk
     assert len(coached) == 1
     assert coached[0][1] == draft_text
     assert coached[0][4] == "Mivel folytassam?"
+    assert coached[0][5] == 10
     assert any("temporary provider failure" in element.value for element in app.error)
     assert [message.role for message in repository.list_messages(session.id, "Local learner")] == [
         "user"

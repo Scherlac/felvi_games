@@ -147,6 +147,9 @@ def _request_tutor_reply(
         raise ValueError("No unanswered learner message is available.")
 
     draft = st.session_state.get(f"writing_draft_{writing_session.id}", "")
+    sentence_count = st.session_state.get(f"writing_sentence_count_{writing_session.id}")
+    if isinstance(sentence_count, bool) or not isinstance(sentence_count, int):
+        sentence_count = None
     history = [
         {"role": message.role, "content": message.content}
         for message in messages[:-1][-8:]
@@ -158,6 +161,7 @@ def _request_tutor_reply(
             guide,
             history,
             messages[-1].content,
+            sentence_count=sentence_count,
         )
     except (APIError, RuntimeError, ValueError) as error:
         logger.exception("Writing tutor request failed")

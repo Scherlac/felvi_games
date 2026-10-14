@@ -117,7 +117,10 @@ def _reference_guide() -> ReviewGuide:
                 "Style and word choice",
                 1,
                 f"{short_text_rule} Award 1 when wording is topic-appropriate, standard, varied, "
-                "and grammatically correct at 10 or more sentences; otherwise 0.",
+                "and grammatically correct at 10 or more sentences; otherwise 0. Flag informal "
+                "register such as 'telómon' as an optional formal-style improvement, not a spelling "
+                "error. Do not label the common colloquial 'unatkozok' as categorically incorrect; "
+                "you may suggest 'unatkozom' as a more formal alternative.",
             ),
             ReviewCriterion(
                 "spelling",
@@ -127,7 +130,13 @@ def _reference_guide() -> ReviewGuide:
                 "points for at most one minor listed error and at most two punctuation errors at "
                 "10 or more sentences; 1 point for at most two listed errors, one isolated severe "
                 "error, or three to five punctuation errors when at least four sentences are "
-                "present; otherwise 0. Do not count complex-sentence punctuation errors.",
+                "present; otherwise 0. Check the complete text for missing commas before "
+                "contrastive 'de' and clause-introducing 'ha', 'mert', and 'hogy'; check doubled "
+                "consonants and inflected word forms (for example, 'mellet'/'mellett' and "
+                "'melletük'/'mellettük'); and review capitalization, quotation marks, and suffix "
+                "attachment for named games. Explain concrete comma improvements as formative "
+                "advice, but do not count complex-sentence punctuation errors toward points when "
+                "the source guide excludes them.",
             ),
             ReviewCriterion(
                 "appearance",

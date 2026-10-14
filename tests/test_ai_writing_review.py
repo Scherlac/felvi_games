@@ -91,18 +91,46 @@ def test_coach_writing_chat_uses_cheap_model_and_only_recent_history() -> None:
             _guide(),
             history,
             "Mivel folytassam?",
+            sentence_count=4,
         )
 
     assert reply.startswith("Jó kezdet.")
     request = mock_create.call_args.kwargs
     assert request["model"] == "test-coach-model"
     assert request["temperature"] == 0.3
-    assert request["max_tokens"] == 220
+    assert request["max_tokens"] == 100
     assert len(request["messages"]) == 10
     assert request["messages"][1] == history[-8]
     assert request["messages"][-1]["role"] == "user"
     assert "I prefer online games" in request["messages"][-1]["content"]
     assert "Mivel folytassam?" in request["messages"][-1]["content"]
+    assert "mondatszám (cím nélkül): 4" in request["messages"][-1]["content"]
+    assert "kizárólag a <draft> blokkot" in request["messages"][0]["content"].lower()
+    assert "legfeljebb egy kérdést" in request["messages"][0]["content"]
+
+
+def test_coach_writing_chat_answers_sentence_count_from_draft_not_chat_history() -> None:
+    mock_create = Mock()
+    history = [
+        {
+            "role": "assistant",
+            "content": "A vázlatod 10 mondatból áll. Ezek a tutor korábbi szavai, nem a tanuló fogalmazása.",
+        }
+    ]
+
+    with patch("felvi_games.ai._client.chat.completions.create", mock_create):
+        reply = coach_writing_chat(
+            "Write about games.",
+            "I like board games.",
+            _guide(),
+            history,
+            "Hány mondatot írtam?",
+            sentence_count=1,
+        )
+
+    assert "1 mondat" in reply
+    assert "10 mondat" not in reply
+    mock_create.assert_not_called()
 
 
 def test_coach_writing_chat_validates_input_and_surfaces_provider_errors() -> None:
