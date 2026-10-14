@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import random
 from datetime import datetime, timezone
 from pathlib import Path
@@ -565,6 +566,11 @@ def _render_valasztas(
             st.rerun()
         else:
             st.warning("Nincs több feladat ebben a kategóriában.")
+
+    if os.getenv("FELVI_WRITING_ENABLED") == "1":
+        if st.button("📝 Fogalmazásműhely", use_container_width=True, key="writing_practice_entry"):
+            st.session_state["_active_page"] = "writing_practice"
+            st.rerun()
 
     _targy = st.session_state.get("radio_targy", gs.targy)
     _szint = st.session_state.get("radio_szint", gs.szint)
@@ -1213,6 +1219,15 @@ def main() -> None:
 
     if st.session_state.get("_active_page") == "settings":
         _render_settings_page(gs)
+        return
+    if st.session_state.get("_active_page") == "writing_practice":
+        if os.getenv("FELVI_WRITING_ENABLED") != "1":
+            st.session_state["_active_page"] = "game"
+            st.warning("A Fogalmazásműhely jelenleg nincs engedélyezve.")
+            return
+        from felvi_games.writing_ui import render_writing_practice_page
+
+        render_writing_practice_page(gs.felhasznalo)
         return
 
     logger.debug(

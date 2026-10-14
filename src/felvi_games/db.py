@@ -393,6 +393,74 @@ class UserSettingRecord(Base):
     )
 
 
+class WritingPracticeSessionRecord(Base):
+    """Persisted writing-practice session and task snapshot."""
+
+    __tablename__ = "writing_practice_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    felhasznalo_nev: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    feladat_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    feladat_prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    task_metadata_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    guide_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    guide_json: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+    utc_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    utc_last_resumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    active_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    utc_submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revisions: Mapped[list[WritingDraftRevisionRecord]] = relationship(
+        back_populates="writing_session",
+        cascade="all, delete-orphan",
+        order_by="WritingDraftRevisionRecord.revision_no",
+    )
+    messages: Mapped[list[WritingTutorMessageRecord]] = relationship(
+        back_populates="writing_session",
+        cascade="all, delete-orphan",
+        order_by="WritingTutorMessageRecord.id",
+    )
+
+
+class WritingDraftRevisionRecord(Base):
+    """Immutable learner draft revision and optional criterion review."""
+
+    __tablename__ = "writing_draft_revisions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("writing_practice_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    revision_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    draft_text: Mapped[str] = mapped_column(Text, nullable=False)
+    feedback_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    utc_saved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    writing_session: Mapped[WritingPracticeSessionRecord] = relationship(
+        back_populates="revisions"
+    )
+
+
+class WritingTutorMessageRecord(Base):
+    """Persisted learner/tutor chat turn for a writing-practice session."""
+
+    __tablename__ = "writing_tutor_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("writing_practice_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    utc_created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    writing_session: Mapped[WritingPracticeSessionRecord] = relationship(
+        back_populates="messages"
+    )
+
+
 class FelhasznaloEremRecord(Base):
     """Earned medal/achievement row per user."""
 

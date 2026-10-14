@@ -122,6 +122,42 @@ def test_review_writing_does_not_swallow_completion_errors(review_guide: ReviewG
         review_writing("Prompt", "Draft", review_guide, complete=fail)
 
 
+def test_review_writing_applies_short_text_zero_score_rule_without_ai(
+    review_guide: ReviewGuide,
+) -> None:
+    def unexpected_completion(_messages: list[dict[str, str]]) -> str:
+        raise AssertionError("The AI should not score a text below the minimum sentence count.")
+
+    result = review_writing(
+        "Prompt",
+        "Three sentences.",
+        review_guide,
+        complete=unexpected_completion,
+        sentence_count=3,
+        min_sentences_for_any_points=4,
+    )
+
+    assert result.total_score == 0
+    assert result.assessable_max_score == 6
+    assert [criterion.score for criterion in result.criteria] == [0, 0, None]
+
+
+@pytest.mark.parametrize("sentence_count", [-1, 1.5, True])
+def test_review_writing_rejects_invalid_sentence_counts(
+    review_guide: ReviewGuide,
+    sentence_count: int,
+) -> None:
+    with pytest.raises(ValueError, match="sentence_count"):
+        review_writing(
+            "Prompt",
+            "Draft",
+            review_guide,
+            complete=lambda _messages: _review_json(),
+            sentence_count=sentence_count,
+            min_sentences_for_any_points=4,
+        )
+
+
 def test_review_guide_rejects_duplicate_criterion_ids() -> None:
     with pytest.raises(ValueError, match="unique"):
         ReviewGuide(

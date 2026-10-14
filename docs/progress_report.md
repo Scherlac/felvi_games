@@ -1,6 +1,6 @@
 # Progress Report
 
-Last updated: 2026-10-13 (backlog update; usage snapshot below remains dated 2026-05-09)
+Last updated: 2026-10-14 (writing-practice implementation update; usage snapshot below remains dated 2026-05-09)
 Data sources:
 - [reports/20260509_7d/report.md](../reports/20260509_7d/report.md)
 - [reports/20260509_30d/report.md](../reports/20260509_30d/report.md)
@@ -206,10 +206,18 @@ Data sources:
 - Status:
   - User story and exam evidence documented.
   - Initial rubric-review scaffold implemented in [writing_review.py](../src/felvi_games/writing_review.py): criterion-specific prompt construction, response validation, score-bound clamping, and one retry for malformed output.
-  - Model adapter added in [ai.py](../src/felvi_games/ai.py), using the configured model, JSON response mode, and deterministic temperature.
-  - Eight focused tests and Ruff checks pass; tests use mocked completion responses and validate the contract only.
-  - One live smoke test with the configured GPT-5.4 model on synthetic, non-personal text and a clearly non-official practice guide returned 5/5 with criterion feedback; this validates provider wiring only, not official-rubric accuracy or educator agreement.
-  - No learner-facing scoring or session persistence is implemented; the local prototype has no automatic expiry per user decision and must not be used in shared/remote or production settings until privacy/access controls are defined.
+  - Review and tutor adapters are in [ai.py](../src/felvi_games/ai.py): criterion review uses JSON mode; the concise tutor uses the configured cheap model, bounded chat history, and a one-question coaching prompt.
+  - Streamlit writing-practice page is available behind `FELVI_WRITING_ENABLED=1`; it loads the verified 2026 MNy2 Task 10 and its task-specific guide from configured exam assets, and starts with a blank learner draft.
+  - Active persistence uses writing-practice session, revision, and tutor-message domain entities. A data-preserving Alembic migration renames the earlier prototype tables and keeps prior rows with legacy task metadata.
+  - The official task's four-sentence zero-score rule is deterministic using the learner-confirmed sentence count, which is retained with the review for later inspection. The learner can correct the estimate and exclude any title; typed appearance remains explicitly unassessable.
+  - Drafts and tutor turns are sent to the configured, owner-approved AI provider only when the learner explicitly requests coaching or review. Local sessions, pause/resume, revision/review snapshots, tutor transcript, and elapsed active time persist in SQLite through [writing_repo.py](../src/felvi_games/writing_repo.py).
+  - Timer heartbeats cap unobserved gaps at two seconds to avoid counting long disconnects; browser or server stalls may undercount. The profile name is only a local scope, not authentication.
+  - Sessions preserve prompt/guide snapshots, elapsed active time, draft revisions, review feedback, and tutor transcript. Coaching and scoring requests send learner content to the configured provider only after an explicit learner action.
+  - The profile name is a local scope, not authentication. Keep the feature restricted to the approved environment until access, deletion, and child-data retention safeguards are implemented.
+  - Current refactor verification: the configured exam assets load; 25 writing-practice tests and 87 database tests pass; targeted Ruff checks (excluding pre-existing `E501`) and compile checks pass; a populated SQLite migration check confirms session, draft, and tutor-message rows survive the rename.
+  - Remaining work includes educator calibration against official examples, additional source-verified tasks, skill-focused exercises/progression, confidence tracking, and parent/teacher review.
+- Local launch:
+  - Set `FELVI_WRITING_ENABLED=1` and run `streamlit run src\felvi_games\app.py`.
 - Detailed specification:
   - [US-WRITING-001 — Writing-Task Practice](user-story/user-story-writing-task-training.md)
 
@@ -292,7 +300,7 @@ so that I can improve my writing skills and understand how my work meets the rel
 2. Improve weak-spot signal quality: BUG-003 and FEAT-001.
 3. Launch growth loop MVP: FEAT-002 + US-001/US-002 flow.
 4. Add trend visibility for parents/coaches: FEAT-003 + US-003.
-5. Continue FEAT-008 / US-009 Slice 0: validate rubric-review quality using representative official tasks and educator-scored responses; only then decide whether to wire scoring into learner-facing flows.
+5. Continue FEAT-008 / US-009: walk through the source-backed writing workshop, then validate official-task scoring with educator-scored responses before expanding the task bank.
 
 ---
 
