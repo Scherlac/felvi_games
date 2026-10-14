@@ -250,7 +250,8 @@ def coach_writing_chat(
         "legfeljebb egy kérdést. Ne sorolj fel kész érveket vagy írj a tanuló helyett "
         "bekezdést; legfeljebb két rövid vázlatpontot csak akkor adj, ha kifejezetten "
         "ötleteket kér. Ha példát kér, az legyen rövid, külön jelölt minta, ne a tanuló "
-        "szövegének része."
+        "szövegének része. A forrásútmutatóban szereplő korábbi pontsávokat ne használd; "
+        "a gyakorló értékelés pontszámait a megadott modern szempontok határozzák meg."
     )
     criteria = [
         {

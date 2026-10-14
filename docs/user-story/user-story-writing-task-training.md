@@ -3,7 +3,7 @@
 **ID:** US-WRITING-001  
 **Epic:** Exam Preparation & Writing Skills  
 **Priority:** P1  
-**Status:** Draft — validated against representative exam samples; broader review and educator validation remain
+**Status:** In progress — all 49 configured official Task 10 prompt/guide pairs are integrated; educator validation and learning progression remain
 
 ---
 
@@ -25,7 +25,7 @@ so that I can support the learner without relying on an unexplained AI score.
 
 ## Exam Evidence and Requirement Validation
 
-The review began with the 8th-grade Hungarian language paper **MNy2, 3 February 2026**, Task 10 and its marking guide (`A8_2026_2_fl.txt`, `A8_2026_2_ut.txt`). A broader keyword scan of available `A8_*_fl.txt` files returned writing-related matches in 43 files. Representative task/guide pairs across different years and writing genres were then checked directly. This supports the need for writing practice, but is not an exhaustive manual audit of every exam file.
+The review began with the 8th-grade Hungarian language paper **MNy2, 3 February 2026**, Task 10 and its marking guide (`A8_2026_2_fl.txt`, `A8_2026_2_ut.txt`). An initial keyword scan found writing-related matches in 43 prompt files. A later inventory found 49 complete `A8_*_fl.txt` / matching `_ut.txt` pairs in the configured assets; all 49 now load into the writing-task bank. Representative task/guide pairs across different years and writing genres were checked directly. Automated source coverage is not a substitute for a full educator audit of every task and guide.
 
 The checked files are in `W:\Users\Felvi\assets\text\`. Use the named task and guide item below to verify each requirement in the original text:
 
@@ -41,7 +41,7 @@ The checked files are in `W:\Users\Felvi\assets\text\`. Use the named task and g
 | `A8_2006_1_fl.txt`, `A8_2006_1_ut.txt` — A–1, 2006 | Task 10 asks the learner to choose two of three functional-writing prompts and write 3–4 sentence texts. The guide scores genre suitability, cohesion, closure, style, spelling, language use, and (for an SMS) concision/relevance; criteria that cannot be judged from a short text are not scored. | Include short, genre-specific exercises and criterion applicability, not only full-length compositions. |
 | `A8_2005_1_fl.txt`, `A8_2005_1_ut.txt` — A–1, 2005 | Task 10 asks for a 10–15-sentence text from one of two titles. Guide Item 10 separately covers content, coherence, style, language correctness, and spelling. | The long-form format is longstanding, while the scoring dimensions and exact rules vary by task/year. |
 
-**Validated conclusion:** In the reviewed A8 Hungarian papers, Task 10 repeatedly requires writing, but “writing task” spans short functional texts, narratives, opinion pieces, and structured arguments. Recent 2025–2026 examples share a 10-point content/structure/style/spelling/appearance rubric, but prompts still differ in argument count, stance, personal-experience requirements, and length rules. Do not infer the exact task, length, genre, or scoring rules from the number 10 alone. Import and display the specific prompt and marking guide for each exam.
+**Validated conclusion:** In the reviewed A8 Hungarian papers, Task 10 repeatedly requires writing, but “writing task” spans short functional texts, narratives, opinion pieces, and structured arguments. Recent 2022–2026 examples share a 10-point content/structure/style/spelling/appearance rubric, but prompts still differ in argument count, stance, personal-experience requirements, and length rules. Do not infer the exact task, length, genre, or requirements from the number 10 alone. Import and display each specific prompt with its matching marking guide.
 
 ### Official marking dimensions in the 2026 MNy2 reference sample
 
@@ -54,7 +54,7 @@ The checked files are in `W:\Users\Felvi\assets\text\`. Use the named task and g
 | Appearance / handwriting | 1 | Legibility, clear corrections and letter/diacritic forms, neat layout, and staying within the writing area. |
 | **Total** | **10** | Guide Item 10 defines separate criteria and sentence-count cutoffs. |
 
-The full marking guide must be represented as task-specific structured rubric rules, not replaced by a generic “good writing” judgement. For the 2026 MNy2 example, preserve the content bands for 10, 8–9, 5–7, and fewer than 5 sentences; the global under-four-sentence rule; the title exclusion; the handwriting criterion; and Hungarian-specific spelling distinctions. Other source tasks may require different bands or criteria.
+**Scoring decision:** Apply the shared 2022–2026 practice rubric to every official prompt: content 3, structure 3, style 1, spelling 2, and appearance 1 point (10 official points; 9 assessable from typed text). Use each original guide as the source for that task's content requirements and accepted alternatives, but do not apply its historical point bands. Preserve the 2026 MNy2-specific under-four-sentence rule only for that task. This is a consistent practice rubric, not a claim that older exams were officially scored this way; every review remains labelled as non-official practice feedback.
 
 ---
 
@@ -145,11 +145,12 @@ Progress is primarily shown as growth by writing skill and independent performan
 - Do not write the learner's complete composition for them or silently replace their words. Suggestions should help the child develop and revise their own ideas.
 - If the model is uncertain, make the uncertainty visible and invite teacher/parent review instead of presenting a confident, exact score.
 
-### 6. Handle official scoring transparently (`WR-06`)
+### 6. Handle guide and practice scoring transparently (`WR-06`)
 
 - The score must be the sum of valid criterion scores and never exceed the applicable maximum.
-- Apply the source task's actual minimum-length and score-band rules. In the 2026 MNy2 reference sample, fewer than four sentences results in zero for every item; do not assume that sentence rule applies identically to every source task.
-- For a typed submission under the 2026 10-point rubric, score the four text-assessable criteria only (maximum 9 points) and label appearance/handwriting **not assessed**. Do not count that criterion as zero or imply that the typed score is the complete official 10-point exam score. Follow a different source rubric when its criteria differ.
+- Apply the shared 3+3+1+2+1 practice rubric to every official prompt. Use the matching source guide for task-specific content requirements and accepted alternatives, but ignore historical point bands when assigning practice scores.
+- Preserve source-verified hard sentence rules only for the task that specifies them. In the 2026 MNy2 reference sample, fewer than four sentences results in zero for every item; do not inherit that rule for other tasks. Display the prompt's sentence target as guidance, not as an unverified score cutoff.
+- For typed submissions, score the four text-assessable criteria only (maximum 9 points) and label appearance/handwriting **not assessed**. Do not count that criterion as zero or imply that the practice score reconstructs the official score for an older exam.
 - If handwritten-image submission is added later, handwriting/appearance should remain subject to an explicit, validated review method; do not assume that text extraction can assess legibility or page layout.
 - Keep practice feedback formative. Clearly state that an AI practice score is an estimate, not an official exam result.
 
@@ -180,6 +181,11 @@ Progress is primarily shown as growth by writing skill and independent performan
 
 ## Acceptance Criteria
 
+- [x] The writing-task bank discovers all 49 configured official A8 prompt files and requires each matching marking-guide file; each prompt remains paired with its own source guide.
+- [x] For each learner profile, choose an unused task randomly until the bank is exhausted, then begin a new cycle without immediately repeating the previous task when alternatives exist.
+- [x] Keep the selected next task stable across page reruns until the learner starts it; persist the chosen prompt and guide snapshots with the session.
+- [x] Display task titles and review criterion labels in Hungarian, including the legacy title shown by previously saved 2026 sessions.
+- [x] Apply the shared 3+3+1+2+1 practice rubric to every task, retain task-specific source requirements, and mark typed appearance as not assessable.
 - [ ] Parsing the reviewed exam sample creates a writing-practice task for Task 10 instead of skipping it.
 - [ ] Every imported writing task retains its own source prompt, genre, constraints, rubric, exam/variant provenance, and rubric version; requirements are not copied from another year or variant.
 - [ ] The reviewed 2026 MNy2 task retains its actual requirements: 10–12 sentences, two arguments for each game type, and a personal-experience reference.
@@ -217,7 +223,7 @@ Requirements below are product proposals grounded in the listed exam evidence. T
 | `WR-03` Preserve authentic constraints in simulation | `A8_2026_2_fl.txt`, cover instructions and Task 10; compare with Task 10 in `A8_2026_1_fl.txt` and `A8_2025_2_fl.txt`. Time guidance is specific to the 2026_2 cover and must not be applied to every exam without checking its instructions. |
 | `WR-04` Provide supportive tutor chat | Exam documents establish task constraints but do not require a chat-based tutor; the one-question-at-a-time coaching workflow is a product design proposal. Its coaching must remain faithful to the selected task/guide, for example `A8_2026_2_fl.txt` Task 10 and `A8_2026_2_ut.txt` Item 10. |
 | `WR-05` Give criterion-specific, opinion-neutral feedback | `A8_2026_2_ut.txt`, Item 10(a)–(e), including content/structure/style/spelling/appearance and the note that score must not depend on opinion. Also see `A8_2026_1_ut.txt`, Item 10(a)–(e), and `A8_2025_2_ut.txt`, Item 10(a)–(e). |
-| `WR-06` Respect rubric-specific scores and sentence rules | `A8_2026_2_ut.txt`, Item 10(a)–(e), and compare sentence/score bands with `A8_2019_2_ut.txt`, Item 10(a)–(e), and `A8_2006_1_ut.txt`, Item 10(a)–(m). These rules differ and must remain attached to their source task. |
+| `WR-06` Apply shared practice scoring without losing task-specific requirements | Compare `A8_2026_2_ut.txt`, Item 10(a)–(e), with `A8_2019_2_ut.txt`, Item 10(a)–(e), and `A8_2006_1_ut.txt`, Item 10(a)–(m). The original point bands differ; the practice rubric is shared, while each source guide remains attached for task-specific content requirements and accepted responses. |
 | `WR-07` Preserve and review tutor sessions | Official guides above define evidence worth reviewing; saving chat turns, revisions, and elapsed time is a product requirement rather than an exam rule. Privacy and retention need a child-user policy. |
 | `WR-08` Add main-page entry points and reuse existing behavior | [app.py](../../src/felvi_games/app.py), [teacher_chainlit_app.py](../../src/felvi_games/teacher_chainlit_app.py), [teacher_chat.py](../../src/felvi_games/teacher_chat.py), [pdf_parser.py](../../src/felvi_games/pdf_parser.py), and [models.py](../../src/felvi_games/models.py). The existing teacher analytics chat is a reuse reference, not the learner tutor itself. |
 
@@ -565,7 +571,7 @@ Follows [swe.md](../swe.md): high cohesion/low coupling, SSOT, explicit types, K
 
 | Module | Current responsibility |
 |---|---|
-| `writing_tasks.py` | Loads the verified 2026 MNy2 Task 10 prompt and its matching guide from configured exam assets; validates expected source markers and exposes task provenance/constraints. |
+| `writing_tasks.py` | Discovers all configured official A8 Task 10 prompt/guide pairs; extracts the main task block, retains source provenance and guide text, applies the shared practice rubric, and resolves available source PDFs. |
 | `writing_review.py` | Builds the task-specific review prompt, validates structured criteria, clamps scores, retries malformed JSON once, and applies the official under-four-sentences zero rule before any model request. |
 | `ai.py` | Reuses the configured provider for rubric review and short, bounded-history tutor coaching; answers sentence-count questions deterministically from the learner-confirmed count rather than counting prior tutor messages. |
 | `db.py` | Defines the writing-practice session, revision, and tutor-message ORM records. |
@@ -581,12 +587,13 @@ Follows [swe.md](../swe.md): high cohesion/low coupling, SSOT, explicit types, K
 - `writing_tutor_messages`: role, content, session link, and UTC creation time.
 - The profile name is a local scope, not authentication. Sessions do not expire automatically by user decision; do not enable shared use until access, deletion, and child-data safeguards are defined.
 
-The current vertical slice deliberately snapshots one loaded task and guide rather than adding a task catalog, guide registry, skill-progress tables, or demo-only models. Consider catalog/version tables only when multiple source-verified tasks, educator approval, or progression require them.
+The vertical slice snapshots the selected task and guide in each session while discovering the source bank directly from the configured text assets. It does not add a database task catalog, guide registry, skill-progress tables, or demo-only models.
 
 ### Task source and content pipeline
 
-- Implemented: `writing_tasks.py` reads `text/A8_2026_2_fl.txt` and `text/A8_2026_2_ut.txt` from configured assets, extracts Task 10, validates the expected marking-guide sections, and preserves prompt/guide snapshots for session reopen.
-- Not implemented: automatic ingestion of other exam years/variants or the ten proposed practice topics. Keep candidate wording and source-year references in this story; only add a learner-facing task after its source, constraints, and matching review guide have been checked.
+- Implemented: `writing_tasks.py` discovers all 49 configured `A8_*_fl.txt` files, requires the corresponding `_ut.txt`, extracts Task 10 and its guide (including legacy guide heading spacing), and snapshots both for session reopen. Runtime verification found all 49 prompt/guide pairs load successfully; 43 matching source PDFs are available for optional display.
+- Implemented: tasks are selected randomly without repeats per learner profile until all have been used, then a new cycle begins without an immediate repeat when alternatives exist. The pending choice remains stable across reruns until a session is created.
+- Not implemented: the proposed/generated practice topics are not part of this official exam bank. Add them only as separately labelled practice tasks with their own reviewed practice guides.
 - Do not change the existing short-answer `check_answer` path to accommodate compositions; writing remains a separate, long-form activity.
 
 ### Tutor and review behavior
@@ -607,15 +614,15 @@ The current vertical slice deliberately snapshots one loaded task and guide rath
 
 | Slice | Scope | Done when |
 |---|---|---|
-| Current vertical slice | Source-backed 2026 Task 10, typed draft, tutor chat, criterion review, timer, persistent sessions | Implemented and covered by focused tests; educator scoring calibration remains open |
+| Current vertical slice | All 49 source-backed official Task 10 pairs, no-repeat selection, typed draft, tutor chat, criterion review, timer, persistent sessions | Implemented and covered by focused tests; educator scoring calibration remains open |
 | Next: calibration | Compare reviews with educator-scored 2026 Task 10 responses; revise rubric instructions with traceable evidence | Agreement and known limitations reviewed by educators |
-| Next: task bank | Add other official and approved practice tasks with matching source-backed guides | Every prompt/criterion has traceable source and review |
+| Next: proposed practice tasks | Add proposed/generated tasks only with an explicit practice label and a separately reviewed guide | Every practice prompt and criterion has traceable provenance and review |
 | Later: learning progression | Focus skills, stages, confidence, history/adult review, and approved practice guides | Learners can practise one aspect, build toward a full essay, and revisit progress safely |
 
 ### Validation
 
-- Implemented tests cover source parsing/metadata, sentence counting and short-text zeroing, review response validation/retry/clamping, configured AI adapter behavior, saved draft/chat/review reopening, and persistence behavior.
-- Current focused validation: 27 writing-practice tests and 87 database regression tests pass; targeted Ruff checks (excluding pre-existing `E501`) and Python compile checks pass. A populated SQLite check verified that the rename migration preserves session, revision, and tutor-message rows.
+- Implemented tests cover all source parsing/metadata behaviors, no-repeat selection, stable UI task selection, sentence counting and short-text zeroing, review response validation/retry/clamping, configured AI adapter behavior, saved draft/chat/review reopening, and persistence behavior.
+- Current focused validation: 35 writing-feature tests pass. Runtime loading verified 49 unique official prompt/guide pairs, with no missing guide snapshots; 43 source PDFs are available. Database regression and migration checks were previously run; no database schema changes are included in this task-bank slice.
 - Future tests should cover educator-benchmarked scores, additional source variants, guided/focus workflows, and adult-review access controls before those capabilities are exposed.
 
 ### Definition of Done
@@ -636,11 +643,14 @@ Acceptance criteria met for the slice; tests and `ruff` pass; quality gate `PASS
 ## Implementation Status (2026-10-14)
 
 - Enable the writing-practice page with `FELVI_WRITING_ENABLED=1`; launch with `streamlit run src\felvi_games\app.py`.
-- The page loads the verified 2026 MNy2 Task 10 prompt and task-specific marking guide from configured exam assets. A learner starts with a blank editable draft; the source and its requirements are displayed.
+- The page discovers all 49 official A8 Task 10 prompt/guide pairs from configured exam assets. Each task displays its Hungarian title, prompt, provenance, requirements, and original guide; 43 matching PDFs are available for optional preview.
+- Task choice is randomized per profile without repeats until all available prompts have been used, then a new cycle starts without immediately repeating the last task. A pending choice remains unchanged across reruns until practice starts.
+- All prompts use the chosen shared 3+3+1+2+1 practice rubric; each source guide supplies task-specific requirements and accepted alternatives, while historical score bands are ignored. Appearance remains unassessable from typed text.
+- A learner starts with a blank editable draft; prompt, guide, and provenance are snapshotted for saved-session reopening.
 - The typed-writing review uses the task's criteria, marks handwriting/appearance as unassessable, and deterministically gives zero for assessable criteria when the learner-confirmed sentence count is below four. The learner can correct the estimate and exclude any title.
 - Local SQLite sessions save prompt/guide snapshots, elapsed active time, draft revisions, review feedback, and tutor transcript; pause/back save the current draft, and paused or submitted sessions can be reopened. The timer is informative and does not submit or limit practice.
 - The earlier prototype tables are preserved through a schema migration into writing-practice persistence entities, with legacy task metadata retained.
 - Coaching and review requests send learner content to the configured provider only after an explicit learner action. Results are labelled as practice feedback, not official scores.
 - The profile name is a local scope, not authentication. Keep the feature restricted to the approved environment until access controls, deletion, and child-data retention safeguards are implemented.
-- Verification: configured exam assets load, all 25 writing-practice tests and 87 database tests pass, Ruff and compile checks pass, and a populated SQLite check confirms the migration preserves existing sessions, drafts, and tutor messages.
-- Remaining work: calibrate scoring with educators, add further source-verified tasks, implement skill-focused exercises/progression, confidence tracking, and parent/teacher review.
+- Verification: all 49 unique task/guide pairs load, 35 writing-feature tests pass, and the stable-selection UI test confirms the displayed task is the task that starts. 43 task PDFs are available; the remaining source pairs still work from text. Database regression and migration checks passed previously; this change does not alter the schema.
+- Remaining work: calibrate scoring with educators, add separately reviewed practice prompts, implement skill-focused exercises/progression, confidence tracking, and parent/teacher review.

@@ -121,6 +121,15 @@ class WritingPracticeRepository:
             ).all()
             return [self._to_session(record) for record in records]
 
+    def used_task_ids(self, felhasznalo_nev: str) -> set[str]:
+        with Session(self._engine) as session:
+            task_ids = session.scalars(
+                select(WritingPracticeSessionRecord.feladat_id)
+                .where(WritingPracticeSessionRecord.felhasznalo_nev == felhasznalo_nev)
+                .distinct()
+            ).all()
+            return set(task_ids)
+
     def list_revisions(
         self,
         session_id: int,

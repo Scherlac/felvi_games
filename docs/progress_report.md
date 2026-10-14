@@ -207,15 +207,18 @@ Data sources:
   - User story and exam evidence documented.
   - Initial rubric-review scaffold implemented in [writing_review.py](../src/felvi_games/writing_review.py): criterion-specific prompt construction, response validation, score-bound clamping, and one retry for malformed output.
   - Review and tutor adapters are in [ai.py](../src/felvi_games/ai.py): criterion review uses JSON mode; the concise tutor uses the configured cheap model, bounded chat history, and a one-question coaching prompt.
-  - Streamlit writing-practice page is available behind `FELVI_WRITING_ENABLED=1`; it loads the verified 2026 MNy2 Task 10 and its task-specific guide from configured exam assets, and starts with a blank learner draft.
+  - Streamlit writing-practice page is available behind `FELVI_WRITING_ENABLED=1`; it discovers and loads all 49 configured official A8 Task 10 prompt/guide pairs. Runtime verification found 49 unique task IDs and no missing guides; 43 matching PDFs are available for optional display.
+  - Tasks are selected randomly per learner profile without repeats until the bank is exhausted, then a new cycle starts without immediately repeating the previous task. The pending task remains stable across UI reruns until the learner starts it.
+  - The user-selected shared 2022–2026 practice rubric (3+3+1+2+1 points) is used for every prompt; original guides supply task-specific requirements and accepted alternatives, not their historical point bands. Typed appearance is not assessed. Task titles and criterion labels are displayed in Hungarian, including legacy 2026 sessions.
   - Active persistence uses writing-practice session, revision, and tutor-message domain entities. A data-preserving Alembic migration renames the earlier prototype tables and keeps prior rows with legacy task metadata.
   - The official task's four-sentence zero-score rule is deterministic using the learner-confirmed sentence count, which is retained with the review for later inspection. The learner can correct the estimate and exclude any title; typed appearance remains explicitly unassessable.
+  - Tutor sentence-count questions now use that current confirmed count directly, never count prior tutor outlines as learner writing, and do not need an AI request. Tutor replies are constrained to a short next step/question; the review guide now explicitly checks the reported Hungarian punctuation, word-form, capitalization, and register issues without treating the colloquial `unatkozok` form as categorically wrong.
   - Drafts and tutor turns are sent to the configured, owner-approved AI provider only when the learner explicitly requests coaching or review. Local sessions, pause/resume, revision/review snapshots, tutor transcript, and elapsed active time persist in SQLite through [writing_repo.py](../src/felvi_games/writing_repo.py).
   - Timer heartbeats cap unobserved gaps at two seconds to avoid counting long disconnects; browser or server stalls may undercount. The profile name is only a local scope, not authentication.
   - Sessions preserve prompt/guide snapshots, elapsed active time, draft revisions, review feedback, and tutor transcript. Coaching and scoring requests send learner content to the configured provider only after an explicit learner action.
   - The profile name is a local scope, not authentication. Keep the feature restricted to the approved environment until access, deletion, and child-data retention safeguards are implemented.
-  - Current refactor verification: the configured exam assets load; 25 writing-practice tests and 87 database tests pass; targeted Ruff checks (excluding pre-existing `E501`) and compile checks pass; a populated SQLite migration check confirms session, draft, and tutor-message rows survive the rename.
-  - Remaining work includes educator calibration against official examples, additional source-verified tasks, skill-focused exercises/progression, confidence tracking, and parent/teacher review.
+  - Current task-bank verification: all 35 writing-feature tests pass, including a UI regression test confirming that the task displayed is the one started. Database regression and migration checks passed previously; this task-bank update does not change the schema.
+  - Remaining work includes educator calibration against scored examples, separately labelled proposed practice tasks and their review guides, skill-focused exercises/progression, confidence tracking, and parent/teacher review.
 - Local launch:
   - Set `FELVI_WRITING_ENABLED=1` and run `streamlit run src\felvi_games\app.py`.
 - Detailed specification:
@@ -300,7 +303,7 @@ so that I can improve my writing skills and understand how my work meets the rel
 2. Improve weak-spot signal quality: BUG-003 and FEAT-001.
 3. Launch growth loop MVP: FEAT-002 + US-001/US-002 flow.
 4. Add trend visibility for parents/coaches: FEAT-003 + US-003.
-5. Continue FEAT-008 / US-009: walk through the source-backed writing workshop, then validate official-task scoring with educator-scored responses before expanding the task bank.
+5. Continue FEAT-008 / US-009: validate the shared rubric with educator-scored responses, then add proposed practice prompts only with separately reviewed practice guides.
 
 ---
 

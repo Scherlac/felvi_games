@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -120,6 +121,17 @@ def test_writing_practice_sessions_are_scoped_to_local_profile(tmp_path) -> None
     assert repo.get_session(session.id, "Learner B") is None
     assert repo.list_sessions("Learner B") == []
     assert repo.list_messages(session.id, "Learner B") == []
+
+
+def test_used_task_ids_include_all_sessions_for_one_profile(tmp_path) -> None:
+    repo = WritingPracticeRepository(tmp_path / "writing-practice.db")
+    tasks = [replace(_task(), task_id=f"task-{index}") for index in range(25)]
+    for task in tasks:
+        repo.create_session("Learner A", task)
+    repo.create_session("Learner B", tasks[0])
+
+    assert repo.used_task_ids("Learner A") == {task.task_id for task in tasks}
+    assert repo.used_task_ids("Learner B") == {tasks[0].task_id}
 
 
 def test_writing_practice_chat_messages_persist_in_order_and_are_profile_scoped(tmp_path) -> None:

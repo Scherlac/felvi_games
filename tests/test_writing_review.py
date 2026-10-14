@@ -142,6 +142,36 @@ def test_review_writing_applies_short_text_zero_score_rule_without_ai(
     assert [criterion.score for criterion in result.criteria] == [0, 0, None]
 
 
+def test_review_writing_sends_sentence_count_without_global_cutoff(
+    review_guide: ReviewGuide,
+) -> None:
+    messages: list[dict[str, str]] = []
+
+    result = review_writing(
+        "Prompt",
+        "Draft",
+        review_guide,
+        complete=lambda prompt: messages.extend(prompt) or _review_json(),
+        sentence_count=7,
+    )
+
+    assert result.total_score == 4
+    assert "mondatszám (cím nélkül): 7" in messages[1]["content"]
+
+
+def test_review_writing_requires_sentence_count_for_task_threshold(
+    review_guide: ReviewGuide,
+) -> None:
+    with pytest.raises(ValueError, match="sentence_count"):
+        review_writing(
+            "Prompt",
+            "Draft",
+            review_guide,
+            complete=lambda _messages: _review_json(),
+            min_sentences_for_any_points=4,
+        )
+
+
 @pytest.mark.parametrize("sentence_count", [-1, 1.5, True])
 def test_review_writing_rejects_invalid_sentence_counts(
     review_guide: ReviewGuide,

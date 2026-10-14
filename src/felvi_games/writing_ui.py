@@ -13,15 +13,25 @@ from felvi_games.ai import coach_writing_chat, review_writing_submission
 from felvi_games.writing_repo import WritingPracticeRepository, WritingPracticeSession, WritingTutorMessage
 from felvi_games.writing_review import ReviewCriterion, ReviewGuide, WritingReview, WritingReviewError
 from felvi_games.writing_tasks import (
-    WritingPracticeTask,
+    choose_next_writing_task,
     estimate_sentence_count,
-    load_reference_writing_task,
+    load_writing_task_bank,
+    resolve_writing_task_pdf,
 )
 
 logger = logging.getLogger(__name__)
 
 _SESSION_STATE_KEY = "_writing_practice_session_id"
+_PENDING_TASK_STATE_PREFIX = "_writing_practice_pending_task_"
 _TUTOR_ERROR_STATE_PREFIX = "_writing_tutor_error_"
+_LEGACY_TASK_TITLES = {"A8_2026_2_MNy2_10": "Társasjáték vagy online játék"}
+_CRITERION_LABELS_HU = {
+    "content": "Tartalom",
+    "structure": "A szöveg szerkezete",
+    "style": "Stílus és szóhasználat",
+    "spelling": "Helyesírás",
+    "appearance": "Külalak, íráskép",
+}
 
 
 def _format_elapsed(seconds: int) -> str:
@@ -40,6 +50,43 @@ def _review_json(review: WritingReview, learner_sentence_count: int) -> str:
         },
         ensure_ascii=False,
     )
+
+
+def _task_display_title(task_id: str, metadata: dict[str, object]) -> str:
+    legacy_title = _LEGACY_TASK_TITLES.get(task_id)
+    if legacy_title is not None:
+        return legacy_title
+    return str(metadata.get("title") or task_id)
+
+
+def _criterion_display_name(criterion_id: str, guide: ReviewGuide) -> str:
+    localized_name = _CRITERION_LABELS_HU.get(criterion_id)
+    if localized_name is not None:
+        return localized_name
+    return next(
+        (criterion.name for criterion in guide.criteria if criterion.criterion_id == criterion_id),
+        criterion_id,
+    )
+
+
+def _render_source_pdf(source_pdf_file: object, key: str) -> None:
+    if not isinstance(source_pdf_file, str):
+        return
+    pdf_path = resolve_writing_task_pdf(source_pdf_file)
+    if pdf_path is None:
+        return
+    if not pdf_path.is_file():
+        st.warning(f"Az eredeti feladatlap PDF-forrása nem található: {source_pdf_file}")
+        return
+    with st.expander("Eredeti vizsgafeladatlap (PDF)"):
+        st.pdf(pdf_path, height=760, key=key)
+
+
+def _render_source_guide(source_guide_text: object) -> None:
+    if not isinstance(source_guide_text, str) or not source_guide_text.strip():
+        return
+    with st.expander("Eredeti hivatalos javítási útmutató (forrás)"):
+        st.text(source_guide_text)
 
 
 def _render_timer(repository: WritingPracticeRepository, writing_session: WritingPracticeSession) -> None:
@@ -72,7 +119,7 @@ def _render_timer(repository: WritingPracticeRepository, writing_session: Writin
     render_live_timer()
 
 
-def _render_review(feedback_json: str | None) -> None:
+def _render_review(feedback_json: str | None, guide: ReviewGuide) -> None:
     if not feedback_json:
         st.info("Ehhez a változathoz még nem készült értékelés.")
         return
@@ -86,12 +133,13 @@ def _render_review(feedback_json: str | None) -> None:
         f"{result['total_score']} / {result['assessable_max_score']}",
     )
     for criterion in result["criteria"]:
+        criterion_name = _criterion_display_name(criterion["criterion_id"], guide)
         with st.container(border=True):
             if criterion["score"] is None:
-                st.markdown(f"**{criterion['criterion_id']} — nem értékelhető gépelt szövegből**")
+                st.markdown(f"**{criterion_name} — nem értékelhető gépelt szövegből**")
             else:
                 st.markdown(
-                    f"**{criterion['criterion_id']} — "
+                    f"**{criterion_name} — "
                     f"{criterion['score']} / {criterion['max_points']} pont**"
                 )
             st.write(criterion["feedback"])
@@ -252,11 +300,31 @@ def render_writing_practice_page(
         "A munkamenet helyben, automatikus lejárat nélkül mentődik. A profilnév nem hozzáférés-védelem; "
         "használd kizárólag az engedélyezett környezetben."
     )
+    sessions = repository.list_sessions(felhasznalo_nev)
+    pending_task_key = f"{_PENDING_TASK_STATE_PREFIX}{felhasznalo_nev}"
     try:
-        task: WritingPracticeTask | None = load_reference_writing_task()
+        task_bank = load_writing_task_bank()
+        used_task_ids = repository.used_task_ids(felhasznalo_nev)
+        pending_task_id = st.session_state.get(pending_task_key)
+        task = next(
+            (
+                candidate
+                for candidate in task_bank
+                if candidate.task_id == pending_task_id
+                and candidate.task_id not in used_task_ids
+            ),
+            None,
+        )
+        if task is None:
+            task = choose_next_writing_task(
+                task_bank,
+                used_task_ids,
+                sessions[0].task_id if sessions else None,
+            )
+            st.session_state[pending_task_key] = task.task_id
         task_load_error = None
     except (OSError, ValueError) as error:
-        logger.exception("Could not load the reference writing task")
+        logger.exception("Could not load the official writing-task bank")
         task = None
         task_load_error = str(error)
 
@@ -270,12 +338,11 @@ def render_writing_practice_page(
         st.session_state.pop(_SESSION_STATE_KEY, None)
         st.rerun()
 
-    sessions = repository.list_sessions(felhasznalo_nev)
     if sessions:
         st.subheader("Mentett írásgyakorlások")
         for saved_session in sessions:
             saved_metadata = json.loads(saved_session.task_metadata_json)
-            task_title = saved_metadata.get("title", saved_session.task_id)
+            task_title = _task_display_title(saved_session.task_id, saved_metadata)
             label = (
                 f"#{saved_session.id} · {task_title} · {saved_session.status} · "
                 f"{saved_session.utc_started_at.astimezone().strftime('%Y-%m-%d %H:%M')}"
@@ -293,19 +360,32 @@ def render_writing_practice_page(
             st.error(f"A hivatalos írásfeladat nem tölthető be: {task_load_error}")
         if task is not None:
             st.subheader(task.title)
-            st.caption(
-                f"Hivatalos vizsgafeladat · {task.source_reference} · "
-                f"{task.min_sentences}–{task.max_sentences} mondat · "
-                f"javasolt idő: {task.suggested_time_min}–{task.suggested_time_max} perc"
-            )
+            task_details = [f"Hivatalos vizsgafeladat · {task.source_reference}"]
+            if task.min_sentences is not None and task.max_sentences is not None:
+                task_details.append(f"{task.min_sentences}–{task.max_sentences} mondat")
+            elif task.min_sentences is not None:
+                task_details.append(f"legalább {task.min_sentences} mondat")
+            if task.suggested_time_min is not None and task.suggested_time_max is not None:
+                task_details.append(
+                    f"javasolt idő: {task.suggested_time_min}–"
+                    f"{task.suggested_time_max} perc"
+                )
+            st.caption(" · ".join(task_details))
             st.write(task.prompt)
             st.caption(f"Értékelési útmutató: {task.guide.name}")
+            st.caption(
+                "A feladatok véletlenszerű sorrendben, ismétlés nélkül következnek; "
+                "a teljes készlet után új kör indul."
+            )
+            _render_source_pdf(task.source_pdf_file, "writing_task_source_pdf_preview")
+            _render_source_guide(task.source_guide_text)
             if st.button(
                 "Új írásgyakorlás indítása",
                 type="primary",
                 key="writing_practice_start",
             ):
                 writing_session = repository.create_session(felhasznalo_nev, task)
+                st.session_state.pop(pending_task_key, None)
                 st.session_state[_SESSION_STATE_KEY] = writing_session.id
                 st.rerun()
         st.info("Válassz egy mentett írásgyakorlást, vagy indíts újat.")
@@ -318,12 +398,21 @@ def render_writing_practice_page(
         return
 
     task_metadata = json.loads(writing_session.task_metadata_json)
-    st.subheader(task_metadata.get("title", writing_session.task_id))
-    st.caption(
-        f"{task_metadata.get('source_reference', 'Korábbi írásfeladat')} · "
-        f"{task_metadata.get('min_sentences', '—')}–{task_metadata.get('max_sentences', '—')} mondat"
-    )
+    st.subheader(_task_display_title(writing_session.task_id, task_metadata))
+    task_details = [str(task_metadata.get("source_reference", "Korábbi írásfeladat"))]
+    min_sentences = task_metadata.get("min_sentences")
+    max_sentences = task_metadata.get("max_sentences")
+    if isinstance(min_sentences, int) and isinstance(max_sentences, int):
+        task_details.append(f"{min_sentences}–{max_sentences} mondat")
+    elif isinstance(min_sentences, int):
+        task_details.append(f"legalább {min_sentences} mondat")
+    st.caption(" · ".join(task_details))
     st.write(writing_session.task_prompt)
+    _render_source_pdf(
+        task_metadata.get("source_pdf_file"),
+        f"writing_task_source_pdf_{session_id}",
+    )
+    _render_source_guide(task_metadata.get("source_guide_text"))
     if task_metadata.get("suggested_time_min") is not None:
         st.caption(
             f"Javasolt idő: {task_metadata['suggested_time_min']}–"
@@ -390,14 +479,11 @@ def render_writing_practice_page(
                             writing_session.task_prompt,
                             draft_text,
                             guide,
-                            sentence_count=(
-                                int(sentence_count)
-                                if isinstance(minimum_sentence_count, int)
-                                else None
-                            ),
+                            sentence_count=int(sentence_count),
                             min_sentences_for_any_points=(
                                 minimum_sentence_count
                                 if isinstance(minimum_sentence_count, int)
+                                and not isinstance(minimum_sentence_count, bool)
                                 else None
                             ),
                         )
@@ -424,6 +510,7 @@ def render_writing_practice_page(
         if task is not None:
             if st.button("Új írásgyakorlás indítása", key=f"writing_practice_new_{session_id}"):
                 new_session = repository.create_session(felhasznalo_nev, task)
+                st.session_state.pop(pending_task_key, None)
                 st.session_state[_SESSION_STATE_KEY] = new_session.id
                 st.rerun()
         elif task_load_error:
@@ -437,4 +524,4 @@ def render_writing_practice_page(
         for revision in revisions:
             with st.expander(f"{revision.revision_no}. változat"):
                 st.write(revision.draft_text)
-                _render_review(revision.feedback_json)
+                _render_review(revision.feedback_json, guide)

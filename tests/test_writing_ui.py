@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from streamlit.testing.v1 import AppTest
 
 from felvi_games.writing_repo import WritingPracticeRepository
 from felvi_games.writing_review import CriterionReview, ReviewCriterion, ReviewGuide, WritingReview
 from felvi_games.writing_tasks import WritingPracticeTask
+from felvi_games.writing_ui import _task_display_title
 
 
 def _render_writing_app(user_name: str, db_path: str) -> None:
@@ -17,7 +20,51 @@ def _render_writing_app(user_name: str, db_path: str) -> None:
 
 
 def _click_button_key(app: AppTest, key: str) -> None:
-    next(button for button in app.button if button.key == key).click().run()
+    next(button for button in app.button if button.key == key).click().run(timeout=10)
+
+
+def test_legacy_task_title_is_localized() -> None:
+    assert _task_display_title(
+        "A8_2026_2_MNy2_10",
+        {"title": "Traditional board games and online games"},
+    ) == "Társasjáték vagy online játék"
+
+
+def test_selected_task_stays_same_until_started(tmp_path, monkeypatch) -> None:
+    repository = WritingPracticeRepository(tmp_path / "writing-practice.db")
+    first_task = _task()
+    second_task = replace(
+        first_task,
+        task_id="another-writing-task",
+        title="Another writing task",
+    )
+    choose_calls = 0
+
+    def choose_different_task_each_time(tasks, used_task_ids, previous_task_id):
+        nonlocal choose_calls
+        selected = tasks[choose_calls % len(tasks)]
+        choose_calls += 1
+        return selected
+
+    monkeypatch.setattr(
+        "felvi_games.writing_ui.load_writing_task_bank",
+        lambda: (first_task, second_task),
+    )
+    monkeypatch.setattr(
+        "felvi_games.writing_ui.choose_next_writing_task",
+        choose_different_task_each_time,
+    )
+    db_path = str(tmp_path / "writing-practice.db")
+    app = AppTest.from_function(
+        _render_writing_app,
+        args=("Local learner", db_path),
+    ).run()
+
+    assert any(element.value == first_task.title for element in app.subheader)
+
+    _click_button_key(app, "writing_practice_start")
+
+    assert repository.list_sessions("Local learner")[0].task_id == first_task.task_id
 
 
 def _task() -> WritingPracticeTask:
@@ -98,7 +145,7 @@ def test_writing_workspace_saves_draft_chat_and_review_for_reopen(tmp_path, monk
 
     monkeypatch.setattr("felvi_games.writing_ui.review_writing_submission", fake_review)
     monkeypatch.setattr("felvi_games.writing_ui.coach_writing_chat", fake_coach)
-    monkeypatch.setattr("felvi_games.writing_ui.load_reference_writing_task", lambda: task)
+    monkeypatch.setattr("felvi_games.writing_ui.load_writing_task_bank", lambda: (task,))
     db_path = str(tmp_path / "writing-practice.db")
     app = AppTest.from_function(
         _render_writing_app,
@@ -163,6 +210,7 @@ def test_writing_workspace_saves_draft_chat_and_review_for_reopen(tmp_path, monk
         element.value == "Gyakorló értékelés — nem hivatalos vizsgaeredmény"
         for element in reopened.subheader
     )
+    assert any("Tartalom — 2 / 3 pont" in element.value for element in reopened.markdown)
     assert any(
         element.value == "Tanuló által megadott mondatszám (cím nélkül): 10"
         for element in reopened.caption
