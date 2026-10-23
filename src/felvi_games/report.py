@@ -3,7 +3,7 @@
 Heti (és tetszőleges időtartamú) használati riport.
 
 Kimenet: egy mappa, benne:
-  report.md               – Markdown összefoglaló táblákkal
+  report.md               – Markdown összefoglaló táblákkal és írásfeladat-eredményekkel
   overall_summary.png     – Kísérletek / pontosság / pontszám / játékidő összefoglaló
   accuracy_targy.png      – Pontosság tárgyak szerint (csoportos oszlopdiagram)
   daily_activity.png      – Napi aktivitás (vonaldiagram felhasználónként)
@@ -18,6 +18,7 @@ Usage:
 """
 from __future__ import annotations
 
+import json
 import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -118,6 +119,24 @@ class SessionAveragePoint:
     avg_max_pont: float
 
 
+@dataclass
+class WritingTaskResult:
+    nev: str
+    task_id: str
+    title: str
+    source_kind: str
+    exam_year: int | None
+    variant: int | None
+    task_number: str | None
+    status: str
+    started_at: datetime
+    submitted_at: datetime | None
+    active_seconds: int
+    total_score: int | None = None
+    max_score: int | None = None
+    learner_sentence_count: int | None = None
+
+
 @dataclass(frozen=True)
 class PerformanceMetrics:
     achievable_points: float
@@ -167,6 +186,7 @@ class ReportData:
     daily_detail: list[DailyDetail] = field(default_factory=list)
     attempt_timing: list[AttemptTimingPoint] = field(default_factory=list)
     session_average_points: list[SessionAveragePoint] = field(default_factory=list)
+    writing: list[WritingTaskResult] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -186,6 +206,8 @@ def gather_data(engine, days: int, user_filter: str | None = None) -> ReportData
         FelhasznaloEremRecord,
         MegoldasRecord,
         MenetRecord,
+        WritingDraftRevisionRecord,
+        WritingPracticeSessionRecord,
     )
     from felvi_games.usage_metrics import classify_attempt
 
@@ -242,6 +264,47 @@ def gather_data(engine, days: int, user_filter: str | None = None) -> ReportData
             )
         answers = s.execute(q_answers).all()
 
+        # Writing-practice sessions use a separate persistence model. Keep the
+        # latest reviewed revision per session so the report reflects the
+        # submitted task result rather than an earlier draft.
+        q_writing_sessions = (
+            select(
+                WritingPracticeSessionRecord.id,
+                WritingPracticeSessionRecord.felhasznalo_nev,
+                WritingPracticeSessionRecord.feladat_id,
+                WritingPracticeSessionRecord.task_metadata_json,
+                WritingPracticeSessionRecord.status,
+                WritingPracticeSessionRecord.utc_started_at,
+                WritingPracticeSessionRecord.utc_submitted_at,
+                WritingPracticeSessionRecord.active_seconds,
+            )
+            .where(WritingPracticeSessionRecord.utc_started_at >= date_from)
+        )
+        if user_filter:
+            q_writing_sessions = q_writing_sessions.where(
+                WritingPracticeSessionRecord.felhasznalo_nev == user_filter
+            )
+        writing_sessions = s.execute(q_writing_sessions).all()
+        writing_reviews: dict[int, str] = {}
+        if writing_sessions:
+            writing_session_ids = [row.id for row in writing_sessions]
+            q_writing_revisions = (
+                select(
+                    WritingDraftRevisionRecord.session_id,
+                    WritingDraftRevisionRecord.revision_no,
+                    WritingDraftRevisionRecord.feedback_json,
+                )
+                .where(WritingDraftRevisionRecord.session_id.in_(writing_session_ids))
+                .where(WritingDraftRevisionRecord.feedback_json.is_not(None))
+                .order_by(
+                    WritingDraftRevisionRecord.session_id,
+                    WritingDraftRevisionRecord.revision_no,
+                )
+            )
+            for revision in s.execute(q_writing_revisions).all():
+                if revision.feedback_json is not None:
+                    writing_reviews[revision.session_id] = revision.feedback_json
+
         # achievements earned in window
         q_ach = (
             select(
@@ -267,6 +330,9 @@ def gather_data(engine, days: int, user_filter: str | None = None) -> ReportData
     session_last_attempt: dict[int, datetime] = {}
     session_dates: dict[int, str] = {}
     session_average_acc: dict[int, SessionAverageAccumulator] = {}
+
+    for row in writing_sessions:
+        user_data.setdefault(row.felhasznalo_nev, UserSummary(nev=row.felhasznalo_nev))
 
     for row in sessions:
         u = row.felhasznalo_nev
@@ -368,6 +434,95 @@ def gather_data(engine, days: int, user_filter: str | None = None) -> ReportData
             ikon=row.ikon,
             szerzett_at=row.szerzett_at,
         ))
+
+    for row in writing_sessions:
+        metadata: dict[str, object] = {}
+        try:
+            parsed_metadata = json.loads(row.task_metadata_json)
+        except json.JSONDecodeError:
+            logger.warning(
+                "report: invalid writing task metadata for session %s",
+                row.id,
+            )
+        else:
+            if isinstance(parsed_metadata, dict):
+                metadata = parsed_metadata
+            else:
+                logger.warning(
+                    "report: writing task metadata is not an object for session %s",
+                    row.id,
+                )
+
+        title_value = metadata.get("title")
+        title = (
+            title_value.strip()
+            if isinstance(title_value, str) and title_value.strip()
+            else row.feladat_id
+        )
+        source_kind_value = metadata.get("source_kind")
+        source_kind = source_kind_value if isinstance(source_kind_value, str) else "unknown"
+        exam_year_value = metadata.get("exam_year")
+        exam_year = (
+            exam_year_value
+            if isinstance(exam_year_value, int) and not isinstance(exam_year_value, bool)
+            else None
+        )
+        variant_value = metadata.get("variant")
+        variant = (
+            variant_value
+            if isinstance(variant_value, int) and not isinstance(variant_value, bool)
+            else None
+        )
+        task_number_value = metadata.get("task_number")
+        task_number = task_number_value if isinstance(task_number_value, str) else None
+
+        total_score: int | None = None
+        max_score: int | None = None
+        learner_sentence_count: int | None = None
+        feedback_json = writing_reviews.get(row.id)
+        if feedback_json is not None:
+            try:
+                parsed_feedback = json.loads(feedback_json)
+            except json.JSONDecodeError:
+                logger.warning(
+                    "report: invalid writing review for session %s",
+                    row.id,
+                )
+            else:
+                if isinstance(parsed_feedback, dict):
+                    total_value = parsed_feedback.get("total_score")
+                    max_value = parsed_feedback.get("assessable_max_score")
+                    sentence_value = parsed_feedback.get("learner_sentence_count")
+                    if isinstance(total_value, int) and not isinstance(total_value, bool):
+                        total_score = total_value
+                    if isinstance(max_value, int) and not isinstance(max_value, bool):
+                        max_score = max_value
+                    if isinstance(sentence_value, int) and not isinstance(sentence_value, bool):
+                        learner_sentence_count = sentence_value
+                else:
+                    logger.warning(
+                        "report: writing review is not an object for session %s",
+                        row.id,
+                    )
+
+        data.writing.append(
+            WritingTaskResult(
+                nev=row.felhasznalo_nev,
+                task_id=row.feladat_id,
+                title=title,
+                source_kind=source_kind,
+                exam_year=exam_year,
+                variant=variant,
+                task_number=task_number,
+                status=row.status,
+                started_at=row.utc_started_at,
+                submitted_at=row.utc_submitted_at,
+                active_seconds=max(0, int(row.active_seconds)),
+                total_score=total_score,
+                max_score=max_score,
+                learner_sentence_count=learner_sentence_count,
+            )
+        )
 
     for row in sessions:
         summary = user_data[row.felhasznalo_nev]
@@ -490,9 +645,10 @@ def _session_performance_rows(
 
 def _build_date_range(data: ReportData) -> list[str]:
     start = data.date_from.replace(hour=0, minute=0, second=0, microsecond=0)
+    end = data.date_to.replace(hour=0, minute=0, second=0, microsecond=0)
     return [
         (start + timedelta(days=offset)).strftime("%Y-%m-%d")
-        for offset in range(data.days)
+        for offset in range((end - start).days + 1)
     ]
 
 
@@ -1341,6 +1497,83 @@ def _append_performance_table(
     lines.append("")
 
 
+def _writing_task_label(row: WritingTaskResult) -> str:
+    identifiers: list[str] = []
+    if row.exam_year is not None:
+        identifiers.append(str(row.exam_year))
+    if row.variant is not None:
+        identifiers.append(f"v{row.variant}")
+    if row.task_number:
+        identifiers.append(f"feladat {row.task_number}")
+    identifier = " / ".join(identifiers)
+    return f"{row.title} ({identifier})" if identifier else row.title
+
+
+def _writing_status_label(row: WritingTaskResult) -> str:
+    if row.total_score is not None:
+        return "Értékelve"
+    return {
+        "active": "Folyamatban",
+        "paused": "Szüneteltetve",
+        "submitted": "Beküldve",
+    }.get(row.status, row.status)
+
+
+def _writing_source_label(source_kind: str) -> str:
+    return {
+        "official": "hivatalos",
+        "practice": "gyakorló",
+    }.get(source_kind, source_kind)
+
+
+def _markdown_cell(value: str) -> str:
+    return value.replace("|", "\\|").replace("\n", " ")
+
+
+def _append_writing_table(lines: list[str], data: ReportData) -> None:
+    if not data.writing:
+        return
+
+    lines += [
+        "---",
+        "",
+        "## Írásbeli vizsgafeladatok",
+        "",
+        "_Az írásfeladatok pontozása külön szerepel a kvízfeladatok pontszámától, "
+        "mert más értékelési skálát használnak._",
+        "",
+        "| Felhasználó | Kezdés | Feladat | Forrás | Állapot | Pont | Pontosság | Aktív idő | Mondatok |",
+        "|-------------|---------|---------|--------|---------|------|-----------|-----------|----------|",
+    ]
+    for row in sorted(data.writing, key=lambda item: (item.started_at, item.nev, item.task_id)):
+        if row.total_score is not None and row.max_score is not None:
+            score = f"{row.total_score} / {row.max_score}"
+            accuracy = (
+                f"{row.total_score / row.max_score * 100:.1f}%"
+                if row.max_score > 0
+                else "–"
+            )
+        elif row.total_score is not None:
+            score = str(row.total_score)
+            accuracy = "–"
+        else:
+            score = "–"
+            accuracy = "–"
+        sentence_count = (
+            str(row.learner_sentence_count)
+            if row.learner_sentence_count is not None
+            else "–"
+        )
+        lines.append(
+            f"| {_markdown_cell(row.nev)} | {row.started_at.strftime('%Y-%m-%d')} | "
+            f"{_markdown_cell(_writing_task_label(row))} | "
+            f"{_markdown_cell(_writing_source_label(row.source_kind))} | "
+            f"{_markdown_cell(_writing_status_label(row))} | {score} | {accuracy} | "
+            f"{row.active_seconds / 60:.1f} perc | {sentence_count} |"
+        )
+    lines.append("")
+
+
 def generate_markdown(data: ReportData, chart_files: list[str], output_dir: Path) -> Path:
     fmt_from = data.date_from.strftime("%Y-%m-%d")
     fmt_to = (data.date_to - timedelta(seconds=1)).strftime("%Y-%m-%d")
@@ -1386,6 +1619,8 @@ def generate_markdown(data: ReportData, chart_files: list[str], output_dir: Path
                 f"| {r.accuracy_pct:.1f}% | {acc_with_partial:.1f}% | {r.points} |"
             )
         lines.append("")
+
+    _append_writing_table(lines, data)
 
     lines += ["---", "", "## Érmek kiosztva az időszakban", ""]
 

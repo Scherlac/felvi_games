@@ -315,6 +315,15 @@ Megnyílik: **http://localhost:8501**
 
 A Streamlit automatikusan észleli a kódváltozásokat és újratölt mentéskor.
 
+### Fogalmazásműhely
+
+A Fogalmazásműhely alapértelmezés szerint engedélyezett. Ha egy környezetben nem
+szeretnéd megjeleníteni, add hozzá a `.env` fájlhoz:
+
+```dotenv
+FELVI_WRITING_ENABLED=0
+```
+
 ---
 
 ## Tesztek futtatása

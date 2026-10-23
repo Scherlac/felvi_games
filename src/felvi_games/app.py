@@ -106,6 +106,11 @@ def get_state() -> GameState:
     return st.session_state.gs  # type: ignore[return-value]
 
 
+def _is_writing_enabled() -> bool:
+    """Return whether writing practice is available; it is enabled unless explicitly disabled."""
+    return os.getenv("FELVI_WRITING_ENABLED", "1") != "0"
+
+
 def _group_members(feladat: Feladat, keszlet: list[Feladat]) -> list[Feladat]:
     """Return all members of feladat's group, sorted by csoport_sorrend."""
     return sorted(
@@ -567,7 +572,7 @@ def _render_valasztas(
         else:
             st.warning("Nincs több feladat ebben a kategóriában.")
 
-    if os.getenv("FELVI_WRITING_ENABLED") == "1":
+    if _is_writing_enabled():
         if st.button("📝 Fogalmazásműhely", use_container_width=True, key="writing_practice_entry"):
             st.session_state["_active_page"] = "writing_practice"
             st.rerun()
@@ -1221,7 +1226,7 @@ def main() -> None:
         _render_settings_page(gs)
         return
     if st.session_state.get("_active_page") == "writing_practice":
-        if os.getenv("FELVI_WRITING_ENABLED") != "1":
+        if not _is_writing_enabled():
             st.session_state["_active_page"] = "game"
             st.warning("A Fogalmazásműhely jelenleg nincs engedélyezve.")
             return

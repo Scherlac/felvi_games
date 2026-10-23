@@ -10,6 +10,19 @@ from felvi_games.writing_tasks import WritingPracticeTask
 from felvi_games.writing_ui import _task_display_title
 
 
+def test_writing_feature_is_enabled_unless_explicitly_disabled(monkeypatch) -> None:
+    from felvi_games.app import _is_writing_enabled
+
+    monkeypatch.delenv("FELVI_WRITING_ENABLED", raising=False)
+    assert _is_writing_enabled() is True
+
+    monkeypatch.setenv("FELVI_WRITING_ENABLED", "0")
+    assert _is_writing_enabled() is False
+
+    monkeypatch.setenv("FELVI_WRITING_ENABLED", "1")
+    assert _is_writing_enabled() is True
+
+
 def _render_writing_app(user_name: str, db_path: str) -> None:
     from pathlib import Path
 
